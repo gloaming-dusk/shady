@@ -136,9 +136,9 @@ static void process_cursor_resize(struct shady_server *server) {
 static void process_cursor_camera_orbit(struct shady_server *server) {
 	double dx = server->cursor->x - server->cam_grab_x;
 	double dy = server->cursor->y - server->cam_grab_y;
-	server->camera.yaw = server->cam_grab_yaw - (float)dx * CAMERA_ORBIT_SENS;
-	server->camera.pitch = server->cam_grab_pitch - (float)dy * CAMERA_ORBIT_SENS;
-	clamp_camera(&server->camera);
+	server->experimental.camera.yaw = server->cam_grab_yaw - (float)dx * CAMERA_ORBIT_SENS;
+	server->experimental.camera.pitch = server->cam_grab_pitch - (float)dy * CAMERA_ORBIT_SENS;
+	clamp_camera(&server->experimental.camera);
 	shady_render_schedule_all_outputs(server);
 }
 
@@ -146,14 +146,14 @@ static void process_cursor_camera_pan(struct shady_server *server) {
 	double dx = server->cursor->x - server->cam_grab_x;
 	double dy = server->cursor->y - server->cam_grab_y;
 	struct shady_vec3 right, up;
-	shady_camera_basis(&server->camera, &right, &up, NULL);
+	shady_camera_basis(&server->experimental.camera, &right, &up, NULL);
 	/* Drag right → pan world left (camera moves with grab). */
-	float scale = server->camera.distance * CAMERA_PAN_SENS;
-	server->camera.target_x = server->cam_grab_target_x
+	float scale = server->experimental.camera.distance * CAMERA_PAN_SENS;
+	server->experimental.camera.target_x = server->cam_grab_target_x
 		- right.x * (float)dx * scale + up.x * (float)dy * scale;
-	server->camera.target_y = server->cam_grab_target_y
+	server->experimental.camera.target_y = server->cam_grab_target_y
 		- right.y * (float)dx * scale + up.y * (float)dy * scale;
-	server->camera.target_z = server->cam_grab_target_z
+	server->experimental.camera.target_z = server->cam_grab_target_z
 		- right.z * (float)dx * scale + up.z * (float)dy * scale;
 	shady_render_schedule_all_outputs(server);
 }
@@ -245,7 +245,7 @@ static bool handle_keybinding(struct shady_server *server,
 	struct shady_config *c = &server->config;
 	if (shady_lua_handle_key(server, sym, modifiers)) return true;
 	if (bind_matches(&c->bind_debug_ray, sym, modifiers)) {
-		server->debug_ray = !server->debug_ray;
+		server->experimental.debug_ray = !server->experimental.debug_ray;
 		shady_render_schedule_all_outputs(server);
 		return true;
 	}
@@ -266,17 +266,17 @@ static bool handle_keybinding(struct shady_server *server,
 	bool changed=false; struct shady_vec3 right,up,forward;
 	if (bind_matches(&c->bind_camera_left,sym,modifiers) || bind_matches(&c->bind_camera_right,sym,modifiers) ||
 		bind_matches(&c->bind_camera_up,sym,modifiers) || bind_matches(&c->bind_camera_down,sym,modifiers)) {
-		shady_camera_basis(&server->camera,&right,&up,&forward);
+		shady_camera_basis(&server->experimental.camera,&right,&up,&forward);
 		float sign = (bind_matches(&c->bind_camera_left,sym,modifiers)||bind_matches(&c->bind_camera_down,sym,modifiers)) ? -1.f : 1.f;
 		struct shady_vec3 v = (bind_matches(&c->bind_camera_left,sym,modifiers)||bind_matches(&c->bind_camera_right,sym,modifiers)) ? right : up;
-		server->camera.target_x += v.x*CAMERA_KEY_PAN*sign; server->camera.target_y += v.y*CAMERA_KEY_PAN*sign; server->camera.target_z += v.z*CAMERA_KEY_PAN*sign; changed=true;
-	} else if (bind_matches(&c->bind_camera_yaw_left,sym,modifiers)) { server->camera.yaw += CAMERA_KEY_ORBIT; changed=true;
-	} else if (bind_matches(&c->bind_camera_yaw_right,sym,modifiers)) { server->camera.yaw -= CAMERA_KEY_ORBIT; changed=true;
-	} else if (bind_matches(&c->bind_camera_zoom_in,sym,modifiers)) { server->camera.distance -= CAMERA_ZOOM_STEP; changed=true;
-	} else if (bind_matches(&c->bind_camera_zoom_out,sym,modifiers)) { server->camera.distance += CAMERA_ZOOM_STEP; changed=true;
-	} else if (bind_matches(&c->bind_camera_reset,sym,modifiers)) { shady_camera_reset(&server->camera); changed=true;
+		server->experimental.camera.target_x += v.x*CAMERA_KEY_PAN*sign; server->experimental.camera.target_y += v.y*CAMERA_KEY_PAN*sign; server->experimental.camera.target_z += v.z*CAMERA_KEY_PAN*sign; changed=true;
+	} else if (bind_matches(&c->bind_camera_yaw_left,sym,modifiers)) { server->experimental.camera.yaw += CAMERA_KEY_ORBIT; changed=true;
+	} else if (bind_matches(&c->bind_camera_yaw_right,sym,modifiers)) { server->experimental.camera.yaw -= CAMERA_KEY_ORBIT; changed=true;
+	} else if (bind_matches(&c->bind_camera_zoom_in,sym,modifiers)) { server->experimental.camera.distance -= CAMERA_ZOOM_STEP; changed=true;
+	} else if (bind_matches(&c->bind_camera_zoom_out,sym,modifiers)) { server->experimental.camera.distance += CAMERA_ZOOM_STEP; changed=true;
+	} else if (bind_matches(&c->bind_camera_reset,sym,modifiers)) { shady_camera_reset(&server->experimental.camera); changed=true;
 	} else return false;
-	if (changed) { clamp_camera(&server->camera); shady_render_schedule_all_outputs(server); }
+	if (changed) { clamp_camera(&server->experimental.camera); shady_render_schedule_all_outputs(server); }
 	return true;
 }
 
@@ -418,7 +418,7 @@ void server_cursor_motion_absolute(
 	struct shady_server *server =
 		wl_container_of(listener, server, cursor_motion_absolute);
 	struct wlr_pointer_motion_absolute_event *event = data;
-	if (server->camera.first_person && server->fps.input_capture) {
+	if (server->experimental.camera.first_person && server->experimental.fps.input_capture) {
 		shady_fps_handle_motion(server, 0.0, 0.0);
 		return;
 	}
@@ -452,11 +452,11 @@ void server_cursor_button(struct wl_listener *listener, void *data) {
 				? SHADY_CURSOR_CAMERA_ORBIT : SHADY_CURSOR_CAMERA_PAN;
 			server->cam_grab_x = server->cursor->x;
 			server->cam_grab_y = server->cursor->y;
-			server->cam_grab_yaw = server->camera.yaw;
-			server->cam_grab_pitch = server->camera.pitch;
-			server->cam_grab_target_x = server->camera.target_x;
-			server->cam_grab_target_y = server->camera.target_y;
-			server->cam_grab_target_z = server->camera.target_z;
+			server->cam_grab_yaw = server->experimental.camera.yaw;
+			server->cam_grab_pitch = server->experimental.camera.pitch;
+			server->cam_grab_target_x = server->experimental.camera.target_x;
+			server->cam_grab_target_y = server->experimental.camera.target_y;
+			server->cam_grab_target_z = server->experimental.camera.target_z;
 			wlr_seat_pointer_clear_focus(server->seat);
 		} else if (server->cursor_mode == SHADY_CURSOR_CAMERA_ORBIT
 				|| server->cursor_mode == SHADY_CURSOR_CAMERA_PAN) {
@@ -509,9 +509,9 @@ void server_cursor_axis(struct wl_listener *listener, void *data) {
 		struct shady_toplevel *toplevel = focused_toplevel(server);
 		if (toplevel) {
 			float direction = event->delta < 0.0 ? 1.0f : -1.0f;
-			toplevel->transform.z += direction * WINDOW_Z_STEP;
-			if (toplevel->transform.z < WINDOW_Z_MIN) toplevel->transform.z = WINDOW_Z_MIN;
-			if (toplevel->transform.z > WINDOW_Z_MAX) toplevel->transform.z = WINDOW_Z_MAX;
+			toplevel->experimental.z += direction * WINDOW_Z_STEP;
+			if (toplevel->experimental.z < WINDOW_Z_MIN) toplevel->experimental.z = WINDOW_Z_MIN;
+			if (toplevel->experimental.z > WINDOW_Z_MAX) toplevel->experimental.z = WINDOW_Z_MAX;
 			shady_render_schedule_all_outputs(server);
 		}
 		return;
@@ -520,8 +520,8 @@ void server_cursor_axis(struct wl_listener *listener, void *data) {
 	/* Alt+scroll zooms the camera; plain scroll goes to the client. */
 	if ((mods & WLR_MODIFIER_ALT)
 			&& event->orientation == WL_POINTER_AXIS_VERTICAL_SCROLL) {
-		server->camera.distance += (float)(event->delta * 0.01);
-		clamp_camera(&server->camera);
+		server->experimental.camera.distance += (float)(event->delta * 0.01);
+		clamp_camera(&server->experimental.camera);
 		shady_render_schedule_all_outputs(server);
 		return;
 	}

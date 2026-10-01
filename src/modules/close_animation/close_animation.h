@@ -1,6 +1,7 @@
 #ifndef SHADY_MODULE_CLOSE_ANIMATION_H
 #define SHADY_MODULE_CLOSE_ANIMATION_H
 #include "../../shady.h"
+#include <wlr/types/wlr_xdg_shell.h>
 struct wl_list;
 #if SHADY_HAS_CLOSE_ANIMATION
 void shady_close_animation_begin(struct shady_server *server);

@@ -24,9 +24,8 @@
 #include "gl_pipeline.h"
 #include "math3d.h"
 #include "pick3d.h"
-#include "../modules/physics/physics.h"
+#include "../experimental/runtime.h"
 #include "../modules/fps/fps.h"
-#include "../modules/window_motion/window_motion.h"
 #include "../modules/close_animation/close_animation.h"
 #include "../modules/scene_effects/scene_effects.h"
 #include "../modules/environment/environment.h"
@@ -42,7 +41,7 @@ static int depth_rbo_h;
  * Monotonic starting point for shader animation.
  */
 static struct timespec shader_start_time;
-static struct timespec wobble_last_time;
+static struct timespec close_snapshot_last_time;
 
 struct shady_close_snapshot {
 	struct wl_list link;
@@ -122,47 +121,21 @@ static float shader_time_seconds(void) {
 	);
 }
 
-static void update_window_animations(
-	struct shady_server *server
-) {
+static void update_close_snapshots(void) {
 	struct timespec now;
-
-	clock_gettime(
-		CLOCK_MONOTONIC,
-		&now
-	);
+	clock_gettime(CLOCK_MONOTONIC, &now);
 
 	float dt =
-		(float)(
-			now.tv_sec -
-			wobble_last_time.tv_sec
-		) +
-		(float)(
-			now.tv_nsec -
-			wobble_last_time.tv_nsec
-		) / 1000000000.0f;
-
-	wobble_last_time =
-		now;
+		(float)(now.tv_sec - close_snapshot_last_time.tv_sec) +
+		(float)(now.tv_nsec - close_snapshot_last_time.tv_nsec) /
+			1000000000.0f;
+	close_snapshot_last_time = now;
 
 	if (dt <= 0.0f) {
 		return;
 	}
-
 	if (dt > 0.033f) {
 		dt = 0.033f;
-	}
-
-	struct shady_toplevel *toplevel;
-
-	wl_list_for_each(
-		toplevel,
-		&server->toplevels,
-		link
-	) {
-		shady_window_motion_update_toplevel(server, toplevel, dt);
-
-		shady_close_animation_update_toplevel(toplevel, dt);
 	}
 	shady_close_animation_update_snapshots(&close_snapshots, dt);
 }
@@ -248,8 +221,7 @@ bool shady_render_init(
 		&shader_start_time
 	);
 
-	wobble_last_time =
-		shader_start_time;
+	close_snapshot_last_time = shader_start_time;
 
 	wl_list_init(
 		&close_snapshots
@@ -286,7 +258,7 @@ void shady_render_camera_matrices(
 	float proj[16]
 ) {
 	shady_camera_view(
-		&server->camera,
+		&server->experimental.camera,
 		view
 	);
 
@@ -548,39 +520,20 @@ void shady_render_output_frame(
 		shader_time_seconds();
 
 	/*
-	 * The renderer already owns a monotonic frame clock. Reuse the same
-	 * capped timestep as animation physics for first-person movement.
+	 * Advance the spatial desktop through one compositor-owned clock. This
+	 * prevents physics/FPS state from being stepped independently per output.
 	 */
-	static struct timespec fps_last_time;
-	static bool fps_clock_ready;
-	struct timespec fps_now;
-	clock_gettime(CLOCK_MONOTONIC, &fps_now);
-	float fps_dt = 0.f;
-	if (fps_clock_ready) {
-		fps_dt = (float)(fps_now.tv_sec - fps_last_time.tv_sec)
-			+ (float)(fps_now.tv_nsec - fps_last_time.tv_nsec) / 1000000000.0f;
-		if (fps_dt > 0.033f) fps_dt = 0.033f;
-	}
-	fps_last_time = fps_now;
-	fps_clock_ready = true;
-	shady_fps_update(server, fps_dt);
-	shady_physics_update(server, fps_dt, logical_w, logical_h);
+	bool simulation_advanced = shady_experimental_update(
+		server, logical_w, logical_h);
 
-	/* Camera physics changed the view, so rebuild matrices for this frame. */
-	if (server->camera.first_person && fps_dt > 0.f) {
+	/* Camera physics may have changed the view, so rebuild matrices. */
+	if (server->experimental.camera.first_person && simulation_advanced) {
 		shady_render_camera_matrices(server, buf_w, buf_h, view, proj);
 		shady_mat4_multiply(vp, proj, view);
 	}
 
-	update_window_animations(
-		server
-	);
-
-	/*
-	 * Apply held-window pose after the generic tilt spring. This makes the
-	 * camera-facing orientation authoritative for the current frame.
-	 */
-	shady_fps_update_held_window(server, logical_w, logical_h);
+	/* Snapshot texture lifetime remains a renderer concern. */
+	update_close_snapshots();
 
 	/*
 	 * Project every mapped window onto the horizontal floor before drawing
@@ -664,7 +617,7 @@ void shady_render_output_frame(
 		float mvp[16];
 
 		if (
-			toplevel->close.state ==
+			toplevel->experimental.close.state ==
 			SHADY_CLOSE_ARMED
 		) {
 			struct shady_close_snapshot *snapshot =
@@ -704,22 +657,22 @@ void shady_render_output_frame(
 						(float)toplevel->scene_tree->node.y;
 					snapshot->width = tw;
 					snapshot->height = th;
-					snapshot->tilt_x = toplevel->motion.tilt_x;
-					snapshot->tilt_y = toplevel->motion.tilt_y;
-					snapshot->z = toplevel->transform.z;
-					snapshot->wobble_x = toplevel->motion.wobble_x;
-					snapshot->wobble_y = toplevel->motion.wobble_y;
+					snapshot->tilt_x = toplevel->experimental.motion.tilt_x;
+					snapshot->tilt_y = toplevel->experimental.motion.tilt_y;
+					snapshot->z = toplevel->experimental.z;
+					snapshot->wobble_x = toplevel->experimental.motion.wobble_x;
+					snapshot->wobble_y = toplevel->experimental.motion.wobble_y;
 					snapshot->has_alpha = attribs.has_alpha;
 					snapshot->dirty = false;
 				}
 			}
 		}
 
-		if(server->camera.first_person&&!toplevel->fps_expanded){
+		if(server->experimental.camera.first_person&&!toplevel->experimental.fps_expanded){
 			float cx=(layout_x+tw*.5f-logical_w*.5f)/logical_h;
 			float cy=.5f-(layout_y+th*.5f)/logical_h;
-			shady_window_cube_model(model,cx,cy,toplevel->transform.z,SHADY_FPS_CUBE_SIZE,
-				toplevel->motion.tilt_x,toplevel->motion.tilt_y);
+			shady_window_cube_model(model,cx,cy,toplevel->experimental.z,SHADY_FPS_CUBE_SIZE,
+				toplevel->experimental.motion.tilt_x,toplevel->experimental.motion.tilt_y);
 		}else{
 			shady_window_model(
 			model,
@@ -729,9 +682,9 @@ void shady_render_output_frame(
 			th,
 			logical_w,
 			logical_h,
-			toplevel->transform.z,
-			toplevel->motion.tilt_x,
-			toplevel->motion.tilt_y
+			toplevel->experimental.z,
+			toplevel->experimental.motion.tilt_x,
+			toplevel->experimental.motion.tilt_y
 		);
 		}
 
@@ -742,7 +695,7 @@ void shady_render_output_frame(
 		);
 
 		shady_scene_effects_draw_sides(server, &pipeline, mvp, model,
-			toplevel->motion.wobble_x, toplevel->motion.wobble_y, toplevel->close.progress);
+			toplevel->experimental.motion.wobble_x, toplevel->experimental.motion.wobble_y, toplevel->experimental.close.progress);
 
 		shady_gl_pipeline_draw_window(
 			&pipeline,
@@ -752,9 +705,9 @@ void shady_render_output_frame(
 			mvp,
 			model,
 			time_seconds,
-			toplevel->motion.wobble_x,
-			toplevel->motion.wobble_y,
-			toplevel->close.progress
+			toplevel->experimental.motion.wobble_x,
+			toplevel->experimental.motion.wobble_y,
+			toplevel->experimental.close.progress
 		);
 	}
 
@@ -821,31 +774,31 @@ void shady_render_output_frame(
 	}
 
 
-	if (server->camera.first_person) {
+	if (server->experimental.camera.first_person) {
 		float cross_distance = 0.f;
 		bool cross_target = shady_toplevel_at_camera_center(server, &cross_distance) != NULL;
 		shady_gl_pipeline_draw_crosshair(&pipeline, cross_target,
-			shady_fps_is_holding(server, NULL) ? false : server->fps.held_toplevel != NULL);
+			shady_fps_is_holding(server, NULL) ? false : server->experimental.fps.held_toplevel != NULL);
 	}
 
-	if (server->debug_ray) {
+	if (server->experimental.debug_ray) {
 		/* The default floor/platform occupy the first two slots. Authored OBJ
 		 * collision groups are orange so they are easy to distinguish. */
-		for (size_t i=0;i<server->world.collider_count;i++)
+		for (size_t i=0;i<server->experimental.world.collider_count;i++)
 			shady_gl_pipeline_draw_debug_box(&pipeline,vp,
-				&server->world.colliders[i],i>=1);
+				&server->experimental.world.colliders[i],i>=1);
 		/* Yellow edges are the actual authored collision_* faces. Orange boxes
 		 * are only their coarse broad-phase bounds. */
-		for(size_t i=0;i<server->world.triangle_count;i++)
+		for(size_t i=0;i<server->experimental.world.triangle_count;i++)
 			shady_gl_pipeline_draw_debug_triangle(&pipeline,vp,
-				&server->world.triangles[i]);
+				&server->experimental.world.triangles[i]);
 		struct shady_toplevel *debug_t;
 		wl_list_for_each(debug_t,&server->toplevels,link){
 			struct wlr_surface *ds=debug_t->xdg_toplevel->base->surface;
 			if(!ds->mapped)continue;
 			float dw=(float)ds->current.width,dh=(float)ds->current.height;
 			if(dw<=0.f||dh<=0.f)continue;
-			if(server->camera.first_person&&!debug_t->fps_expanded){
+			if(server->experimental.camera.first_person&&!debug_t->experimental.fps_expanded){
 				/* Debug the authoritative physics cube, not only the textured
 				 * window face. This shows all 12 edges / six collision faces. */
 				float dx=(float)debug_t->scene_tree->node.x+ox;
@@ -855,23 +808,23 @@ void shady_render_output_frame(
 				float h=SHADY_FPS_CUBE_SIZE*.5f;
 				struct shady_box_collider cube={
 					dcx-h,dcx+h,dcy-h,dcy+h,
-					debug_t->transform.z-h,debug_t->transform.z+h
+					debug_t->experimental.z-h,debug_t->experimental.z+h
 				};
 				shady_gl_pipeline_draw_debug_box(&pipeline,vp,&cube,false);
 			}else{
 				float dm[16];
 				shady_window_model(dm,(float)debug_t->scene_tree->node.x+ox,
 					(float)debug_t->scene_tree->node.y+oy,dw,dh,logical_w,logical_h,
-					debug_t->transform.z,debug_t->motion.tilt_x,debug_t->motion.tilt_y);
+					debug_t->experimental.z,debug_t->experimental.motion.tilt_x,debug_t->experimental.motion.tilt_y);
 				shady_gl_pipeline_draw_debug_window_body(&pipeline,vp,dm);
 			}
 		}
 	}
 
-	if (server->debug_ray && server->camera.first_person) {
+	if (server->experimental.debug_ray && server->experimental.camera.first_person) {
 		struct shady_vec3 eye, forward;
-		shady_camera_eye(&server->camera, &eye);
-		shady_camera_basis(&server->camera, NULL, NULL, &forward);
+		shady_camera_eye(&server->experimental.camera, &eye);
+		shady_camera_basis(&server->experimental.camera, NULL, NULL, &forward);
 		float distance = 0.f;
 		bool hit = shady_toplevel_at_camera_center(server, &distance) != NULL;
 		if (!hit) distance = 4.0f;
@@ -955,7 +908,7 @@ void shady_render_toplevel_commit(
 	struct shady_toplevel *toplevel
 ) {
 	if (
-		toplevel->close.state !=
+		toplevel->experimental.close.state !=
 		SHADY_CLOSE_ARMED
 	) {
 		return;
@@ -989,7 +942,7 @@ void shady_render_toplevel_unmap(
 	if (
 		!snapshot ||
 		!snapshot->texture ||
-		toplevel->close.state !=
+		toplevel->experimental.close.state !=
 			SHADY_CLOSE_ARMED
 	) {
 		return;

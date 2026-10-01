@@ -22,6 +22,7 @@ shady_sources = [
   'src/render/gl_pipeline.c',
   'src/render/math3d.c',
   'src/render/pick3d.c',
+  'src/experimental/runtime.c',
   'src/modules/environment/environment.c',
   'src/modules/lua/lua.c',
   'src/assets/mesh.c',

@@ -40,7 +40,7 @@ static int l_shady_bind(lua_State *L){
 	lua_pushvalue(L,2);b->ref=luaL_ref(L,LUA_REGISTRYINDEX);lua_bind_count++;return 0;
 }
 static int l_shady_camera(lua_State *L){
-	const char *key=luaL_checkstring(L,1);float v=(float)luaL_checknumber(L,2);struct shady_camera *c=&lua_server->camera;
+	const char *key=luaL_checkstring(L,1);float v=(float)luaL_checknumber(L,2);struct shady_camera *c=&lua_server->experimental.camera;
 	if(!strcmp(key,"yaw"))c->yaw=v;else if(!strcmp(key,"pitch"))c->pitch=v;else if(!strcmp(key,"distance"))c->distance=v;
 	else if(!strcmp(key,"target_x"))c->target_x=v;else if(!strcmp(key,"target_y"))c->target_y=v;else if(!strcmp(key,"target_z"))c->target_z=v;
 	else return luaL_error(L, "unknown camera property: %s", key);
@@ -52,8 +52,8 @@ static int l_shady_windows(lua_State *L){
 	lua_newtable(L);int n=1;struct shady_toplevel*t;
 	wl_list_for_each(t,&lua_server->toplevels,link){push_window(L,t);lua_rawseti(L,-2,n++);}return 1;
 }
-static int l_shady_expand_all(lua_State *L){(void)L;struct shady_toplevel*t;wl_list_for_each(t,&lua_server->toplevels,link){t->fps_expanded=true;shady_physics_stop(t);}lua_server->fps.expanded_toplevel=NULL;lua_server->fps.input_capture=false;shady_render_schedule_all_outputs(lua_server);return 0;}
-static int l_shady_fold_all(lua_State *L){(void)L;struct shady_toplevel*t;wl_list_for_each(t,&lua_server->toplevels,link)t->fps_expanded=false;lua_server->fps.expanded_toplevel=NULL;lua_server->fps.input_capture=lua_server->camera.first_person;shady_render_schedule_all_outputs(lua_server);return 0;}
+static int l_shady_expand_all(lua_State *L){(void)L;struct shady_toplevel*t;wl_list_for_each(t,&lua_server->toplevels,link){t->experimental.fps_expanded=true;shady_physics_stop(t);}lua_server->experimental.fps.expanded_toplevel=NULL;lua_server->experimental.fps.input_capture=false;shady_render_schedule_all_outputs(lua_server);return 0;}
+static int l_shady_fold_all(lua_State *L){(void)L;struct shady_toplevel*t;wl_list_for_each(t,&lua_server->toplevels,link)t->experimental.fps_expanded=false;lua_server->experimental.fps.expanded_toplevel=NULL;lua_server->experimental.fps.input_capture=lua_server->experimental.camera.first_person;shady_render_schedule_all_outputs(lua_server);return 0;}
 static int l_shady_respawn_all(lua_State *L){(void)L;shady_physics_respawn_all(lua_server);return 0;}
 static int l_shady_toggle_fps(lua_State *L){(void)L;shady_fps_toggle(lua_server);return 0;}
 
@@ -110,7 +110,7 @@ bool shady_lua_init(struct shady_server *server){
 static void push_window(lua_State *L,struct shady_toplevel *t){
 	lua_newtable(L);const char *title=t&&t->xdg_toplevel->title?t->xdg_toplevel->title:"";const char *app=t&&t->xdg_toplevel->app_id?t->xdg_toplevel->app_id:"";
 	lua_pushstring(L,title);lua_setfield(L,-2,"title");lua_pushstring(L,app);lua_setfield(L,-2,"app_id");
-	if(t){lua_pushnumber(L,t->transform.z);lua_setfield(L,-2,"z");}
+	if(t){lua_pushnumber(L,t->experimental.z);lua_setfield(L,-2,"z");}
 }
 void shady_lua_emit(struct shady_server *server,const char *event,struct shady_toplevel *t){
 	lua_State *L=server->lua.L;if(!L)return;lua_getglobal(L,"shady");lua_getfield(L,-1,"on_" );lua_pop(L,2);

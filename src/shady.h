@@ -8,12 +8,7 @@
 #include <wlr/util/box.h>
 #include <xkbcommon/xkbcommon.h>
 
-#include "render/math3d.h"
-#include "world/world.h"
-#include "modules/fps/state.h"
-#include "modules/physics/state.h"
-#include "modules/window_motion/state.h"
-#include "modules/close_animation/state.h"
+#include "experimental/state.h"
 #include "modules/lua/state.h"
 
 struct wlr_allocator;
@@ -113,18 +108,17 @@ struct shady_server {
 	struct wl_list outputs;
 	struct wl_listener new_output;
 
-	struct shady_camera camera;
 	struct shady_config config;
-	struct shady_world world;
+	struct shady_lua_state lua;
+
+	/* Experimental spatial-desktop state is intentionally kept behind one
+	 * boundary so the Wayland compositor core does not depend on individual
+	 * effects/physics/FPS implementation details. */
+	struct shady_experimental_state experimental;
+
 	double cam_grab_x, cam_grab_y;
 	float cam_grab_yaw, cam_grab_pitch;
 	float cam_grab_target_x, cam_grab_target_y, cam_grab_target_z;
-
-	/* Runtime state owned by optional modules. */
-	struct shady_fps_state fps;
-	struct shady_physics_state physics;
-	struct shady_lua_state lua;
-	bool debug_ray;
 };
 
 struct shady_output {
@@ -149,14 +143,9 @@ struct shady_toplevel {
 	struct wl_listener request_resize;
 	struct wl_listener request_maximize;
 	struct wl_listener request_fullscreen;
-	/* Core 3D transform. Z is spatial state, not physics state. */
-	struct { float z; } transform;
-	/* FPS presentation: folded windows use a compact cube body; F3 expands
-	 * exactly one focused window for normal client interaction. */
-	bool fps_expanded;
-	struct shady_window_motion_state motion;
-	struct shady_window_physics_state physics;
-	struct shady_close_animation_state close;
+	/* Optional spatial-desktop state. The core toplevel lifecycle stays
+	 * independent from the concrete experimental subsystems. */
+	struct shady_toplevel_experimental_state experimental;
 };
 
 struct shady_popup {
