@@ -109,6 +109,16 @@ static bool host_window_close(shady_host host, shady_window window) {
 	return true;
 }
 
+static bool host_window_size(shady_window window, int *width, int *height) {
+	struct shady_toplevel *toplevel = WINDOW(window);
+	if (!toplevel || !toplevel->xdg_toplevel || !toplevel->xdg_toplevel->base ||
+			!toplevel->xdg_toplevel->base->surface) return false;
+	struct wlr_surface *surface = toplevel->xdg_toplevel->base->surface;
+	if (width) *width = surface->current.width;
+	if (height) *height = surface->current.height;
+	return surface->current.width > 0 && surface->current.height > 0;
+}
+
 static bool host_window_position(shady_window window, double *x, double *y, float *z) {
 	struct shady_toplevel *toplevel = WINDOW(window);
 	if (!toplevel || !toplevel->scene_tree) return false;
@@ -263,6 +273,7 @@ static const struct shady_plugin_api_v1 plugin_api = {
 	.window_mapped = host_window_mapped,
 	.window_focus = host_window_focus,
 	.window_close = host_window_close,
+	.window_size = host_window_size,
 	.window_position = host_window_position,
 	.window_set_position = host_window_set_position,
 	.output_count = host_output_count,

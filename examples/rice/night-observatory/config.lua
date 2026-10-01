@@ -23,10 +23,18 @@ shady.set("fps_mode", true)
 
 -- Visual base. Keep the default rice clean and readable: a dark solid sky
 -- with the perspective grid. The old development sky/room are still opt-in.
-shady.set("background_color", "#070B14")
+shady.set("background_top", "#080B14")
+shady.set("background_horizon", "#101827")
+shady.set("background_bottom", "#05070C")
 shady.set("window_tint", "#FFFFFF")
 shady.set("window_effect_strength", 0.04)
 shady.set("window_brightness", 1.18)
+shady.set("floor_base_color", "#070B12")
+shady.set("floor_grid_color", "#16405F")
+shady.set("floor_grid_strength", 0.11)
+shady.set("floor_major_strength", 0.17)
+shady.set("floor_fade_start", 0.9)
+shady.set("floor_fade_end", 3.2)
 
 shady.set("sky", false)
 shady.set("environment_obj", false)

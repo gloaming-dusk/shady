@@ -23,6 +23,15 @@ void shady_config_defaults(struct shady_config *c) {
 		.sky = false,
 		.sky_path = "",
 		.background_color = { 0.055f, 0.060f, 0.085f },
+		.background_top = { 0.055f, 0.060f, 0.085f },
+		.background_horizon = { 0.075f, 0.090f, 0.125f },
+		.background_bottom = { 0.025f, 0.030f, 0.045f },
+		.floor_base_color = { 0.018f, 0.024f, 0.038f },
+		.floor_grid_color = { 0.08f, 0.24f, 0.38f },
+		.floor_grid_strength = 0.22f,
+		.floor_major_strength = 0.28f,
+		.floor_fade_start = 1.4f,
+		.floor_fade_end = 5.2f,
 		.window_tint = { 0.85f, 0.90f, 1.10f },
 		.window_effect_strength = 1.0f,
 		.window_brightness = 1.0f,
@@ -117,7 +126,22 @@ static bool parse_keybind(const char *s, struct shady_keybind *out) {
 
 bool shady_config_set(struct shady_config *c,const char *key,const char *value){
 	if(!strcmp(key,"sky_path")){snprintf(c->sky_path,sizeof(c->sky_path),"%s",value);return true;}
-	if(!strcmp(key,"background_color"))return parse_color(value,c->background_color);
+	if(!strcmp(key,"background_color")){
+		if(!parse_color(value,c->background_color))return false;
+		memcpy(c->background_top,c->background_color,sizeof(c->background_top));
+		memcpy(c->background_horizon,c->background_color,sizeof(c->background_horizon));
+		memcpy(c->background_bottom,c->background_color,sizeof(c->background_bottom));
+		return true;
+	}
+	if(!strcmp(key,"background_top"))return parse_color(value,c->background_top);
+	if(!strcmp(key,"background_horizon"))return parse_color(value,c->background_horizon);
+	if(!strcmp(key,"background_bottom"))return parse_color(value,c->background_bottom);
+	if(!strcmp(key,"floor_base_color"))return parse_color(value,c->floor_base_color);
+	if(!strcmp(key,"floor_grid_color"))return parse_color(value,c->floor_grid_color);
+	if(!strcmp(key,"floor_grid_strength"))return parse_float_range(value,0.f,2.f,&c->floor_grid_strength);
+	if(!strcmp(key,"floor_major_strength"))return parse_float_range(value,0.f,2.f,&c->floor_major_strength);
+	if(!strcmp(key,"floor_fade_start"))return parse_float_range(value,0.f,20.f,&c->floor_fade_start);
+	if(!strcmp(key,"floor_fade_end"))return parse_float_range(value,0.01f,40.f,&c->floor_fade_end);
 	if(!strcmp(key,"window_tint"))return parse_color(value,c->window_tint);
 	if(!strcmp(key,"window_effect_strength"))return parse_float_range(value,0.f,1.f,&c->window_effect_strength);
 	if(!strcmp(key,"window_brightness"))return parse_float_range(value,0.25f,3.f,&c->window_brightness);

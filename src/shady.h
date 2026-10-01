@@ -68,6 +68,15 @@ struct shady_config {
 	bool sky;
 	char sky_path[512];
 	float background_color[3];
+	float background_top[3];
+	float background_horizon[3];
+	float background_bottom[3];
+	float floor_base_color[3];
+	float floor_grid_color[3];
+	float floor_grid_strength;
+	float floor_major_strength;
+	float floor_fade_start;
+	float floor_fade_end;
 	float window_tint[3];
 	float window_effect_strength;
 	float window_brightness;

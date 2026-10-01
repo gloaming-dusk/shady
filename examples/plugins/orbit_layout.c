@@ -14,14 +14,14 @@ struct slot {
 
 /* Deliberately asymmetric: it feels arranged rather than tiled. */
 static const struct slot slots[] = {
-	{ 0.00f,  0.00f, -0.52f },
-	{-0.24f, -0.08f, -0.66f },
-	{ 0.24f,  0.08f, -0.70f },
-	{-0.34f,  0.24f, -0.76f },
-	{ 0.34f, -0.22f, -0.80f },
-	{-0.10f,  0.32f, -0.84f },
-	{ 0.12f, -0.32f, -0.88f },
-	{ 0.40f,  0.26f, -0.92f },
+	{ 0.00f,  0.01f, -0.18f },
+	{-0.25f, -0.03f, -0.54f },
+	{ 0.25f,  0.04f, -0.58f },
+	{-0.34f,  0.20f, -0.66f },
+	{ 0.34f, -0.18f, -0.70f },
+	{-0.10f,  0.28f, -0.74f },
+	{ 0.12f, -0.27f, -0.78f },
+	{ 0.40f,  0.22f, -0.82f },
 };
 
 static void place_windows(shady_window focused) {
@@ -62,11 +62,13 @@ static void place_windows(shady_window focused) {
 			}
 		}
 
-		double x = width * (0.5 + slot.x) - 300.0;
-		double y = height * (0.5 + slot.y) - 190.0;
+		int window_width = 600, window_height = 380;
+		api->window_size(window, &window_width, &window_height);
+		double x = width * (0.5 + slot.x) - window_width * 0.5;
+		double y = height * (0.5 + slot.y) - window_height * 0.5;
 		float z = slot.z;
 		if (window == focused)
-			z += 0.16f;
+			z += visible == 1 ? 0.12f : 0.18f;
 
 		api->window_set_position(host, window, x, y, z);
 		cursor++;

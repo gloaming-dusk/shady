@@ -110,6 +110,28 @@ static const char *SHADOW_FRAG =
 	"    gl_FragColor = vec4(0.0, 0.0, 0.0, alpha);\n"
 	"}\n";
 
+static const char *BACKGROUND_VERT =
+	"attribute vec2 a_pos;\n"
+	"varying float v_y;\n"
+	"void main() {\n"
+	"    v_y = a_pos.y * 0.5 + 0.5;\n"
+	"    gl_Position = vec4(a_pos, 0.999, 1.0);\n"
+	"}\n";
+
+static const char *BACKGROUND_FRAG =
+	"precision mediump float;\n"
+	"uniform vec3 u_top;\n"
+	"uniform vec3 u_horizon;\n"
+	"uniform vec3 u_bottom;\n"
+	"varying float v_y;\n"
+	"void main() {\n"
+	"    float horizon = smoothstep(0.18, 0.58, v_y);\n"
+	"    vec3 lower = mix(u_bottom, u_horizon, horizon);\n"
+	"    float upper_mix = smoothstep(0.48, 1.0, v_y);\n"
+	"    vec3 color = mix(lower, u_top, upper_mix);\n"
+	"    gl_FragColor = vec4(color, 1.0);\n"
+	"}\n";
+
 static const char *FLOOR_VERT =
 	"attribute vec3 a_pos;\n"
 	"uniform mat4 u_vp;\n"
@@ -124,16 +146,20 @@ static const char *FLOOR_FRAG =
 	"#extension GL_OES_standard_derivatives : enable\n"
 	"precision mediump float;\n"
 	"varying vec2 v_world;\n"
+	"uniform vec3 u_base_color;\n"
+	"uniform vec3 u_grid_color;\n"
+	"uniform float u_grid_strength;\n"
+	"uniform float u_major_strength;\n"
+	"uniform float u_fade_start;\n"
+	"uniform float u_fade_end;\n"
 	"void main() {\n"
 	"    vec2 g = abs(fract(v_world * 10.0 - 0.5) - 0.5) / max(fwidth(v_world * 10.0), vec2(0.0001));\n"
 	"    float line = 1.0 - min(min(g.x, g.y), 1.0);\n"
 	"    vec2 major_g = abs(fract(v_world * 2.0 - 0.5) - 0.5) / max(fwidth(v_world * 2.0), vec2(0.0001));\n"
 	"    float major = 1.0 - min(min(major_g.x, major_g.y), 1.0);\n"
-	"    float fade = 1.0 - smoothstep(1.5, 5.5, length(v_world));\n"
-	"    vec3 base = vec3(0.035, 0.045, 0.070);\n"
-	"    vec3 grid = vec3(0.08, 0.22, 0.34) * line * 0.42;\n"
-	"    grid += vec3(0.10, 0.32, 0.50) * major * 0.34;\n"
-	"    gl_FragColor = vec4(base + grid * fade, 1.0);\n"
+	"    float fade = 1.0 - smoothstep(u_fade_start, max(u_fade_end, u_fade_start + 0.001), length(v_world));\n"
+	"    vec3 grid = u_grid_color * (line * u_grid_strength + major * u_major_strength);\n"
+	"    gl_FragColor = vec4(u_base_color + grid * fade, 1.0);\n"
 	"}\n";
 
 static const char *DEBUG_VERT =
@@ -802,12 +828,27 @@ bool shady_gl_pipeline_init(
 	pipeline->side_u_base_color = glGetUniformLocation(pipeline->side_prog, "u_base_color");
 	pipeline->side_u_wobble = glGetUniformLocation(pipeline->side_prog, "u_wobble");
 
+	pipeline->background_prog = link_program(BACKGROUND_VERT, BACKGROUND_FRAG, "background gradient");
+	if (!pipeline->background_prog) {
+		shady_gl_pipeline_fini(pipeline);
+		return false;
+	}
+	pipeline->background_u_top = glGetUniformLocation(pipeline->background_prog, "u_top");
+	pipeline->background_u_horizon = glGetUniformLocation(pipeline->background_prog, "u_horizon");
+	pipeline->background_u_bottom = glGetUniformLocation(pipeline->background_prog, "u_bottom");
+
 	pipeline->floor_prog = link_program(FLOOR_VERT, FLOOR_FRAG, "3D floor");
 	if (!pipeline->floor_prog || !create_floor_mesh(pipeline)) {
 		shady_gl_pipeline_fini(pipeline);
 		return false;
 	}
 	pipeline->floor_u_vp = glGetUniformLocation(pipeline->floor_prog, "u_vp");
+	pipeline->floor_u_base_color = glGetUniformLocation(pipeline->floor_prog, "u_base_color");
+	pipeline->floor_u_grid_color = glGetUniformLocation(pipeline->floor_prog, "u_grid_color");
+	pipeline->floor_u_grid_strength = glGetUniformLocation(pipeline->floor_prog, "u_grid_strength");
+	pipeline->floor_u_major_strength = glGetUniformLocation(pipeline->floor_prog, "u_major_strength");
+	pipeline->floor_u_fade_start = glGetUniformLocation(pipeline->floor_prog, "u_fade_start");
+	pipeline->floor_u_fade_end = glGetUniformLocation(pipeline->floor_prog, "u_fade_end");
 
 	pipeline->shadow_prog = link_program(SHADOW_VERT, SHADOW_FRAG, "window shadow");
 	if (!pipeline->shadow_prog) {
@@ -855,6 +896,10 @@ bool shady_gl_pipeline_init(
 void shady_gl_pipeline_fini(
 	struct shady_gl_pipeline *pipeline
 ) {
+	if (pipeline->background_prog) {
+		glDeleteProgram(pipeline->background_prog);
+		pipeline->background_prog = 0;
+	}
 	if (pipeline->debug_prog) {
 		glDeleteProgram(pipeline->debug_prog);
 		pipeline->debug_prog = 0;
@@ -1144,14 +1189,54 @@ void shady_gl_pipeline_draw_sides(
 	glUseProgram(0);
 }
 
+void shady_gl_pipeline_draw_background(
+		struct shady_gl_pipeline *pipeline,
+		const float top[3], const float horizon[3], const float bottom[3]) {
+	static const GLfloat verts[] = {
+		-1.0f, -1.0f,
+		 1.0f, -1.0f,
+		-1.0f,  1.0f,
+		-1.0f,  1.0f,
+		 1.0f, -1.0f,
+		 1.0f,  1.0f,
+	};
+	glDisable(GL_DEPTH_TEST);
+	glDepthMask(GL_FALSE);
+	glDisable(GL_BLEND);
+	glUseProgram(pipeline->background_prog);
+	glUniform3fv(pipeline->background_u_top, 1, top);
+	glUniform3fv(pipeline->background_u_horizon, 1, horizon);
+	glUniform3fv(pipeline->background_u_bottom, 1, bottom);
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
+	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(GLfloat), verts);
+	glEnableVertexAttribArray(0);
+	glDrawArrays(GL_TRIANGLES, 0, 6);
+	glDisableVertexAttribArray(0);
+	glUseProgram(0);
+	glDepthMask(GL_TRUE);
+	glEnable(GL_DEPTH_TEST);
+}
+
 void shady_gl_pipeline_draw_floor(
 	struct shady_gl_pipeline *pipeline,
 	const float vp[16],
-	const struct shady_floor *floor
+	const struct shady_floor *floor,
+	const float base_color[3],
+	const float grid_color[3],
+	float grid_strength,
+	float major_strength,
+	float fade_start,
+	float fade_end
 ) {
 	(void)floor;
 	glUseProgram(pipeline->floor_prog);
 	glUniformMatrix4fv(pipeline->floor_u_vp, 1, GL_FALSE, vp);
+	glUniform3fv(pipeline->floor_u_base_color, 1, base_color);
+	glUniform3fv(pipeline->floor_u_grid_color, 1, grid_color);
+	glUniform1f(pipeline->floor_u_grid_strength, grid_strength);
+	glUniform1f(pipeline->floor_u_major_strength, major_strength);
+	glUniform1f(pipeline->floor_u_fade_start, fade_start);
+	glUniform1f(pipeline->floor_u_fade_end, fade_end);
 	glDisable(GL_BLEND);
 	glDepthMask(GL_TRUE);
 	glBindBuffer(GL_ARRAY_BUFFER, pipeline->floor_vbo);

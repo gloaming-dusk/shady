@@ -51,17 +51,24 @@ Running `run.sh` with no extra Shady arguments also starts one terminal automati
 The rice keeps the application texture readable and puts the styling around it:
 
 ```lua
-shady.set("background_color", "#070B14")
+shady.set("background_top", "#080B14")
+shady.set("background_horizon", "#101827")
+shady.set("background_bottom", "#05070C")
 shady.set("window_tint", "#FFFFFF")
 shady.set("window_effect_strength", 0.04)
 shady.set("window_brightness", 1.18)
+shady.set("floor_base_color", "#070B12")
+shady.set("floor_grid_color", "#16405F")
+shady.set("floor_grid_strength", 0.11)
+shady.set("floor_major_strength", 0.17)
+shady.set("floor_fade_start", 0.9)
+shady.set("floor_fade_end", 3.2)
 ```
 
 `window_effect_strength` ranges from `0.0` (clean application texture) to `1.0`
 (full chromatic edge/scanline/lighting effect). `window_brightness` accepts `0.25`
 to `3.0`. Both `#RRGGBB` and `r,g,b` (0..1) forms are accepted for colors.
-The old `sky.ppm` and `test-room.obj` setup is still present in `config.lua` as an
-opt-in example instead of being forced on every launch.
+The background uses a three-stop fullscreen gradient, while the floor grid has independent base/grid colors, minor/major strengths, and radial fade distances. The old `sky.ppm` and `test-room.obj` setup is still present in `config.lua` as an opt-in example instead of being forced on every launch.
 
 ## Shutdown log note
 

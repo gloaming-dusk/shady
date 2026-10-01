@@ -626,6 +626,11 @@ void shady_render_output_frame(
 	glDisable(GL_CULL_FACE);
 	glDisable(GL_SCISSOR_TEST);
 
+	shady_gl_pipeline_draw_background(&pipeline,
+		server->config.background_top,
+		server->config.background_horizon,
+		server->config.background_bottom);
+
 	float view[16];
 	float proj[16];
 	float vp[16];

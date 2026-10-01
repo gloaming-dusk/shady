@@ -11,7 +11,16 @@
 
 void shady_scene_effects_draw_floor(struct shady_server *server,
 		struct shady_gl_pipeline *pipeline,const float vp[16]) {
-	if (server->config.floor) { struct shady_floor floor=shady_world_floor(); shady_gl_pipeline_draw_floor(pipeline,vp,&floor); }
+	if (server->config.floor) {
+		struct shady_floor floor=shady_world_floor();
+		shady_gl_pipeline_draw_floor(pipeline,vp,&floor,
+			server->config.floor_base_color,
+			server->config.floor_grid_color,
+			server->config.floor_grid_strength,
+			server->config.floor_major_strength,
+			server->config.floor_fade_start,
+			server->config.floor_fade_end);
+	}
 }
 
 void shady_scene_effects_draw_shadows(struct shady_server *server,

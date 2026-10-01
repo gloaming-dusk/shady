@@ -58,9 +58,21 @@ struct shady_gl_pipeline {
 	GLuint side_vbo;
 	GLsizei side_vertex_count;
 
+	/* Fullscreen atmospheric background. */
+	GLuint background_prog;
+	GLint background_u_top;
+	GLint background_u_horizon;
+	GLint background_u_bottom;
+
 	/* World-space reference plane and perspective grid. */
 	GLuint floor_prog;
 	GLint floor_u_vp;
+	GLint floor_u_base_color;
+	GLint floor_u_grid_color;
+	GLint floor_u_grid_strength;
+	GLint floor_u_major_strength;
+	GLint floor_u_fade_start;
+	GLint floor_u_fade_end;
 	GLuint floor_vbo;
 	GLsizei floor_vertex_count;
 
@@ -112,10 +124,23 @@ void shady_gl_pipeline_draw_sides(
 	float wobble_y
 );
 
+void shady_gl_pipeline_draw_background(
+	struct shady_gl_pipeline *pipeline,
+	const float top[3],
+	const float horizon[3],
+	const float bottom[3]
+);
+
 void shady_gl_pipeline_draw_floor(
 	struct shady_gl_pipeline *pipeline,
 	const float vp[16],
-	const struct shady_floor *floor
+	const struct shady_floor *floor,
+	const float base_color[3],
+	const float grid_color[3],
+	float grid_strength,
+	float major_strength,
+	float fade_start,
+	float fade_end
 );
 
 void shady_gl_pipeline_draw_shadow(

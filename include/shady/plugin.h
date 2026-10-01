@@ -54,6 +54,7 @@ struct shady_plugin_api_v1 {
 	bool (*window_mapped)(shady_window window);
 	bool (*window_focus)(shady_host host, shady_window window);
 	bool (*window_close)(shady_host host, shady_window window);
+	bool (*window_size)(shady_window window, int *width, int *height);
 	bool (*window_position)(shady_window window, double *x, double *y, float *z);
 	bool (*window_set_position)(shady_host host, shady_window window,
 		double x, double y, float z);
