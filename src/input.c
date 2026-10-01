@@ -158,6 +158,43 @@ static void process_cursor_camera_pan(struct shady_server *server) {
 	shady_render_schedule_all_outputs(server);
 }
 
+static struct shady_toplevel *desktop_toplevel_at(struct shady_server *server,
+		double lx, double ly, struct wlr_surface **surface, double *sx, double *sy) {
+	*surface = NULL;
+	*sx = *sy = 0.0;
+	struct wlr_scene_node *node = wlr_scene_node_at(&server->scene->tree.node,
+		lx, ly, sx, sy);
+	if (!node || node->type != WLR_SCENE_NODE_BUFFER) {
+		return NULL;
+	}
+	struct wlr_scene_buffer *buffer = wlr_scene_buffer_from_node(node);
+	struct wlr_scene_surface *scene_surface = wlr_scene_surface_try_from_buffer(buffer);
+	if (!scene_surface) {
+		return NULL;
+	}
+	*surface = scene_surface->surface;
+	struct wlr_surface *root = wlr_surface_get_root_surface(*surface);
+	struct wlr_xdg_toplevel *xdg = wlr_xdg_toplevel_try_from_wlr_surface(root);
+	if (!xdg) {
+		return NULL;
+	}
+	struct shady_toplevel *toplevel;
+	wl_list_for_each(toplevel, &server->toplevels, link) {
+		if (toplevel->xdg_toplevel == xdg) {
+			return toplevel;
+		}
+	}
+	return NULL;
+}
+
+static struct shady_toplevel *toplevel_at_cursor(struct shady_server *server,
+		double lx, double ly, struct wlr_surface **surface, double *sx, double *sy) {
+	if (!server->config.spatial_mode) {
+		return desktop_toplevel_at(server, lx, ly, surface, sx, sy);
+	}
+	return shady_toplevel_at_3d(server, lx, ly, surface, sx, sy);
+}
+
 static void process_cursor_motion(struct shady_server *server, uint32_t time) {
 	if (server->cursor_mode == SHADY_CURSOR_MOVE) {
 		process_cursor_move(server);
@@ -176,7 +213,7 @@ static void process_cursor_motion(struct shady_server *server, uint32_t time) {
 	double sx, sy;
 	struct wlr_seat *seat = server->seat;
 	struct wlr_surface *surface = NULL;
-	struct shady_toplevel *toplevel = shady_toplevel_at_3d(server,
+	struct shady_toplevel *toplevel = toplevel_at_cursor(server,
 			server->cursor->x, server->cursor->y, &surface, &sx, &sy);
 	if (!toplevel) {
 		wlr_cursor_set_xcursor(server->cursor, server->cursor_mgr, "default");
@@ -244,18 +281,18 @@ static bool handle_keybinding(struct shady_server *server,
 		xkb_keysym_t sym, uint32_t modifiers) {
 	struct shady_config *c = &server->config;
 	if (shady_lua_handle_key(server, sym, modifiers)) return true;
-	if (bind_matches(&c->bind_debug_ray, sym, modifiers)) {
+	if (server->config.spatial_mode && bind_matches(&c->bind_debug_ray, sym, modifiers)) {
 		server->experimental.debug_ray = !server->experimental.debug_ray;
 		shady_render_schedule_all_outputs(server);
 		return true;
 	}
-	if (bind_matches(&c->bind_gravity_toggle, sym, modifiers)) {
+	if (server->config.spatial_mode && bind_matches(&c->bind_gravity_toggle, sym, modifiers)) {
 		shady_physics_toggle_gravity(server);
 		return true;
 	}
-	if (bind_matches(&c->bind_fps_capture, sym, modifiers))
+	if (server->config.spatial_mode && bind_matches(&c->bind_fps_capture, sym, modifiers))
 		return shady_fps_toggle_capture(server);
-	if (bind_matches(&c->bind_fps_toggle, sym, modifiers))
+	if (server->config.spatial_mode && bind_matches(&c->bind_fps_toggle, sym, modifiers))
 		return shady_fps_toggle(server);
 	if (bind_matches(&c->bind_quit,sym,modifiers)) { wl_display_terminate(server->wl_display); return true; }
 	if (bind_matches(&c->bind_cycle_windows,sym,modifiers)) {
@@ -263,6 +300,7 @@ static bool handle_keybinding(struct shady_server *server,
 		return true;
 	}
 	if (bind_matches(&c->bind_close_window,sym,modifiers)) { shady_close_animation_begin(server); return true; }
+	if (!server->config.spatial_mode) return false;
 	bool changed=false; struct shady_vec3 right,up,forward;
 	if (bind_matches(&c->bind_camera_left,sym,modifiers) || bind_matches(&c->bind_camera_right,sym,modifiers) ||
 		bind_matches(&c->bind_camera_up,sym,modifiers) || bind_matches(&c->bind_camera_down,sym,modifiers)) {
@@ -406,7 +444,7 @@ void server_cursor_motion(struct wl_listener *listener, void *data) {
 	struct shady_server *server =
 		wl_container_of(listener, server, cursor_motion);
 	struct wlr_pointer_motion_event *event = data;
-	if (shady_fps_handle_motion(server, event->delta_x, event->delta_y))
+	if (server->config.spatial_mode && shady_fps_handle_motion(server, event->delta_x, event->delta_y))
 		return;
 	wlr_cursor_move(server->cursor, &event->pointer->base,
 			event->delta_x, event->delta_y);
@@ -418,7 +456,7 @@ void server_cursor_motion_absolute(
 	struct shady_server *server =
 		wl_container_of(listener, server, cursor_motion_absolute);
 	struct wlr_pointer_motion_absolute_event *event = data;
-	if (server->experimental.camera.first_person && server->experimental.fps.input_capture) {
+	if (server->config.spatial_mode && server->experimental.camera.first_person && server->experimental.fps.input_capture) {
 		shady_fps_handle_motion(server, 0.0, 0.0);
 		return;
 	}
@@ -441,12 +479,12 @@ void server_cursor_button(struct wl_listener *listener, void *data) {
 	struct wlr_pointer_button_event *event = data;
 	uint32_t mods = seat_modifiers(server);
 
-	if (shady_fps_handle_button(server, event->button, event->state))
+	if (server->config.spatial_mode && shady_fps_handle_button(server, event->button, event->state))
 		return;
 
 	/* Right-drag orbits. Alt+middle-drag pans (plain middle goes to clients). */
-	if (event->button == BTN_RIGHT
-			|| (event->button == BTN_MIDDLE && (mods & WLR_MODIFIER_ALT))) {
+	if (server->config.spatial_mode && (event->button == BTN_RIGHT
+			|| (event->button == BTN_MIDDLE && (mods & WLR_MODIFIER_ALT)))) {
 		if (event->state == WL_POINTER_BUTTON_STATE_PRESSED) {
 			server->cursor_mode = (event->button == BTN_RIGHT)
 				? SHADY_CURSOR_CAMERA_ORBIT : SHADY_CURSOR_CAMERA_PAN;
@@ -482,7 +520,7 @@ void server_cursor_button(struct wl_listener *listener, void *data) {
 	} else {
 		double sx, sy;
 		struct wlr_surface *surface = NULL;
-		struct shady_toplevel *toplevel = shady_toplevel_at_3d(server,
+		struct shady_toplevel *toplevel = toplevel_at_cursor(server,
 				server->cursor->x, server->cursor->y, &surface, &sx, &sy);
 		focus_toplevel(toplevel);
 	}
@@ -493,7 +531,7 @@ void server_cursor_axis(struct wl_listener *listener, void *data) {
 		wl_container_of(listener, server, cursor_axis);
 	struct wlr_pointer_axis_event *event = data;
 
-	if (shady_fps_handle_axis(server, event))
+	if (server->config.spatial_mode && shady_fps_handle_axis(server, event))
 		return;
 
 	uint32_t mods = seat_modifiers(server);
@@ -503,7 +541,7 @@ void server_cursor_axis(struct wl_listener *listener, void *data) {
 	 * Scroll up pulls it toward the camera; scroll down pushes it away.
 	 * Alt+scroll remains camera zoom.
 	 */
-	if ((mods & WLR_MODIFIER_ALT)
+	if (server->config.spatial_mode && (mods & WLR_MODIFIER_ALT)
 			&& (mods & WLR_MODIFIER_SHIFT)
 			&& event->orientation == WL_POINTER_AXIS_VERTICAL_SCROLL) {
 		struct shady_toplevel *toplevel = focused_toplevel(server);
@@ -518,7 +556,7 @@ void server_cursor_axis(struct wl_listener *listener, void *data) {
 	}
 
 	/* Alt+scroll zooms the camera; plain scroll goes to the client. */
-	if ((mods & WLR_MODIFIER_ALT)
+	if (server->config.spatial_mode && (mods & WLR_MODIFIER_ALT)
 			&& event->orientation == WL_POINTER_AXIS_VERTICAL_SCROLL) {
 		server->experimental.camera.distance += (float)(event->delta * 0.01);
 		clamp_camera(&server->experimental.camera);

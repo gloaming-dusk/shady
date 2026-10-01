@@ -378,6 +378,15 @@ void shady_render_output_frame(
 		return;
 	}
 
+	/* Safe/desktop mode uses wlroots' scene renderer directly. No custom 3D
+	 * transforms, simulation, effects, or perpetual animation frame loop. */
+	if (!server->config.spatial_mode) {
+		if (!wlr_scene_output_commit(scene_output, NULL)) {
+			wlr_log(WLR_ERROR, "failed to commit desktop scene output");
+		}
+		return;
+	}
+
 	struct wlr_output_state state;
 
 	wlr_output_state_init(

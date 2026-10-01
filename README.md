@@ -92,6 +92,16 @@ Run Shady nested inside an existing Wayland session:
 WLR_BACKENDS=wayland ./build/shady
 ```
 
+For a plain desktop/safe path that bypasses the spatial renderer, physics,
+FPS interaction and visual effects, use:
+
+```sh
+WLR_BACKENDS=wayland ./build/shady --safe
+```
+
+Safe mode renders the wlroots scene graph directly and uses normal scene-graph
+pointer hit testing. It is the compatibility baseline for work toward a daily-driver compositor.
+
 Or launch a client automatically:
 
 ```sh

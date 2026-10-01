@@ -10,6 +10,7 @@
 
 void shady_config_defaults(struct shady_config *c) {
 	*c = (struct shady_config){
+		.spatial_mode = true,
 		.physics_enabled = true,
 		.window_gravity = false,
 		.window_wobble = true,
@@ -96,7 +97,7 @@ bool shady_config_set(struct shady_config *c,const char *key,const char *value){
 #undef BIND_SET
 	bool v;if(!parse_bool(value,&v))return false;
 #define BOOL_SET(name,field) if(!strcmp(key,name)){c->field=v;return true;}
-	BOOL_SET("physics_enabled",physics_enabled) BOOL_SET("window_gravity",window_gravity)
+	BOOL_SET("spatial_mode",spatial_mode) BOOL_SET("physics_enabled",physics_enabled) BOOL_SET("window_gravity",window_gravity)
 	BOOL_SET("window_wobble",window_wobble) BOOL_SET("window_sides",window_sides)
 	BOOL_SET("shadows",shadows) BOOL_SET("floor",floor) BOOL_SET("close_animation",close_animation)
 	BOOL_SET("fps_mode",fps_mode) BOOL_SET("sky",sky) BOOL_SET("environment_obj",environment_obj)
@@ -147,6 +148,7 @@ bool shady_config_load(struct shady_config *c, const char *path) {
 		bool v;
 		if (!parse_bool(value,&v)) { wlr_log(WLR_ERROR,"config:%u: invalid boolean '%s'",lineno,value); continue; }
 #define KEY(name, field) if (!strcmp(key,name)) { c->field=v; continue; }
+		KEY("spatial_mode",spatial_mode)
 		KEY("physics_enabled",physics_enabled)
 		KEY("window_gravity",window_gravity)
 		KEY("window_wobble",window_wobble)

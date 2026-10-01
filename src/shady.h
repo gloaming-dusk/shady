@@ -40,6 +40,7 @@ struct shady_keybind {
 };
 
 struct shady_config {
+	bool spatial_mode;
 	bool physics_enabled;
 	bool window_gravity;
 	bool window_wobble;

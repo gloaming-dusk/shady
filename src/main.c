@@ -44,9 +44,14 @@ int main(int argc, char *argv[]) {
 	wlr_log_init(WLR_DEBUG, NULL);
 	char *startup_cmd = NULL;
 	char *config_path = NULL;
+	bool safe_mode = false;
 
 	int c;
-	while ((c = getopt(argc, argv, "s:c:h")) != -1) {
+	static const struct option long_options[] = {
+		{ "safe", no_argument, NULL, 'S' },
+		{ 0, 0, 0, 0 },
+	};
+	while ((c = getopt_long(argc, argv, "s:c:hS", long_options, NULL)) != -1) {
 		switch (c) {
 		case 's':
 			startup_cmd = optarg;
@@ -54,13 +59,16 @@ int main(int argc, char *argv[]) {
 		case 'c':
 			config_path = optarg;
 			break;
+		case 'S':
+			safe_mode = true;
+			break;
 		default:
-			printf("Usage: %s [-s startup command] [-c config path]\n", argv[0]);
+			printf("Usage: %s [-s startup command] [-c config path] [--safe]\n", argv[0]);
 			return 0;
 		}
 	}
 	if (optind < argc) {
-		printf("Usage: %s [-s startup command] [-c config path]\n", argv[0]);
+		printf("Usage: %s [-s startup command] [-c config path] [--safe]\n", argv[0]);
 		return 0;
 	}
 
@@ -72,6 +80,19 @@ int main(int argc, char *argv[]) {
 		config_path = config_buf;
 	}
 	shady_config_load(&server.config, config_path);
+	if (safe_mode) {
+		server.config.spatial_mode = false;
+		server.config.physics_enabled = false;
+		server.config.window_gravity = false;
+		server.config.window_wobble = false;
+		server.config.window_sides = false;
+		server.config.shadows = false;
+		server.config.floor = false;
+		server.config.close_animation = false;
+		server.config.fps_mode = false;
+		server.config.sky = false;
+		server.config.environment_obj = false;
+	}
 	/* Lua is allowed to override config before world/physics are built. */
 	shady_lua_init(&server);
 	server.experimental.world = shady_world_default();
