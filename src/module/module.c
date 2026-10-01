@@ -352,3 +352,13 @@ void shady_modules_toplevel_moved(struct shady_toplevel *toplevel,
 		}
 	}
 }
+
+void shady_modules_tick(struct shady_server *server, float dt,
+		float logical_w, float logical_h) {
+	for (size_t i = 0; i < server->modules.count; i++) {
+		const struct shady_module *module = server->modules.modules[i];
+		if (server->modules.active[i] && module->tick) {
+			module->tick(server, dt, logical_w, logical_h);
+		}
+	}
+}

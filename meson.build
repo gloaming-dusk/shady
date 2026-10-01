@@ -66,19 +66,34 @@ close_animation_enabled = spatial_enabled and get_option('close_animation').enab
 scene_effects_enabled = spatial_enabled and get_option('scene_effects').enabled()
 
 if physics_enabled
-  shady_sources += 'src/modules/physics/physics.c'
+  shady_sources += [
+    'src/modules/physics/physics.c',
+    'src/modules/physics/module.c',
+  ]
 endif
 if fps_enabled
-  shady_sources += 'src/modules/fps/fps.c'
+  shady_sources += [
+    'src/modules/fps/fps.c',
+    'src/modules/fps/module.c',
+  ]
 endif
 if window_motion_enabled
-  shady_sources += 'src/modules/window_motion/window_motion.c'
+  shady_sources += [
+    'src/modules/window_motion/window_motion.c',
+    'src/modules/window_motion/module.c',
+  ]
 endif
 if close_animation_enabled
-  shady_sources += 'src/modules/close_animation/close_animation.c'
+  shady_sources += [
+    'src/modules/close_animation/close_animation.c',
+    'src/modules/close_animation/module.c',
+  ]
 endif
 if scene_effects_enabled
-  shady_sources += 'src/modules/scene_effects/scene_effects.c'
+  shady_sources += [
+    'src/modules/scene_effects/scene_effects.c',
+    'src/modules/scene_effects/module.c',
+  ]
 endif
 
 shady_deps = [

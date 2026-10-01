@@ -97,11 +97,15 @@ static void install_api(lua_State *L){
 	lua_pushcfunction(L,l_shady_has_capability);lua_setfield(L,-2,"has_capability");
 	if(shady_module_has_capability(lua_server,"spatial")){
 		lua_pushcfunction(L,l_shady_camera);lua_setfield(L,-2,"camera");
+	}
+	if(shady_module_has_capability(lua_server,"spatial.physics")){
 		lua_pushcfunction(L,l_shady_toggle_gravity);lua_setfield(L,-2,"toggle_gravity");
+		lua_pushcfunction(L,l_shady_respawn_all);lua_setfield(L,-2,"respawn_all");
+	}
+	if(shady_module_has_capability(lua_server,"spatial.fps")){
 		lua_pushcfunction(L,l_shady_toggle_fps);lua_setfield(L,-2,"toggle_fps");
 		lua_pushcfunction(L,l_shady_expand_all);lua_setfield(L,-2,"expand_all");
 		lua_pushcfunction(L,l_shady_fold_all);lua_setfield(L,-2,"fold_all");
-		lua_pushcfunction(L,l_shady_respawn_all);lua_setfield(L,-2,"respawn_all");
 	}
 	lua_setglobal(L,"shady");
 }

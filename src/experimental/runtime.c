@@ -5,10 +5,7 @@
 
 #include "../shady.h"
 #include "../modules/spatial/state.h"
-#include "../modules/fps/fps.h"
-#include "../modules/physics/physics.h"
-#include "../modules/window_motion/window_motion.h"
-#include "../modules/close_animation/close_animation.h"
+#include "../module/module.h"
 
 bool shady_experimental_update(struct shady_server *server,
 		float logical_w, float logical_h) {
@@ -39,15 +36,6 @@ bool shady_experimental_update(struct shady_server *server,
 		dt = 0.033f;
 	}
 
-	shady_fps_update(server, dt);
-	shady_physics_update(server, dt, logical_w, logical_h);
-
-	struct shady_toplevel *toplevel;
-	wl_list_for_each(toplevel, &server->toplevels, link) {
-		shady_window_motion_update_toplevel(server, toplevel, dt);
-		shady_close_animation_update_toplevel(toplevel, dt);
-	}
-
-	shady_fps_update_held_window(server, logical_w, logical_h);
+	shady_modules_tick(server, dt, logical_w, logical_h);
 	return true;
 }

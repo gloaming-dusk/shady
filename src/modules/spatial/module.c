@@ -12,12 +12,8 @@
 #include "../../shady.h"
 #include "../../render/pick3d.h"
 #include "../../render/render.h"
-#include "../close_animation/close_animation.h"
 #include "../environment/environment.h"
 #include "../desktop/state.h"
-#include "../fps/fps.h"
-#include "../physics/physics.h"
-#include "../window_motion/window_motion.h"
 #include "state.h"
 
 #define CAMERA_ORBIT_SENS 0.005f
@@ -68,7 +64,6 @@ static bool spatial_init(struct shady_server *server) {
 	if (!shady_environment_load_colliders(server)) {
 		wlr_log(WLR_ERROR, "spatial: failed to load environment collision groups");
 	}
-	shady_physics_init(server);
 	shady_camera_reset(&shady_spatial_state(server)->runtime.camera);
 	return shady_render_init(server->renderer);
 }
@@ -79,7 +74,6 @@ static void spatial_destroy(struct shady_server *server) {
 }
 
 static void spatial_toplevel_unmap(struct shady_toplevel *toplevel) {
-	shady_fps_toplevel_gone(toplevel->server, toplevel);
 	shady_render_toplevel_unmap(toplevel);
 }
 
@@ -88,14 +82,7 @@ static void spatial_toplevel_commit(struct shady_toplevel *toplevel) {
 }
 
 static void spatial_toplevel_destroy(struct shady_toplevel *toplevel) {
-	shady_fps_toplevel_gone(toplevel->server, toplevel);
 	shady_render_toplevel_destroy(toplevel);
-}
-
-static void spatial_toplevel_moved(struct shady_toplevel *toplevel,
-		double x, double y) {
-	shady_window_motion_drag(toplevel->server, toplevel, x, y);
-	shady_render_schedule_all_outputs(toplevel->server);
 }
 
 static bool spatial_pick_surface(struct shady_server *server,
@@ -108,9 +95,6 @@ static bool spatial_pick_surface(struct shady_server *server,
 
 static bool spatial_pointer_motion(struct shady_server *server,
 		struct wlr_pointer_motion_event *event) {
-	if (shady_fps_handle_motion(server, event->delta_x, event->delta_y)) {
-		return true;
-	}
 	if (server->cursor_mode == SHADY_CURSOR_CAMERA_ORBIT) {
 		shady_spatial_state(server)->runtime.camera.yaw -=
 			(float)event->delta_x * CAMERA_ORBIT_SENS;
@@ -139,22 +123,8 @@ static bool spatial_pointer_motion(struct shady_server *server,
 	return false;
 }
 
-static bool spatial_pointer_motion_absolute(struct shady_server *server,
-		struct wlr_pointer_motion_absolute_event *event) {
-	(void)event;
-	if (shady_spatial_state(server)->runtime.camera.first_person &&
-			shady_spatial_state(server)->runtime.fps.input_capture) {
-		shady_fps_handle_motion(server, 0.0, 0.0);
-		return true;
-	}
-	return false;
-}
-
 static bool spatial_pointer_button(struct shady_server *server,
 		struct wlr_pointer_button_event *event, uint32_t modifiers) {
-	if (shady_fps_handle_button(server, event->button, event->state)) {
-		return true;
-	}
 	if (event->button == BTN_RIGHT ||
 			(event->button == BTN_MIDDLE && (modifiers & WLR_MODIFIER_ALT))) {
 		if (event->state == WL_POINTER_BUTTON_STATE_PRESSED) {
@@ -172,7 +142,6 @@ static bool spatial_pointer_button(struct shady_server *server,
 
 static bool spatial_pointer_axis(struct shady_server *server,
 		struct wlr_pointer_axis_event *event, uint32_t modifiers) {
-	if (shady_fps_handle_axis(server, event)) return true;
 	if (event->orientation != WL_POINTER_AXIS_VERTICAL_SCROLL ||
 			!(modifiers & WLR_MODIFIER_ALT)) return false;
 
@@ -198,7 +167,6 @@ static bool spatial_pointer_axis(struct shady_server *server,
 
 static bool spatial_key(struct shady_server *server, const xkb_keysym_t *syms,
 		int nsyms, uint32_t state, uint32_t modifiers) {
-	if (shady_fps_handle_key(server, syms, nsyms, state)) return true;
 	if (state != WL_KEYBOARD_KEY_STATE_PRESSED) return false;
 
 	struct shady_config *c = &server->config;
@@ -209,19 +177,6 @@ static bool spatial_key(struct shady_server *server, const xkb_keysym_t *syms,
 			shady_render_schedule_all_outputs(server);
 			return true;
 		}
-		if (bind_matches(&c->bind_gravity_toggle, sym, modifiers)) {
-			shady_physics_toggle_gravity(server);
-			return true;
-		}
-		if (bind_matches(&c->bind_fps_capture, sym, modifiers))
-			return shady_fps_toggle_capture(server);
-		if (bind_matches(&c->bind_fps_toggle, sym, modifiers))
-			return shady_fps_toggle(server);
-		if (bind_matches(&c->bind_close_window, sym, modifiers)) {
-			shady_close_animation_begin(server);
-			return true;
-		}
-
 		bool changed = false;
 		struct shady_vec3 right, up, forward;
 		if (bind_matches(&c->bind_camera_left, sym, modifiers) ||
@@ -262,21 +217,6 @@ static bool spatial_key(struct shady_server *server, const xkb_keysym_t *syms,
 static const char *const spatial_provides[] = {
 	"spatial",
 	"spatial.window-state",
-#if SHADY_HAS_PHYSICS
-	"spatial.physics",
-#endif
-#if SHADY_HAS_FPS
-	"spatial.fps",
-#endif
-#if SHADY_HAS_WINDOW_MOTION
-	"spatial.window-motion",
-#endif
-#if SHADY_HAS_CLOSE_ANIMATION
-	"spatial.close-animation",
-#endif
-#if SHADY_HAS_SCENE_EFFECTS
-	"spatial.scene-effects",
-#endif
 	NULL,
 };
 
@@ -297,10 +237,8 @@ static const struct shady_module spatial_module = {
 	.toplevel_unmap = spatial_toplevel_unmap,
 	.toplevel_commit = spatial_toplevel_commit,
 	.toplevel_destroy = spatial_toplevel_destroy,
-	.toplevel_moved = spatial_toplevel_moved,
 	.key = spatial_key,
 	.pointer_motion = spatial_pointer_motion,
-	.pointer_motion_absolute = spatial_pointer_motion_absolute,
 	.pointer_button = spatial_pointer_button,
 	.pointer_axis = spatial_pointer_axis,
 	.pick_surface = spatial_pick_surface,

@@ -40,6 +40,11 @@ static const char *const lua_provides[] = {
 
 static const char *const lua_optional_requires[] = {
 	"spatial",
+	"spatial.window-motion",
+	"spatial.physics",
+	"spatial.fps",
+	"spatial.close-animation",
+	"spatial.scene-effects",
 	NULL,
 };
 

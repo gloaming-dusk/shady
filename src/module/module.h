@@ -49,6 +49,8 @@ struct shady_module {
 		struct shady_toplevel **toplevel);
 	void (*toplevel_moved)(struct shady_toplevel *toplevel,
 		double x, double y);
+	void (*tick)(struct shady_server *server, float dt,
+		float logical_w, float logical_h);
 };
 
 struct shady_module_manager {
@@ -97,6 +99,8 @@ bool shady_modules_pick_surface(struct shady_server *server, double lx, double l
 	struct shady_toplevel **toplevel);
 void shady_modules_toplevel_moved(struct shady_toplevel *toplevel,
 	double x, double y);
+void shady_modules_tick(struct shady_server *server, float dt,
+	float logical_w, float logical_h);
 
 void shady_register_builtin_modules(struct shady_server *server);
 
