@@ -1,6 +1,7 @@
 #include "module.h"
 
 #include <stdlib.h>
+#include <sys/types.h>
 #include <string.h>
 #include <wlr/util/log.h>
 
@@ -9,6 +10,32 @@
 static bool module_enabled(const struct shady_module *module,
 		struct shady_server *server) {
 	return !module->enabled || module->enabled(server);
+}
+
+static bool string_list_contains(const char *const *items, const char *needle) {
+	if (!items || !needle) return false;
+	for (size_t i = 0; items[i]; i++) {
+		if (strcmp(items[i], needle) == 0) return true;
+	}
+	return false;
+}
+
+static ssize_t capability_provider(struct shady_server *server,
+		const char *capability, bool enabled_only) {
+	struct shady_module_manager *manager = &server->modules;
+	ssize_t provider = -1;
+	for (size_t i = 0; i < manager->count; i++) {
+		const struct shady_module *module = manager->modules[i];
+		if (enabled_only && !module_enabled(module, server)) continue;
+		if (!string_list_contains(module->provides, capability)) continue;
+		if (provider >= 0) {
+			wlr_log(WLR_ERROR, "module: capability %s has multiple providers: %s, %s",
+				capability, manager->modules[provider]->name, module->name);
+			return -2;
+		}
+		provider = (ssize_t)i;
+	}
+	return provider;
 }
 
 void shady_modules_init(struct shady_module_manager *manager) {
@@ -26,6 +53,89 @@ bool shady_modules_register(struct shady_module_manager *manager,
 		}
 	}
 	manager->modules[manager->count++] = module;
+	manager->resolved = false;
+	return true;
+}
+
+bool shady_module_has_capability(struct shady_server *server, const char *capability) {
+	ssize_t provider = capability_provider(server, capability, true);
+	if (provider < 0) return false;
+	return server->modules.active[provider];
+}
+
+bool shady_modules_resolve(struct shady_server *server) {
+	struct shady_module_manager *manager = &server->modules;
+	if (manager->resolved) return true;
+
+	bool edges[SHADY_MAX_MODULES][SHADY_MAX_MODULES] = {{0}};
+	unsigned indegree[SHADY_MAX_MODULES] = {0};
+	bool enabled[SHADY_MAX_MODULES] = {0};
+	for (size_t i = 0; i < manager->count; i++) {
+		enabled[i] = module_enabled(manager->modules[i], server);
+	}
+
+	/* Capabilities have a single active provider to keep dependency
+	 * resolution deterministic. */
+	for (size_t i = 0; i < manager->count; i++) {
+		if (!enabled[i] || !manager->modules[i]->provides) continue;
+		for (size_t c = 0; manager->modules[i]->provides[c]; c++) {
+			ssize_t provider = capability_provider(server,
+				manager->modules[i]->provides[c], true);
+			if (provider == -2) return false;
+		}
+	}
+
+	for (size_t i = 0; i < manager->count; i++) {
+		if (!enabled[i]) continue;
+		const struct shady_module *module = manager->modules[i];
+		const char *const *lists[2] = { module->requires, module->optional_requires };
+		for (size_t kind = 0; kind < 2; kind++) {
+			const char *const *caps = lists[kind];
+			if (!caps) continue;
+			for (size_t c = 0; caps[c]; c++) {
+				ssize_t provider = capability_provider(server, caps[c], true);
+				if (provider == -2) return false;
+				if (provider < 0) {
+					if (kind == 0) {
+						wlr_log(WLR_ERROR, "module: %s requires missing capability %s",
+							module->name, caps[c]);
+						return false;
+					}
+					continue;
+				}
+				if ((size_t)provider == i || edges[provider][i]) continue;
+				edges[provider][i] = true;
+				indegree[i]++;
+			}
+		}
+	}
+
+	const struct shady_module *ordered[SHADY_MAX_MODULES] = {0};
+	size_t out = 0;
+	bool emitted[SHADY_MAX_MODULES] = {0};
+	while (out < manager->count) {
+		ssize_t pick = -1;
+		for (size_t i = 0; i < manager->count; i++) {
+			if (!emitted[i] && indegree[i] == 0) { pick = (ssize_t)i; break; }
+		}
+		if (pick < 0) {
+			wlr_log(WLR_ERROR, "module: dependency cycle detected");
+			return false;
+		}
+		emitted[pick] = true;
+		ordered[out++] = manager->modules[pick];
+		for (size_t j = 0; j < manager->count; j++) {
+			if (edges[pick][j] && indegree[j] > 0) indegree[j]--;
+		}
+	}
+	memcpy(manager->modules, ordered, sizeof(manager->modules));
+	for (size_t i = 0; i < manager->count; i++) {
+		wlr_log(WLR_DEBUG, "module: resolved[%zu] %s", i,
+			manager->modules[i]->name);
+	}
+	memset(manager->active, 0, sizeof(manager->active));
+	memset(manager->state, 0, sizeof(manager->state));
+	manager->resolved = true;
 	return true;
 }
 
@@ -41,6 +151,7 @@ void *shady_module_state(struct shady_server *server, const char *name) {
 
 bool shady_modules_initialize_all(struct shady_server *server) {
 	struct shady_module_manager *manager = &server->modules;
+	if (!shady_modules_resolve(server)) return false;
 	for (size_t i = 0; i < manager->count; i++) {
 		const struct shady_module *module = manager->modules[i];
 		if (!module_enabled(module, server)) {
@@ -53,12 +164,14 @@ bool shady_modules_initialize_all(struct shady_server *server) {
 			if (!manager->state[i]) {
 				wlr_log(WLR_ERROR, "module: state allocation failed: %s", module->name);
 				shady_modules_destroy_all(server);
+				shady_modules_release_states(server);
 				return false;
 			}
 		}
 		if (module->init && !module->init(server)) {
 			wlr_log(WLR_ERROR, "module: init failed: %s", module->name);
 			shady_modules_destroy_all(server);
+			shady_modules_release_states(server);
 			return false;
 		}
 		manager->active[i] = true;

@@ -307,11 +307,17 @@ render physics world
   Lua scripting
 ```
 
-## Build-time modules
+## Module host and build-time modules
 
-Meson currently exposes these internal feature modules:
+Shady now has a built-in module host. Modules own their runtime state and optional per-window state, and can declare capabilities they provide, capabilities they require, and optional capabilities that only affect load ordering when present. The resolver performs a stable dependency sort, rejects missing required capabilities, duplicate active providers, and dependency cycles, then initializes modules in dependency order and destroys them in reverse order.
+
+Current top-level modules are `desktop-protocols`, `spatial`, and `lua`. `spatial` requires the desktop protocol capability, while Lua optionally follows spatial when that capability exists. Lua scripts can feature-detect with `shady.has_capability("spatial")`.
+
+Meson exposes the top-level modules and spatial subfeatures:
 
 ```text
+-Dspatial=enabled|disabled|auto
+-Dlua=enabled|disabled|auto
 -Dphysics=enabled|disabled|auto
 -Dfps=enabled|disabled|auto
 -Dwindow_motion=enabled|disabled|auto
@@ -319,7 +325,7 @@ Meson currently exposes these internal feature modules:
 -Dscene_effects=enabled|disabled|auto
 ```
 
-These are compile-time internal modules rather than dynamically loaded plugins.
+These are still built-in C modules rather than a stable dynamic-plugin ABI. That keeps the core small without committing Shady to `.so` ABI compatibility yet.
 
 ## Current status
 

@@ -33,8 +33,20 @@ static bool lua_key(struct shady_server *server, const xkb_keysym_t *syms,
 	return false;
 }
 
+static const char *const lua_provides[] = {
+	"scripting.lua",
+	NULL,
+};
+
+static const char *const lua_optional_requires[] = {
+	"spatial",
+	NULL,
+};
+
 static const struct shady_module lua_module = {
 	.name = "lua",
+	.provides = lua_provides,
+	.optional_requires = lua_optional_requires,
 	.state_size = sizeof(struct shady_lua_state),
 	.init = lua_init_module,
 	.destroy = lua_destroy_module,

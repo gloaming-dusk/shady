@@ -18,6 +18,9 @@ typedef uint32_t xkb_keysym_t;
 
 struct shady_module {
 	const char *name;
+	const char *const *provides;
+	const char *const *requires;
+	const char *const *optional_requires;
 	size_t state_size;
 	size_t toplevel_state_size;
 	bool (*enabled)(struct shady_server *server);
@@ -53,6 +56,7 @@ struct shady_module_manager {
 	bool active[SHADY_MAX_MODULES];
 	void *state[SHADY_MAX_MODULES];
 	size_t count;
+	bool resolved;
 	bool started;
 };
 
@@ -60,6 +64,8 @@ void shady_modules_init(struct shady_module_manager *manager);
 bool shady_modules_register(struct shady_module_manager *manager,
 	const struct shady_module *module);
 void *shady_module_state(struct shady_server *server, const char *name);
+bool shady_modules_resolve(struct shady_server *server);
+bool shady_module_has_capability(struct shady_server *server, const char *capability);
 bool shady_modules_initialize_all(struct shady_server *server);
 void shady_modules_start_all(struct shady_server *server);
 void shady_modules_stop_all(struct shady_server *server);

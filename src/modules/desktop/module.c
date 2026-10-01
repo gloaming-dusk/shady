@@ -78,8 +78,16 @@ static void desktop_protocols_destroy(struct shady_server *server) {
 		wl_list_remove(&state->new_session_lock.link);
 }
 
+static const char *const desktop_provides[] = {
+	"desktop.protocols",
+	"desktop.overlay",
+	"desktop.pointer-protocols",
+	NULL,
+};
+
 static const struct shady_module desktop_protocols_module = {
 	.name = "desktop-protocols",
+	.provides = desktop_provides,
 	.state_size = sizeof(struct shady_desktop_state),
 	.init = desktop_protocols_init,
 	.destroy = desktop_protocols_destroy,

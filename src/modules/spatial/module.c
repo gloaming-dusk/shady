@@ -259,8 +259,36 @@ static bool spatial_key(struct shady_server *server, const xkb_keysym_t *syms,
 	return false;
 }
 
+static const char *const spatial_provides[] = {
+	"spatial",
+	"spatial.window-state",
+#if SHADY_HAS_PHYSICS
+	"spatial.physics",
+#endif
+#if SHADY_HAS_FPS
+	"spatial.fps",
+#endif
+#if SHADY_HAS_WINDOW_MOTION
+	"spatial.window-motion",
+#endif
+#if SHADY_HAS_CLOSE_ANIMATION
+	"spatial.close-animation",
+#endif
+#if SHADY_HAS_SCENE_EFFECTS
+	"spatial.scene-effects",
+#endif
+	NULL,
+};
+
+static const char *const spatial_requires[] = {
+	"desktop.protocols",
+	NULL,
+};
+
 static const struct shady_module spatial_module = {
 	.name = "spatial",
+	.provides = spatial_provides,
+	.requires = spatial_requires,
 	.state_size = sizeof(struct shady_spatial_state),
 	.toplevel_state_size = sizeof(struct shady_toplevel_experimental_state),
 	.enabled = spatial_enabled,

@@ -82,19 +82,27 @@ static int l_shady_log(lua_State *L){
 	wlr_log(WLR_INFO,"[SHADY LUA] 🌙 %s",message);
 	return 0;
 }
+static int l_shady_has_capability(lua_State *L){
+	const char *capability=luaL_checkstring(L,1);
+	lua_pushboolean(L,shady_module_has_capability(lua_server,capability));
+	return 1;
+}
 static void install_api(lua_State *L){
 	lua_newtable(L);
 	lua_pushcfunction(L,l_shady_log);lua_setfield(L,-2,"log");
 	lua_pushcfunction(L,l_shady_config);lua_setfield(L,-2,"config");
 	lua_pushcfunction(L,l_shady_bind);lua_setfield(L,-2,"bind");
-	lua_pushcfunction(L,l_shady_camera);lua_setfield(L,-2,"camera");
-	lua_pushcfunction(L,l_shady_toggle_gravity);lua_setfield(L,-2,"toggle_gravity");
-	lua_pushcfunction(L,l_shady_toggle_fps);lua_setfield(L,-2,"toggle_fps");
 	lua_pushcfunction(L,l_shady_quit);lua_setfield(L,-2,"quit");
 	lua_pushcfunction(L,l_shady_windows);lua_setfield(L,-2,"windows");
-	lua_pushcfunction(L,l_shady_expand_all);lua_setfield(L,-2,"expand_all");
-	lua_pushcfunction(L,l_shady_fold_all);lua_setfield(L,-2,"fold_all");
-	lua_pushcfunction(L,l_shady_respawn_all);lua_setfield(L,-2,"respawn_all");
+	lua_pushcfunction(L,l_shady_has_capability);lua_setfield(L,-2,"has_capability");
+	if(shady_module_has_capability(lua_server,"spatial")){
+		lua_pushcfunction(L,l_shady_camera);lua_setfield(L,-2,"camera");
+		lua_pushcfunction(L,l_shady_toggle_gravity);lua_setfield(L,-2,"toggle_gravity");
+		lua_pushcfunction(L,l_shady_toggle_fps);lua_setfield(L,-2,"toggle_fps");
+		lua_pushcfunction(L,l_shady_expand_all);lua_setfield(L,-2,"expand_all");
+		lua_pushcfunction(L,l_shady_fold_all);lua_setfield(L,-2,"fold_all");
+		lua_pushcfunction(L,l_shady_respawn_all);lua_setfield(L,-2,"respawn_all");
+	}
 	lua_setglobal(L,"shady");
 }
 static void default_script_path(char *buf,size_t size){
