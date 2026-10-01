@@ -2,6 +2,7 @@
 #include <wlr/types/wlr_keyboard.h>
 #include "../../shady.h"
 #include "close_animation.h"
+#include "state.h"
 
 static bool bind_matches(const struct shady_keybind *bind,
 		xkb_keysym_t sym, uint32_t modifiers) {
@@ -31,6 +32,10 @@ static void close_tick(struct shady_server *server, float dt,
 	}
 }
 
+static bool module_enabled(struct shady_server *server) {
+	return server->config.spatial_mode;
+}
+
 static const char *const provides[] = { "spatial.close-animation", NULL };
 static const char *const requires[] = { "spatial.window-state", NULL };
 static const char *const optional_requires[] = { "spatial.window-motion", NULL };
@@ -38,8 +43,10 @@ static const char *const optional_requires[] = { "spatial.window-motion", NULL }
 static const struct shady_module module = {
 	.name = "close-animation",
 	.provides = provides,
+	.enabled = module_enabled,
 	.requires = requires,
 	.optional_requires = optional_requires,
+	.toplevel_state_size = sizeof(struct shady_close_animation_state),
 	.key = close_key,
 	.tick = close_tick,
 };

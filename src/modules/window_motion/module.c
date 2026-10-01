@@ -1,6 +1,7 @@
 #include "../../module/module.h"
 #include "../../shady.h"
 #include "window_motion.h"
+#include "state.h"
 
 static void motion_tick(struct shady_server *server, float dt,
 		float logical_w, float logical_h) {
@@ -15,13 +16,19 @@ static void motion_moved(struct shady_toplevel *toplevel, double x, double y) {
 	shady_window_motion_drag(toplevel->server, toplevel, x, y);
 }
 
+static bool module_enabled(struct shady_server *server) {
+	return server->config.spatial_mode;
+}
+
 static const char *const provides[] = { "spatial.window-motion", NULL };
 static const char *const requires[] = { "spatial.window-state", NULL };
 
 static const struct shady_module module = {
 	.name = "window-motion",
 	.provides = provides,
+	.enabled = module_enabled,
 	.requires = requires,
+	.toplevel_state_size = sizeof(struct shady_window_motion_state),
 	.toplevel_moved = motion_moved,
 	.tick = motion_tick,
 };

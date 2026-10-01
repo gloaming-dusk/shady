@@ -14,9 +14,11 @@ void shady_fps_update(struct shady_server *server,float dt);
 void shady_fps_update_held_window(struct shady_server *server,float logical_w,float logical_h);
 void shady_fps_toplevel_gone(struct shady_server *server,struct shady_toplevel *toplevel);
 bool shady_fps_is_holding(const struct shady_server *server,const struct shady_toplevel *toplevel);
+bool shady_fps_has_held_window(const struct shady_server *server);
 bool shady_fps_is_expanded(const struct shady_server *server,const struct shady_toplevel *toplevel);
 #else
 static inline bool shady_fps_is_holding(const struct shady_server*s,const struct shady_toplevel*t){(void)s;(void)t;return false;}
+static inline bool shady_fps_has_held_window(const struct shady_server*s){(void)s;return false;}
 static inline bool shady_fps_is_expanded(const struct shady_server*s,const struct shady_toplevel*t){(void)s;(void)t;return false;}
 static inline bool shady_fps_toggle(struct shady_server*s){(void)s;return true;}
 static inline bool shady_fps_toggle_capture(struct shady_server*s){(void)s;return false;}

@@ -10,6 +10,7 @@
 #include "../../render/render.h"
 #include "../physics/physics.h"
 #include "../fps/fps.h"
+#include "../fps/state.h"
 #include "../spatial/state.h"
 #include <string.h>
 #include <wlr/types/wlr_keyboard.h>
@@ -63,8 +64,8 @@ static int l_shady_windows(lua_State *L){
 	lua_newtable(L);int n=1;struct shady_toplevel*t;
 	wl_list_for_each(t,&lua_server->toplevels,link){push_window(L,t);lua_rawseti(L,-2,n++);}return 1;
 }
-static int l_shady_expand_all(lua_State *L){struct shady_spatial_state *spatial=lua_spatial(L);struct shady_toplevel*t;wl_list_for_each(t,&lua_server->toplevels,link){shady_spatial_toplevel_state(t)->fps_expanded=true;shady_physics_stop(t);}spatial->runtime.fps.expanded_toplevel=NULL;spatial->runtime.fps.input_capture=false;shady_render_schedule_all_outputs(lua_server);return 0;}
-static int l_shady_fold_all(lua_State *L){struct shady_spatial_state *spatial=lua_spatial(L);struct shady_toplevel*t;wl_list_for_each(t,&lua_server->toplevels,link)shady_spatial_toplevel_state(t)->fps_expanded=false;spatial->runtime.fps.expanded_toplevel=NULL;spatial->runtime.fps.input_capture=spatial->runtime.camera.first_person;shady_render_schedule_all_outputs(lua_server);return 0;}
+static int l_shady_expand_all(lua_State *L){lua_spatial(L);struct shady_fps_state*fps=shady_fps_state_for(lua_server);struct shady_toplevel*t;wl_list_for_each(t,&lua_server->toplevels,link){shady_fps_toplevel_state(t)->expanded=true;shady_physics_stop(t);}fps->expanded_toplevel=NULL;fps->input_capture=false;shady_render_schedule_all_outputs(lua_server);return 0;}
+static int l_shady_fold_all(lua_State *L){struct shady_spatial_state *spatial=lua_spatial(L);struct shady_fps_state*fps=shady_fps_state_for(lua_server);struct shady_toplevel*t;wl_list_for_each(t,&lua_server->toplevels,link)shady_fps_toplevel_state(t)->expanded=false;fps->expanded_toplevel=NULL;fps->input_capture=spatial->runtime.camera.first_person;shady_render_schedule_all_outputs(lua_server);return 0;}
 static int l_shady_respawn_all(lua_State *L){lua_spatial(L);shady_physics_respawn_all(lua_server);return 0;}
 static int l_shady_toggle_fps(lua_State *L){lua_spatial(L);shady_fps_toggle(lua_server);return 0;}
 

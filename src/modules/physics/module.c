@@ -2,6 +2,7 @@
 #include <wlr/types/wlr_keyboard.h>
 #include "../../shady.h"
 #include "physics.h"
+#include "state.h"
 
 static bool bind_matches(const struct shady_keybind *bind,
 		xkb_keysym_t sym, uint32_t modifiers) {
@@ -32,6 +33,10 @@ static bool physics_key(struct shady_server *server, const xkb_keysym_t *syms,
 	return false;
 }
 
+static bool module_enabled(struct shady_server *server) {
+	return server->config.spatial_mode;
+}
+
 static const char *const provides[] = { "spatial.physics", NULL };
 static const char *const requires[] = { "spatial.window-state", NULL };
 static const char *const optional_requires[] = {
@@ -41,8 +46,11 @@ static const char *const optional_requires[] = {
 static const struct shady_module module = {
 	.name = "physics",
 	.provides = provides,
+	.enabled = module_enabled,
 	.requires = requires,
 	.optional_requires = optional_requires,
+	.state_size = sizeof(struct shady_physics_state),
+	.toplevel_state_size = sizeof(struct shady_window_physics_state),
 	.init = physics_init_module,
 	.key = physics_key,
 	.tick = physics_tick,

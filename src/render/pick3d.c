@@ -11,6 +11,8 @@
 #include "math3d.h"
 #include "render.h"
 #include "../modules/fps/fps.h"
+#include "../modules/fps/state.h"
+#include "../modules/window_motion/state.h"
 
 struct shady_toplevel *shady_toplevel_at_3d(struct shady_server *server,
 		double lx, double ly, struct wlr_surface **surface, double *sx, double *sy) {
@@ -72,15 +74,15 @@ struct shady_toplevel *shady_toplevel_at_3d(struct shady_server *server,
 		float layout_y = (float)(toplevel->scene_tree->node.y + oy);
 
 		float model[16];
-		if(shady_spatial_state(server)->runtime.camera.first_person&&!shady_spatial_toplevel_state(toplevel)->fps_expanded){
+		if(shady_spatial_state(server)->runtime.camera.first_person&&!shady_fps_toplevel_state_const(toplevel)->expanded){
 			float cx=(layout_x+tw*.5f-logical_w*.5f)/logical_h,cy=.5f-(layout_y+th*.5f)/logical_h;
-			shady_window_cube_model(model,cx,cy,shady_spatial_toplevel_state(toplevel)->z,SHADY_FPS_CUBE_SIZE,shady_spatial_toplevel_state(toplevel)->motion.tilt_x,shady_spatial_toplevel_state(toplevel)->motion.tilt_y);
-		}else shady_window_model(model,layout_x,layout_y,tw,th,logical_w,logical_h,shady_spatial_toplevel_state(toplevel)->z,shady_spatial_toplevel_state(toplevel)->motion.tilt_x,shady_spatial_toplevel_state(toplevel)->motion.tilt_y);
+			shady_window_cube_model(model,cx,cy,shady_spatial_toplevel_state(toplevel)->z,SHADY_FPS_CUBE_SIZE,shady_window_motion_state_for_const(toplevel)->tilt_x,shady_window_motion_state_for_const(toplevel)->tilt_y);
+		}else shady_window_model(model,layout_x,layout_y,tw,th,logical_w,logical_h,shady_spatial_toplevel_state(toplevel)->z,shady_window_motion_state_for_const(toplevel)->tilt_x,shady_window_motion_state_for_const(toplevel)->tilt_y);
 
 		float t, u, v;
 		bool front_hit = false;
-		if (!shady_ray_window_shell_hit(&ray, model, shady_spatial_toplevel_state(toplevel)->motion.wobble_x,
-				shady_spatial_toplevel_state(toplevel)->motion.wobble_y, &t, &u, &v, &front_hit)) {
+		if (!shady_ray_window_shell_hit(&ray, model, shady_window_motion_state_for_const(toplevel)->wobble_x,
+				shady_window_motion_state_for_const(toplevel)->wobble_y, &t, &u, &v, &front_hit)) {
 			continue;
 		}
 		if (t < best_t) {
@@ -148,15 +150,15 @@ struct shady_toplevel *shady_toplevel_at_camera_center_hit(
 		float th = (float)surf->current.height;
 		if (tw <= 0.f || th <= 0.f) continue;
 		float model[16];
-		if(shady_spatial_state(server)->runtime.camera.first_person&&!shady_spatial_toplevel_state(toplevel)->fps_expanded){
+		if(shady_spatial_state(server)->runtime.camera.first_person&&!shady_fps_toplevel_state_const(toplevel)->expanded){
 			float lx=(float)(toplevel->scene_tree->node.x+ox),ly=(float)(toplevel->scene_tree->node.y+oy);
 			float cx=(lx+tw*.5f-logical_w*.5f)/logical_h,cy=.5f-(ly+th*.5f)/logical_h;
-			shady_window_cube_model(model,cx,cy,shady_spatial_toplevel_state(toplevel)->z,SHADY_FPS_CUBE_SIZE,shady_spatial_toplevel_state(toplevel)->motion.tilt_x,shady_spatial_toplevel_state(toplevel)->motion.tilt_y);
-		}else shady_window_model(model,(float)(toplevel->scene_tree->node.x+ox),(float)(toplevel->scene_tree->node.y+oy),tw,th,logical_w,logical_h,shady_spatial_toplevel_state(toplevel)->z,shady_spatial_toplevel_state(toplevel)->motion.tilt_x,shady_spatial_toplevel_state(toplevel)->motion.tilt_y);
+			shady_window_cube_model(model,cx,cy,shady_spatial_toplevel_state(toplevel)->z,SHADY_FPS_CUBE_SIZE,shady_window_motion_state_for_const(toplevel)->tilt_x,shady_window_motion_state_for_const(toplevel)->tilt_y);
+		}else shady_window_model(model,(float)(toplevel->scene_tree->node.x+ox),(float)(toplevel->scene_tree->node.y+oy),tw,th,logical_w,logical_h,shady_spatial_toplevel_state(toplevel)->z,shady_window_motion_state_for_const(toplevel)->tilt_x,shady_window_motion_state_for_const(toplevel)->tilt_y);
 		float t, u, v;
 		bool front_hit = false;
-		if (shady_ray_window_shell_hit(&ray, model, shady_spatial_toplevel_state(toplevel)->motion.wobble_x,
-				shady_spatial_toplevel_state(toplevel)->motion.wobble_y, &t, &u, &v, &front_hit) && t < best_t) {
+		if (shady_ray_window_shell_hit(&ray, model, shady_window_motion_state_for_const(toplevel)->wobble_x,
+				shady_window_motion_state_for_const(toplevel)->wobble_y, &t, &u, &v, &front_hit) && t < best_t) {
 			best_t = t;
 			best = toplevel;
 		}

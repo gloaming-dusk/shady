@@ -3,6 +3,7 @@
 #include <wlr/types/wlr_pointer.h>
 #include "../../shady.h"
 #include "fps.h"
+#include "state.h"
 
 static bool bind_matches(const struct shady_keybind *bind,
 		xkb_keysym_t sym, uint32_t modifiers) {
@@ -57,6 +58,10 @@ static void fps_gone(struct shady_toplevel *toplevel) {
 	shady_fps_toplevel_gone(toplevel->server, toplevel);
 }
 
+static bool module_enabled(struct shady_server *server) {
+	return server->config.spatial_mode;
+}
+
 static const char *const provides[] = { "spatial.fps", NULL };
 static const char *const requires[] = { "spatial.window-state", NULL };
 static const char *const optional_requires[] = {
@@ -66,8 +71,11 @@ static const char *const optional_requires[] = {
 static const struct shady_module module = {
 	.name = "fps",
 	.provides = provides,
+	.enabled = module_enabled,
 	.requires = requires,
 	.optional_requires = optional_requires,
+	.state_size = sizeof(struct shady_fps_state),
+	.toplevel_state_size = sizeof(struct shady_fps_toplevel_state),
 	.key = fps_key,
 	.pointer_motion = fps_motion,
 	.pointer_motion_absolute = fps_absolute,

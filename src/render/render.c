@@ -29,6 +29,9 @@
 #include "../modules/desktop/state.h"
 #include "../modules/spatial/state.h"
 #include "../modules/fps/fps.h"
+#include "../modules/fps/state.h"
+#include "../modules/window_motion/state.h"
+#include "../modules/close_animation/state.h"
 #include "../modules/close_animation/close_animation.h"
 #include "../modules/scene_effects/scene_effects.h"
 #include "../modules/environment/environment.h"
@@ -429,16 +432,16 @@ static void render_spatial_subsurface_buffer(struct wlr_scene_buffer *buffer,
 		width, height,
 		ctx->logical_w, ctx->logical_h,
 		shady_spatial_toplevel_state(ctx->toplevel)->z,
-		shady_spatial_toplevel_state(ctx->toplevel)->motion.tilt_x,
-		shady_spatial_toplevel_state(ctx->toplevel)->motion.tilt_y);
+		shady_window_motion_state_for_const(ctx->toplevel)->tilt_x,
+		shady_window_motion_state_for_const(ctx->toplevel)->tilt_y);
 	shady_mat4_multiply(mvp, ctx->vp, model);
 
 	shady_gl_pipeline_draw_window(&pipeline,
 		attribs.target, attribs.tex, attribs.has_alpha,
 		mvp, model, ctx->time_seconds,
-		shady_spatial_toplevel_state(ctx->toplevel)->motion.wobble_x,
-		shady_spatial_toplevel_state(ctx->toplevel)->motion.wobble_y,
-		shady_spatial_toplevel_state(ctx->toplevel)->close.progress);
+		shady_window_motion_state_for_const(ctx->toplevel)->wobble_x,
+		shady_window_motion_state_for_const(ctx->toplevel)->wobble_y,
+		shady_close_state_for_const(ctx->toplevel)->progress);
 }
 
 static void render_spatial_overlays(struct shady_server *server,
@@ -759,7 +762,7 @@ void shady_render_output_frame(
 		float mvp[16];
 
 		if (
-			shady_spatial_toplevel_state(toplevel)->close.state ==
+			shady_close_state_for_const(toplevel)->state ==
 			SHADY_CLOSE_ARMED
 		) {
 			struct shady_close_snapshot *snapshot =
@@ -799,22 +802,22 @@ void shady_render_output_frame(
 						(float)toplevel->scene_tree->node.y;
 					snapshot->width = tw;
 					snapshot->height = th;
-					snapshot->tilt_x = shady_spatial_toplevel_state(toplevel)->motion.tilt_x;
-					snapshot->tilt_y = shady_spatial_toplevel_state(toplevel)->motion.tilt_y;
+					snapshot->tilt_x = shady_window_motion_state_for_const(toplevel)->tilt_x;
+					snapshot->tilt_y = shady_window_motion_state_for_const(toplevel)->tilt_y;
 					snapshot->z = shady_spatial_toplevel_state(toplevel)->z;
-					snapshot->wobble_x = shady_spatial_toplevel_state(toplevel)->motion.wobble_x;
-					snapshot->wobble_y = shady_spatial_toplevel_state(toplevel)->motion.wobble_y;
+					snapshot->wobble_x = shady_window_motion_state_for_const(toplevel)->wobble_x;
+					snapshot->wobble_y = shady_window_motion_state_for_const(toplevel)->wobble_y;
 					snapshot->has_alpha = attribs.has_alpha;
 					snapshot->dirty = false;
 				}
 			}
 		}
 
-		if(shady_spatial_state(server)->runtime.camera.first_person&&!shady_spatial_toplevel_state(toplevel)->fps_expanded){
+		if(shady_spatial_state(server)->runtime.camera.first_person&&!shady_fps_toplevel_state_const(toplevel)->expanded){
 			float cx=(layout_x+tw*.5f-logical_w*.5f)/logical_h;
 			float cy=.5f-(layout_y+th*.5f)/logical_h;
 			shady_window_cube_model(model,cx,cy,shady_spatial_toplevel_state(toplevel)->z,SHADY_FPS_CUBE_SIZE,
-				shady_spatial_toplevel_state(toplevel)->motion.tilt_x,shady_spatial_toplevel_state(toplevel)->motion.tilt_y);
+				shady_window_motion_state_for_const(toplevel)->tilt_x,shady_window_motion_state_for_const(toplevel)->tilt_y);
 		}else{
 			shady_window_model(
 			model,
@@ -825,8 +828,8 @@ void shady_render_output_frame(
 			logical_w,
 			logical_h,
 			shady_spatial_toplevel_state(toplevel)->z,
-			shady_spatial_toplevel_state(toplevel)->motion.tilt_x,
-			shady_spatial_toplevel_state(toplevel)->motion.tilt_y
+			shady_window_motion_state_for_const(toplevel)->tilt_x,
+			shady_window_motion_state_for_const(toplevel)->tilt_y
 		);
 		}
 
@@ -837,7 +840,7 @@ void shady_render_output_frame(
 		);
 
 		shady_scene_effects_draw_sides(server, &pipeline, mvp, model,
-			shady_spatial_toplevel_state(toplevel)->motion.wobble_x, shady_spatial_toplevel_state(toplevel)->motion.wobble_y, shady_spatial_toplevel_state(toplevel)->close.progress);
+			shady_window_motion_state_for_const(toplevel)->wobble_x, shady_window_motion_state_for_const(toplevel)->wobble_y, shady_close_state_for_const(toplevel)->progress);
 
 		shady_gl_pipeline_draw_window(
 			&pipeline,
@@ -847,9 +850,9 @@ void shady_render_output_frame(
 			mvp,
 			model,
 			time_seconds,
-			shady_spatial_toplevel_state(toplevel)->motion.wobble_x,
-			shady_spatial_toplevel_state(toplevel)->motion.wobble_y,
-			shady_spatial_toplevel_state(toplevel)->close.progress
+			shady_window_motion_state_for_const(toplevel)->wobble_x,
+			shady_window_motion_state_for_const(toplevel)->wobble_y,
+			shady_close_state_for_const(toplevel)->progress
 		);
 
 		/* Render wl_subsurface children from the same scene subtree instead of
@@ -936,7 +939,7 @@ void shady_render_output_frame(
 		float cross_distance = 0.f;
 		bool cross_target = shady_toplevel_at_camera_center(server, &cross_distance) != NULL;
 		shady_gl_pipeline_draw_crosshair(&pipeline, cross_target,
-			shady_fps_is_holding(server, NULL) ? false : shady_spatial_state(server)->runtime.fps.held_toplevel != NULL);
+			shady_fps_is_holding(server, NULL) ? false : shady_fps_state_for_const(server)->held_toplevel != NULL);
 	}
 
 	if (shady_spatial_state(server)->runtime.debug_ray) {
@@ -956,7 +959,7 @@ void shady_render_output_frame(
 			if(!ds->mapped)continue;
 			float dw=(float)ds->current.width,dh=(float)ds->current.height;
 			if(dw<=0.f||dh<=0.f)continue;
-			if(shady_spatial_state(server)->runtime.camera.first_person&&!shady_spatial_toplevel_state(debug_t)->fps_expanded){
+			if(shady_spatial_state(server)->runtime.camera.first_person&&!shady_fps_toplevel_state_const(debug_t)->expanded){
 				/* Debug the authoritative physics cube, not only the textured
 				 * window face. This shows all 12 edges / six collision faces. */
 				float dx=(float)debug_t->scene_tree->node.x+ox;
@@ -973,7 +976,7 @@ void shady_render_output_frame(
 				float dm[16];
 				shady_window_model(dm,(float)debug_t->scene_tree->node.x+ox,
 					(float)debug_t->scene_tree->node.y+oy,dw,dh,logical_w,logical_h,
-					shady_spatial_toplevel_state(debug_t)->z,shady_spatial_toplevel_state(debug_t)->motion.tilt_x,shady_spatial_toplevel_state(debug_t)->motion.tilt_y);
+					shady_spatial_toplevel_state(debug_t)->z,shady_window_motion_state_for_const(debug_t)->tilt_x,shady_window_motion_state_for_const(debug_t)->tilt_y);
 				shady_gl_pipeline_draw_debug_window_body(&pipeline,vp,dm);
 			}
 		}
@@ -1069,7 +1072,7 @@ void shady_render_toplevel_commit(
 	struct shady_toplevel *toplevel
 ) {
 	if (
-		shady_spatial_toplevel_state(toplevel)->close.state !=
+		shady_close_state_for_const(toplevel)->state !=
 		SHADY_CLOSE_ARMED
 	) {
 		return;
@@ -1103,7 +1106,7 @@ void shady_render_toplevel_unmap(
 	if (
 		!snapshot ||
 		!snapshot->texture ||
-		shady_spatial_toplevel_state(toplevel)->close.state !=
+		shady_close_state_for_const(toplevel)->state !=
 			SHADY_CLOSE_ARMED
 	) {
 		return;
