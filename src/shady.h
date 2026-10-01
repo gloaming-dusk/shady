@@ -155,9 +155,9 @@ struct shady_toplevel {
 	struct wl_listener request_resize;
 	struct wl_listener request_maximize;
 	struct wl_listener request_fullscreen;
-	/* Optional spatial-desktop state. The core toplevel lifecycle stays
-	 * independent from the concrete experimental subsystems. */
-	struct shady_toplevel_experimental_state experimental;
+	/* Opaque per-module extension state. The core toplevel does not know
+	 * which optional modules attach data here. */
+	void *module_state[SHADY_MAX_MODULES];
 };
 
 struct shady_session_lock {

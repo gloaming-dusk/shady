@@ -1,4 +1,5 @@
 #include "scene_effects.h"
+#include "../spatial/state.h"
 #include <wlr/types/wlr_compositor.h>
 #include <wlr/types/wlr_scene.h>
 #include <wlr/types/wlr_xdg_shell.h>
@@ -19,14 +20,14 @@ void shady_scene_effects_draw_shadows(struct shady_server *server,
 	struct shady_toplevel *t;
 	wl_list_for_each_reverse(t,&server->toplevels,link) {
 		struct wlr_surface *surface=t->xdg_toplevel->base->surface;
-		if(!surface->mapped || t->experimental.close.progress>=.02f) continue;
+		if(!surface->mapped || shady_spatial_toplevel_state(t)->close.progress>=.02f) continue;
 		float tw=(float)surface->current.width,th=(float)surface->current.height;
 		if(tw<=0.f||th<=0.f)continue;
 		float model[16];
 		shady_window_model(model,(float)(t->scene_tree->node.x+ox),
 			(float)(t->scene_tree->node.y+oy),tw,th,logical_w,logical_h,
-			t->experimental.z,t->experimental.motion.tilt_x,t->experimental.motion.tilt_y);
-		shady_gl_pipeline_draw_shadow(pipeline,vp,model,t->experimental.motion.wobble_x,t->experimental.motion.wobble_y,t->experimental.z,&floor);
+			shady_spatial_toplevel_state(t)->z,shady_spatial_toplevel_state(t)->motion.tilt_x,shady_spatial_toplevel_state(t)->motion.tilt_y);
+		shady_gl_pipeline_draw_shadow(pipeline,vp,model,shady_spatial_toplevel_state(t)->motion.wobble_x,shady_spatial_toplevel_state(t)->motion.wobble_y,shady_spatial_toplevel_state(t)->z,&floor);
 	}
 }
 

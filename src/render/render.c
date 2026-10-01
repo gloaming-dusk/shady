@@ -428,17 +428,17 @@ static void render_spatial_subsurface_buffer(struct wlr_scene_buffer *buffer,
 		(float)sy + (float)ctx->oy,
 		width, height,
 		ctx->logical_w, ctx->logical_h,
-		ctx->toplevel->experimental.z,
-		ctx->toplevel->experimental.motion.tilt_x,
-		ctx->toplevel->experimental.motion.tilt_y);
+		shady_spatial_toplevel_state(ctx->toplevel)->z,
+		shady_spatial_toplevel_state(ctx->toplevel)->motion.tilt_x,
+		shady_spatial_toplevel_state(ctx->toplevel)->motion.tilt_y);
 	shady_mat4_multiply(mvp, ctx->vp, model);
 
 	shady_gl_pipeline_draw_window(&pipeline,
 		attribs.target, attribs.tex, attribs.has_alpha,
 		mvp, model, ctx->time_seconds,
-		ctx->toplevel->experimental.motion.wobble_x,
-		ctx->toplevel->experimental.motion.wobble_y,
-		ctx->toplevel->experimental.close.progress);
+		shady_spatial_toplevel_state(ctx->toplevel)->motion.wobble_x,
+		shady_spatial_toplevel_state(ctx->toplevel)->motion.wobble_y,
+		shady_spatial_toplevel_state(ctx->toplevel)->close.progress);
 }
 
 static void render_spatial_overlays(struct shady_server *server,
@@ -759,7 +759,7 @@ void shady_render_output_frame(
 		float mvp[16];
 
 		if (
-			toplevel->experimental.close.state ==
+			shady_spatial_toplevel_state(toplevel)->close.state ==
 			SHADY_CLOSE_ARMED
 		) {
 			struct shady_close_snapshot *snapshot =
@@ -799,22 +799,22 @@ void shady_render_output_frame(
 						(float)toplevel->scene_tree->node.y;
 					snapshot->width = tw;
 					snapshot->height = th;
-					snapshot->tilt_x = toplevel->experimental.motion.tilt_x;
-					snapshot->tilt_y = toplevel->experimental.motion.tilt_y;
-					snapshot->z = toplevel->experimental.z;
-					snapshot->wobble_x = toplevel->experimental.motion.wobble_x;
-					snapshot->wobble_y = toplevel->experimental.motion.wobble_y;
+					snapshot->tilt_x = shady_spatial_toplevel_state(toplevel)->motion.tilt_x;
+					snapshot->tilt_y = shady_spatial_toplevel_state(toplevel)->motion.tilt_y;
+					snapshot->z = shady_spatial_toplevel_state(toplevel)->z;
+					snapshot->wobble_x = shady_spatial_toplevel_state(toplevel)->motion.wobble_x;
+					snapshot->wobble_y = shady_spatial_toplevel_state(toplevel)->motion.wobble_y;
 					snapshot->has_alpha = attribs.has_alpha;
 					snapshot->dirty = false;
 				}
 			}
 		}
 
-		if(shady_spatial_state(server)->runtime.camera.first_person&&!toplevel->experimental.fps_expanded){
+		if(shady_spatial_state(server)->runtime.camera.first_person&&!shady_spatial_toplevel_state(toplevel)->fps_expanded){
 			float cx=(layout_x+tw*.5f-logical_w*.5f)/logical_h;
 			float cy=.5f-(layout_y+th*.5f)/logical_h;
-			shady_window_cube_model(model,cx,cy,toplevel->experimental.z,SHADY_FPS_CUBE_SIZE,
-				toplevel->experimental.motion.tilt_x,toplevel->experimental.motion.tilt_y);
+			shady_window_cube_model(model,cx,cy,shady_spatial_toplevel_state(toplevel)->z,SHADY_FPS_CUBE_SIZE,
+				shady_spatial_toplevel_state(toplevel)->motion.tilt_x,shady_spatial_toplevel_state(toplevel)->motion.tilt_y);
 		}else{
 			shady_window_model(
 			model,
@@ -824,9 +824,9 @@ void shady_render_output_frame(
 			th,
 			logical_w,
 			logical_h,
-			toplevel->experimental.z,
-			toplevel->experimental.motion.tilt_x,
-			toplevel->experimental.motion.tilt_y
+			shady_spatial_toplevel_state(toplevel)->z,
+			shady_spatial_toplevel_state(toplevel)->motion.tilt_x,
+			shady_spatial_toplevel_state(toplevel)->motion.tilt_y
 		);
 		}
 
@@ -837,7 +837,7 @@ void shady_render_output_frame(
 		);
 
 		shady_scene_effects_draw_sides(server, &pipeline, mvp, model,
-			toplevel->experimental.motion.wobble_x, toplevel->experimental.motion.wobble_y, toplevel->experimental.close.progress);
+			shady_spatial_toplevel_state(toplevel)->motion.wobble_x, shady_spatial_toplevel_state(toplevel)->motion.wobble_y, shady_spatial_toplevel_state(toplevel)->close.progress);
 
 		shady_gl_pipeline_draw_window(
 			&pipeline,
@@ -847,9 +847,9 @@ void shady_render_output_frame(
 			mvp,
 			model,
 			time_seconds,
-			toplevel->experimental.motion.wobble_x,
-			toplevel->experimental.motion.wobble_y,
-			toplevel->experimental.close.progress
+			shady_spatial_toplevel_state(toplevel)->motion.wobble_x,
+			shady_spatial_toplevel_state(toplevel)->motion.wobble_y,
+			shady_spatial_toplevel_state(toplevel)->close.progress
 		);
 
 		/* Render wl_subsurface children from the same scene subtree instead of
@@ -956,7 +956,7 @@ void shady_render_output_frame(
 			if(!ds->mapped)continue;
 			float dw=(float)ds->current.width,dh=(float)ds->current.height;
 			if(dw<=0.f||dh<=0.f)continue;
-			if(shady_spatial_state(server)->runtime.camera.first_person&&!debug_t->experimental.fps_expanded){
+			if(shady_spatial_state(server)->runtime.camera.first_person&&!shady_spatial_toplevel_state(debug_t)->fps_expanded){
 				/* Debug the authoritative physics cube, not only the textured
 				 * window face. This shows all 12 edges / six collision faces. */
 				float dx=(float)debug_t->scene_tree->node.x+ox;
@@ -966,14 +966,14 @@ void shady_render_output_frame(
 				float h=SHADY_FPS_CUBE_SIZE*.5f;
 				struct shady_box_collider cube={
 					dcx-h,dcx+h,dcy-h,dcy+h,
-					debug_t->experimental.z-h,debug_t->experimental.z+h
+					shady_spatial_toplevel_state(debug_t)->z-h,shady_spatial_toplevel_state(debug_t)->z+h
 				};
 				shady_gl_pipeline_draw_debug_box(&pipeline,vp,&cube,false);
 			}else{
 				float dm[16];
 				shady_window_model(dm,(float)debug_t->scene_tree->node.x+ox,
 					(float)debug_t->scene_tree->node.y+oy,dw,dh,logical_w,logical_h,
-					debug_t->experimental.z,debug_t->experimental.motion.tilt_x,debug_t->experimental.motion.tilt_y);
+					shady_spatial_toplevel_state(debug_t)->z,shady_spatial_toplevel_state(debug_t)->motion.tilt_x,shady_spatial_toplevel_state(debug_t)->motion.tilt_y);
 				shady_gl_pipeline_draw_debug_window_body(&pipeline,vp,dm);
 			}
 		}
@@ -1069,7 +1069,7 @@ void shady_render_toplevel_commit(
 	struct shady_toplevel *toplevel
 ) {
 	if (
-		toplevel->experimental.close.state !=
+		shady_spatial_toplevel_state(toplevel)->close.state !=
 		SHADY_CLOSE_ARMED
 	) {
 		return;
@@ -1103,7 +1103,7 @@ void shady_render_toplevel_unmap(
 	if (
 		!snapshot ||
 		!snapshot->texture ||
-		toplevel->experimental.close.state !=
+		shady_spatial_toplevel_state(toplevel)->close.state !=
 			SHADY_CLOSE_ARMED
 	) {
 		return;

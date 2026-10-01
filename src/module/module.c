@@ -119,6 +119,40 @@ void shady_modules_release_states(struct shady_server *server) {
 		} \
 	} while (0)
 
+bool shady_modules_toplevel_state_init(struct shady_toplevel *toplevel) {
+	struct shady_server *server = toplevel->server;
+	for (size_t i = 0; i < server->modules.count; i++) {
+		const struct shady_module *module = server->modules.modules[i];
+		if (!server->modules.active[i] || module->toplevel_state_size == 0) continue;
+		toplevel->module_state[i] = calloc(1, module->toplevel_state_size);
+		if (!toplevel->module_state[i]) {
+			shady_modules_toplevel_state_finish(toplevel);
+			return false;
+		}
+	}
+	return true;
+}
+
+void shady_modules_toplevel_state_finish(struct shady_toplevel *toplevel) {
+	for (size_t i = 0; i < SHADY_MAX_MODULES; i++) {
+		free(toplevel->module_state[i]);
+		toplevel->module_state[i] = NULL;
+	}
+}
+
+void *shady_toplevel_module_state(struct shady_toplevel *toplevel, const char *name) {
+	struct shady_server *server = toplevel->server;
+	for (size_t i = 0; i < server->modules.count; i++) {
+		if (strcmp(server->modules.modules[i]->name, name) == 0) return toplevel->module_state[i];
+	}
+	return NULL;
+}
+
+const void *shady_toplevel_module_state_const(const struct shady_toplevel *toplevel,
+		const char *name) {
+	return shady_toplevel_module_state((struct shady_toplevel *)toplevel, name);
+}
+
 void shady_modules_toplevel_map(struct shady_toplevel *toplevel) {
 	DISPATCH_TOPLEVEL(toplevel_map);
 }

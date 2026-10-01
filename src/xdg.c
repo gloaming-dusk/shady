@@ -57,16 +57,6 @@ static void begin_interactive(struct shady_toplevel *toplevel,
 			server->cursor->y -
 			toplevel->scene_tree->node.y;
 
-		/*
-		* Initialise the wobble drag tracker.
-		*/
-		toplevel->experimental.motion.last_move_x =
-			toplevel->scene_tree->node.x;
-
-		toplevel->experimental.motion.last_move_y =
-			toplevel->scene_tree->node.y;
-
-		toplevel->experimental.motion.wobble_dragging = true;
 	} else {
 		struct wlr_box *geo_box = &toplevel->xdg_toplevel->base->geometry;
 
@@ -141,6 +131,7 @@ static void xdg_toplevel_destroy(struct wl_listener *listener, void *data) {
 	wl_list_remove(&toplevel->request_maximize.link);
 	wl_list_remove(&toplevel->request_fullscreen.link);
 
+	shady_modules_toplevel_state_finish(toplevel);
 	free(toplevel);
 }
 
@@ -183,8 +174,15 @@ void server_new_xdg_toplevel(struct wl_listener *listener, void *data) {
 	struct wlr_xdg_toplevel *xdg_toplevel = data;
 
 	struct shady_toplevel *toplevel = calloc(1, sizeof(*toplevel));
+	if (!toplevel) {
+		return;
+	}
 	toplevel->server = server;
 	toplevel->xdg_toplevel = xdg_toplevel;
+	if (!shady_modules_toplevel_state_init(toplevel)) {
+		free(toplevel);
+		return;
+	}
 	toplevel->scene_tree =
 		wlr_scene_xdg_surface_create(toplevel->server->content_tree, xdg_toplevel->base);
 	toplevel->scene_tree->node.data = toplevel;

@@ -180,11 +180,11 @@ static bool spatial_pointer_axis(struct shady_server *server,
 		struct shady_toplevel *toplevel = focused_toplevel(server);
 		if (toplevel) {
 			float direction = event->delta < 0.0 ? 1.0f : -1.0f;
-			toplevel->experimental.z += direction * WINDOW_Z_STEP;
-			if (toplevel->experimental.z < WINDOW_Z_MIN)
-				toplevel->experimental.z = WINDOW_Z_MIN;
-			if (toplevel->experimental.z > WINDOW_Z_MAX)
-				toplevel->experimental.z = WINDOW_Z_MAX;
+			shady_spatial_toplevel_state(toplevel)->z += direction * WINDOW_Z_STEP;
+			if (shady_spatial_toplevel_state(toplevel)->z < WINDOW_Z_MIN)
+				shady_spatial_toplevel_state(toplevel)->z = WINDOW_Z_MIN;
+			if (shady_spatial_toplevel_state(toplevel)->z > WINDOW_Z_MAX)
+				shady_spatial_toplevel_state(toplevel)->z = WINDOW_Z_MAX;
 			shady_render_schedule_all_outputs(server);
 		}
 		return true;
@@ -262,6 +262,7 @@ static bool spatial_key(struct shady_server *server, const xkb_keysym_t *syms,
 static const struct shady_module spatial_module = {
 	.name = "spatial",
 	.state_size = sizeof(struct shady_spatial_state),
+	.toplevel_state_size = sizeof(struct shady_toplevel_experimental_state),
 	.enabled = spatial_enabled,
 	.init = spatial_init,
 	.destroy = spatial_destroy,
