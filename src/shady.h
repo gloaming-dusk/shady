@@ -32,6 +32,10 @@ struct wlr_idle_notifier_v1;
 struct wlr_primary_selection_v1_device_manager;
 struct wlr_data_control_manager_v1;
 struct wlr_xdg_decoration_manager_v1;
+struct wlr_output_manager_v1;
+struct wlr_session_lock_manager_v1;
+struct wlr_session_lock_v1;
+struct wlr_scene_tree;
 struct wlr_layer_surface_v1;
 struct wlr_scene_layer_surface_v1;
 struct wlr_keyboard;
@@ -108,6 +112,15 @@ struct shady_server {
 	struct wlr_primary_selection_v1_device_manager *primary_selection_manager;
 	struct wlr_data_control_manager_v1 *data_control_manager;
 	struct wlr_xdg_decoration_manager_v1 *xdg_decoration_manager;
+	struct wlr_output_manager_v1 *output_manager;
+	struct wl_listener output_manager_apply;
+	struct wl_listener output_manager_test;
+
+	struct wlr_session_lock_manager_v1 *session_lock_manager;
+	struct wl_listener new_session_lock;
+	struct wlr_session_lock_v1 *session_lock;
+	struct wlr_scene_tree *session_lock_tree;
+	bool session_locked;
 
 	struct wlr_cursor *cursor;
 	struct wlr_xcursor_manager *cursor_mgr;
@@ -174,6 +187,22 @@ struct shady_toplevel {
 	struct shady_toplevel_experimental_state experimental;
 };
 
+struct shady_session_lock {
+	struct shady_server *server;
+	struct wlr_session_lock_v1 *lock;
+	bool unlocked;
+	struct wl_listener new_surface;
+	struct wl_listener unlock;
+	struct wl_listener destroy;
+};
+
+struct shady_lock_surface {
+	struct shady_session_lock *lock;
+	struct wlr_session_lock_surface_v1 *lock_surface;
+	struct wlr_scene_tree *tree;
+	struct wl_listener destroy;
+};
+
 struct shady_layer_surface {
 	struct wl_list link;
 	struct shady_server *server;
@@ -222,6 +251,12 @@ void server_cursor_frame(struct wl_listener *listener, void *data);
 
 /* output.c */
 void server_new_output(struct wl_listener *listener, void *data);
+void shady_output_manager_publish(struct shady_server *server);
+void shady_output_manager_apply(struct wl_listener *listener, void *data);
+void shady_output_manager_test(struct wl_listener *listener, void *data);
+
+/* session_lock.c */
+void server_new_session_lock(struct wl_listener *listener, void *data);
 
 /* xdg.c */
 void server_new_xdg_toplevel(struct wl_listener *listener, void *data);

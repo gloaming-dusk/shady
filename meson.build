@@ -29,6 +29,8 @@ shady_sources = [
   'src/xdg.c',
   'src/layer.c',
   'src/output.c',
+  'src/output_management.c',
+  'src/session_lock.c',
   'src/render/render.c',
   'src/render/gl_pipeline.c',
   'src/render/math3d.c',

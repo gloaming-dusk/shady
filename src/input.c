@@ -193,7 +193,7 @@ static struct shady_toplevel *desktop_toplevel_at(struct shady_server *server,
 
 static struct shady_toplevel *toplevel_at_cursor(struct shady_server *server,
 		double lx, double ly, struct wlr_surface **surface, double *sx, double *sy) {
-	if (!server->config.spatial_mode) {
+	if (!server->config.spatial_mode || server->session_locked) {
 		return desktop_toplevel_at(server, lx, ly, surface, sx, sy);
 	}
 	return shady_toplevel_at_3d(server, lx, ly, surface, sx, sy);
@@ -341,12 +341,12 @@ static void keyboard_handle_key(
 	bool handled = false;
 	uint32_t modifiers = wlr_keyboard_get_modifiers(keyboard->wlr_keyboard);
 
-	if (event->state == WL_KEYBOARD_KEY_STATE_PRESSED) {
+	if (!server->session_locked && event->state == WL_KEYBOARD_KEY_STATE_PRESSED) {
 		for (int j = 0; j < nsyms && !handled; j++)
 			handled = handle_keybinding(server, syms[j], modifiers);
 	}
 
-	if (shady_fps_handle_key(server, syms, nsyms, event->state))
+	if (!server->session_locked && shady_fps_handle_key(server, syms, nsyms, event->state))
 		handled = true;
 	if (!handled) {
 		wlr_seat_set_keyboard(seat, keyboard->wlr_keyboard);

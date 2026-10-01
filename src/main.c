@@ -20,6 +20,8 @@
 #include <wlr/types/wlr_primary_selection_v1.h>
 #include <wlr/types/wlr_data_control_v1.h>
 #include <wlr/types/wlr_xdg_decoration_v1.h>
+#include <wlr/types/wlr_output_management_v1.h>
+#include <wlr/types/wlr_session_lock_v1.h>
 #include <wlr/types/wlr_output_layout.h>
 #include <wlr/types/wlr_scene.h>
 #include <wlr/types/wlr_seat.h>
@@ -184,6 +186,18 @@ int main(int argc, char *argv[]) {
 		wlr_data_control_manager_v1_create(server.wl_display);
 	server.xdg_decoration_manager =
 		wlr_xdg_decoration_manager_v1_create(server.wl_display);
+	server.output_manager =
+		wlr_output_manager_v1_create(server.wl_display);
+	server.output_manager_apply.notify = shady_output_manager_apply;
+	wl_signal_add(&server.output_manager->events.apply, &server.output_manager_apply);
+	server.output_manager_test.notify = shady_output_manager_test;
+	wl_signal_add(&server.output_manager->events.test, &server.output_manager_test);
+
+	server.session_lock_manager =
+		wlr_session_lock_manager_v1_create(server.wl_display);
+	server.new_session_lock.notify = server_new_session_lock;
+	wl_signal_add(&server.session_lock_manager->events.new_lock,
+		&server.new_session_lock);
 
 	server.cursor = wlr_cursor_create();
 	wlr_cursor_attach_output_layout(server.cursor, server.output_layout);
@@ -278,6 +292,9 @@ int main(int argc, char *argv[]) {
 	wl_list_remove(&server.pointer_focus_change.link);
 	wl_list_remove(&server.request_set_selection.link);
 	wl_list_remove(&server.request_set_primary_selection.link);
+	wl_list_remove(&server.output_manager_apply.link);
+	wl_list_remove(&server.output_manager_test.link);
+	wl_list_remove(&server.new_session_lock.link);
 
 	wl_list_remove(&server.new_output.link);
 
