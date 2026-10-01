@@ -21,6 +21,7 @@ typedef struct shady_window_handle *shady_window;
 typedef struct shady_output_handle *shady_output;
 typedef struct shady_seat_handle *shady_seat;
 typedef struct shady_module_handle *shady_module_handle;
+typedef uint64_t shady_subscription_id;
 struct shady_event;
 typedef void (*shady_event_callback)(
 	shady_host host,
@@ -70,6 +71,9 @@ struct shady_plugin_api_v1 {
 	const char *(*event_name)(uint32_t event_type);
 	bool (*subscribe_event)(shady_host host, uint32_t event_type,
 		shady_event_callback callback, void *user_data);
+	shady_subscription_id (*subscribe_event_handle)(shady_host host,
+		uint32_t event_type, shady_event_callback callback, void *user_data);
+	bool (*unsubscribe_event)(shady_host host, shady_subscription_id subscription);
 	void (*schedule_render)(shady_host host);
 	void (*terminate)(shady_host host);
 };

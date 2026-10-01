@@ -71,6 +71,14 @@ bool shady_modules_register(struct shady_module_manager *manager,
 	return true;
 }
 
+ssize_t shady_module_index_by_name(struct shady_server *server, const char *name) {
+	for (size_t i = 0; i < server->modules.count; i++) {
+		if (server->modules.modules[i] && server->modules.modules[i]->name &&
+				strcmp(server->modules.modules[i]->name, name) == 0) return (ssize_t)i;
+	}
+	return -1;
+}
+
 bool shady_modules_has_registered(const struct shady_module_manager *manager,
 		const char *name) {
 	for (size_t i = 0; i < manager->count; i++) {
@@ -164,17 +172,29 @@ bool shady_modules_resolve(struct shady_server *server) {
 	}
 	const struct shady_module *old_modules[SHADY_MAX_MODULES] = {0};
 	void *old_handles[SHADY_MAX_MODULES] = {0};
+	void *old_bases[SHADY_MAX_MODULES] = {0};
+	char *old_paths[SHADY_MAX_MODULES] = {0};
+	char *old_names[SHADY_MAX_MODULES] = {0};
 	int8_t old_overrides[SHADY_MAX_MODULES] = {0};
 	memcpy(old_modules, manager->modules, sizeof(old_modules));
 	memcpy(old_handles, manager->plugin_handle, sizeof(old_handles));
+	memcpy(old_bases, manager->plugin_base, sizeof(old_bases));
+	memcpy(old_paths, manager->plugin_path, sizeof(old_paths));
+	memcpy(old_names, manager->plugin_name, sizeof(old_names));
 	memcpy(old_overrides, manager->enable_override, sizeof(old_overrides));
 	memcpy(manager->modules, ordered, sizeof(manager->modules));
 	memset(manager->plugin_handle, 0, sizeof(manager->plugin_handle));
+	memset(manager->plugin_base, 0, sizeof(manager->plugin_base));
+	memset(manager->plugin_path, 0, sizeof(manager->plugin_path));
+	memset(manager->plugin_name, 0, sizeof(manager->plugin_name));
 	memset(manager->enable_override, 0, sizeof(manager->enable_override));
 	for (size_t i = 0; i < manager->count; i++) {
 		for (size_t j = 0; j < manager->count; j++) {
 			if (manager->modules[i] == old_modules[j]) {
 				manager->plugin_handle[i] = old_handles[j];
+				manager->plugin_base[i] = old_bases[j];
+				manager->plugin_path[i] = old_paths[j];
+				manager->plugin_name[i] = old_names[j];
 				manager->enable_override[i] = old_overrides[j];
 				break;
 			}
@@ -183,6 +203,7 @@ bool shady_modules_resolve(struct shady_server *server) {
 			manager->modules[i]->name);
 	}
 	memset(manager->active, 0, sizeof(manager->active));
+	memset(manager->module_started, 0, sizeof(manager->module_started));
 	memset(manager->state, 0, sizeof(manager->state));
 	manager->resolved = true;
 	return true;
@@ -232,12 +253,10 @@ void shady_modules_start_all(struct shady_server *server) {
 	struct shady_module_manager *manager = &server->modules;
 	for (size_t i = 0; i < manager->count; i++) {
 		const struct shady_module *module = manager->modules[i];
-		if (manager->active[i] && module->start) {
-			module->start(server);
-		}
-		if (manager->active[i]) {
-			shady_event_emit_module(server, SHADY_EVENT_MODULE_STARTED, module);
-		}
+		if (!manager->active[i]) continue;
+		if (module->start) module->start(server);
+		manager->module_started[i] = true;
+		shady_event_emit_module(server, SHADY_EVENT_MODULE_STARTED, module);
 	}
 	manager->started = true;
 }
@@ -247,12 +266,10 @@ void shady_modules_stop_all(struct shady_server *server) {
 	if (!manager->started) return;
 	for (size_t i = manager->count; i > 0; i--) {
 		const struct shady_module *module = manager->modules[i - 1];
-		if (manager->active[i - 1]) {
-			shady_event_emit_module(server, SHADY_EVENT_MODULE_STOPPED, module);
-		}
-		if (manager->active[i - 1] && module->stop) {
-			module->stop(server);
-		}
+		if (!manager->module_started[i - 1]) continue;
+		shady_event_emit_module(server, SHADY_EVENT_MODULE_STOPPED, module);
+		if (module->stop) module->stop(server);
+		manager->module_started[i - 1] = false;
 	}
 	manager->started = false;
 }
@@ -265,6 +282,7 @@ void shady_modules_destroy_all(struct shady_server *server) {
 			module->destroy(server);
 		}
 		manager->active[i - 1] = false;
+		manager->module_started[i - 1] = false;
 	}
 }
 
@@ -280,9 +298,15 @@ void shady_modules_close_plugins(struct shady_server *server) {
 	struct shady_module_manager *manager = &server->modules;
 	for (size_t i = manager->count; i > 0; i--) {
 		if (manager->plugin_handle[i - 1]) {
+			shady_event_unsubscribe_owner(server, manager->plugin_base[i - 1]);
 			dlclose(manager->plugin_handle[i - 1]);
 			manager->plugin_handle[i - 1] = NULL;
+			manager->plugin_base[i - 1] = NULL;
 		}
+		free(manager->plugin_path[i - 1]);
+		manager->plugin_path[i - 1] = NULL;
+		free(manager->plugin_name[i - 1]);
+		manager->plugin_name[i - 1] = NULL;
 	}
 }
 

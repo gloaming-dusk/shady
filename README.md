@@ -192,7 +192,7 @@ Supported modifier names are `Alt`, `Shift`, `Ctrl`/`Control`, and `Super`/`Logo
 
 ### Event API
 
-C plugins and Lua scripts consume the same event bus and object payloads. Lua subscribes with `shady.on(name, callback)`:
+C plugins and Lua scripts consume the same event bus and object payloads. Lua subscribes with `shady.on(name, callback)`, which returns a subscription token. Pass that token to `shady.off(token)` to detach the handler:
 
 ```lua
 shady.on("window.mapped", function(window)
@@ -203,9 +203,12 @@ shady.on("window.focused", function(window)
     shady.log("focused: " .. window.app_id)
 end)
 
-shady.on("output.added", function(output)
+local token = shady.on("output.added", function(output)
     shady.log("output: " .. output.name)
 end)
+
+-- Later:
+shady.off(token)
 ```
 
 Current event names are `window.created`, `window.mapped`, `window.unmapped`, `window.focused`, `window.destroyed`, `output.added`, `output.removed`, `module.started`, and `module.stopped`. Window lifecycle ordering is `created -> mapped -> focused` and shutdown normally follows `unmapped -> destroyed`.
@@ -380,7 +383,22 @@ const struct shady_module *shady_plugin_entry_v1(
 }
 ```
 
-The host API is object-oriented around opaque `shady_host`, `shady_window`, `shady_output`, `shady_seat`, and `shady_module_handle` values. It exposes object enumeration and queries, window validity/focus/close operations, module/window state access for module-owned data, logging, capability checks, config mutation, render scheduling, compositor termination, and `subscribe_event()` for the same event stream used by Lua. Plugins never need the private layout of Shady's server/window/output structs. Plugins are loaded from bootstrap Lua with `shady.plugin(path)` and then participate in normal capability resolution, initialization, hooks, events, and reverse-order teardown. `examples/plugins/hello.c` exercises the host/seat/output/module/event APIs.
+The host API is object-oriented around opaque `shady_host`, `shady_window`, `shady_output`, `shady_seat`, and `shady_module_handle` values. It exposes object enumeration and queries, window validity/focus/close operations, module/window state access for module-owned data, logging, capability checks, config mutation, render scheduling, compositor termination, and event subscriptions for the same event stream used by Lua. `subscribe_event_handle()` returns a `shady_subscription_id` that can be removed with `unsubscribe_event()`. The older boolean `subscribe_event()` remains available as a convenience wrapper.
+
+Plugins never need the private layout of Shady's server/window/output structs. Plugins are loaded from bootstrap Lua with `shady.plugin(path)` and then participate in normal capability resolution, initialization, hooks, events, and reverse-order teardown. `examples/plugins/hello.c` exercises the host/seat/output/module/event APIs.
+
+### Hot reload
+
+Runtime Lua can hot-unload or reload external plugins by module name:
+
+```lua
+shady.unload_plugin("hello-plugin")
+shady.reload_plugin("hello-plugin")
+```
+
+The current hot-reload contract intentionally supports only **stateless plugins** (`state_size == 0` and `toplevel_state_size == 0`). Shady also refuses unload when another active module requires or optionally consumes one of the plugin's provided capabilities. This keeps existing module/window state slots stable while the `.so` is replaced in place.
+
+Event subscriptions are owned by the shared object that supplied the callback and are automatically removed before `dlclose()`. When unload/reload is requested from inside an event callback, Shady defers the operation to the Wayland event-loop idle phase so the current event payload and remaining subscribers stay valid until dispatch completes.
 
 ## Current status
 

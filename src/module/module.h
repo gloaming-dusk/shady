@@ -1,13 +1,19 @@
 #ifndef SHADY_MODULE_MODULE_H
 #define SHADY_MODULE_MODULE_H
 
+#include <sys/types.h>
 #include <shady/module.h>
 
 struct shady_module_manager {
 	const struct shady_module *modules[SHADY_MAX_MODULES];
 	bool active[SHADY_MAX_MODULES];
+	bool module_started[SHADY_MAX_MODULES];
 	void *state[SHADY_MAX_MODULES];
 	void *plugin_handle[SHADY_MAX_MODULES];
+	void *plugin_base[SHADY_MAX_MODULES];
+	char *plugin_path[SHADY_MAX_MODULES];
+	char *plugin_name[SHADY_MAX_MODULES];
+	struct shady_module plugin_stub[SHADY_MAX_MODULES];
 	int8_t enable_override[SHADY_MAX_MODULES];
 	size_t count;
 	bool resolved;
@@ -30,6 +36,7 @@ void shady_modules_stop_all(struct shady_server *server);
 void shady_modules_destroy_all(struct shady_server *server);
 void shady_modules_release_states(struct shady_server *server);
 void shady_modules_close_plugins(struct shady_server *server);
+ssize_t shady_module_index_by_name(struct shady_server *server, const char *name);
 
 bool shady_modules_toplevel_state_init(struct shady_toplevel *toplevel);
 void shady_modules_toplevel_state_finish(struct shady_toplevel *toplevel);

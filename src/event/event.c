@@ -23,6 +23,8 @@ const char *shady_event_name(enum shady_event_type type) {
 void shady_events_init(struct shady_server *server) {
 	wl_list_init(&server->events.subscriptions);
 	server->events.next_serial = 1;
+	server->events.next_subscription_id = 1;
+	server->events.dispatch_depth = 0;
 }
 
 void shady_events_finish(struct shady_server *server) {
@@ -33,26 +35,74 @@ void shady_events_finish(struct shady_server *server) {
 	}
 }
 
-bool shady_event_subscribe(struct shady_server *server, uint32_t event_type,
-		shady_event_callback callback, void *user_data) {
-	if (!callback || event_type > SHADY_EVENT_MODULE_STOPPED) return false;
+shady_subscription_id shady_event_subscribe_owned(struct shady_server *server,
+		uint32_t event_type, shady_event_callback callback, void *user_data,
+		void *owner) {
+	if (!callback || event_type > SHADY_EVENT_MODULE_STOPPED) return 0;
 	struct shady_event_subscription *sub = calloc(1, sizeof(*sub));
-	if (!sub) return false;
+	if (!sub) return 0;
+	sub->id = server->events.next_subscription_id++;
+	if (sub->id == 0) sub->id = server->events.next_subscription_id++;
 	sub->event_type = event_type;
 	sub->callback = callback;
 	sub->user_data = user_data;
+	sub->owner = owner;
 	wl_list_insert(server->events.subscriptions.prev, &sub->link);
-	return true;
+	return sub->id;
+}
+
+bool shady_event_subscribe(struct shady_server *server, uint32_t event_type,
+		shady_event_callback callback, void *user_data) {
+	return shady_event_subscribe_owned(server, event_type, callback, user_data, NULL) != 0;
+}
+
+static void sweep_removed(struct shady_server *server) {
+	if (server->events.dispatch_depth != 0) return;
+	struct shady_event_subscription *sub, *tmp;
+	wl_list_for_each_safe(sub, tmp, &server->events.subscriptions, link) {
+		if (!sub->removed) continue;
+		wl_list_remove(&sub->link);
+		free(sub);
+	}
+}
+
+bool shady_event_unsubscribe(struct shady_server *server,
+		shady_subscription_id subscription) {
+	if (!subscription) return false;
+	struct shady_event_subscription *sub;
+	wl_list_for_each(sub, &server->events.subscriptions, link) {
+		if (sub->id != subscription || sub->removed) continue;
+		sub->removed = true;
+		sweep_removed(server);
+		return true;
+	}
+	return false;
+}
+
+void shady_event_unsubscribe_owner(struct shady_server *server, void *owner) {
+	if (!owner) return;
+	struct shady_event_subscription *sub;
+	wl_list_for_each(sub, &server->events.subscriptions, link) {
+		if (sub->owner == owner) sub->removed = true;
+	}
+	sweep_removed(server);
+}
+
+bool shady_events_dispatching(const struct shady_server *server) {
+	return server->events.dispatch_depth != 0;
 }
 
 static void emit(struct shady_server *server, struct shady_event *event) {
 	event->serial = server->events.next_serial++;
-	struct shady_event_subscription *sub, *tmp;
-	wl_list_for_each_safe(sub, tmp, &server->events.subscriptions, link) {
-		if (sub->event_type == (uint32_t)event->type) {
+	server->events.dispatch_depth++;
+	struct shady_event_subscription *sub;
+	wl_list_for_each(sub, &server->events.subscriptions, link) {
+		if (!sub->removed && sub->event_type == (uint32_t)event->type) {
 			sub->callback((shady_host)server, event, sub->user_data);
 		}
 	}
+	server->events.dispatch_depth--;
+	sweep_removed(server);
 }
 
 void shady_event_emit_window(struct shady_server *server,
