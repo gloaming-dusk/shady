@@ -97,8 +97,14 @@ void shady_modules_destroy_all(struct shady_server *server) {
 			module->destroy(server);
 		}
 		manager->active[i - 1] = false;
-		free(manager->state[i - 1]);
-		manager->state[i - 1] = NULL;
+	}
+}
+
+void shady_modules_release_states(struct shady_server *server) {
+	struct shady_module_manager *manager = &server->modules;
+	for (size_t i = 0; i < manager->count; i++) {
+		free(manager->state[i]);
+		manager->state[i] = NULL;
 	}
 }
 

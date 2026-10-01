@@ -7,6 +7,7 @@
 #include <wlr/types/wlr_xdg_shell.h>
 
 #include "../shady.h"
+#include "../modules/spatial/state.h"
 #include "math3d.h"
 #include "render.h"
 #include "../modules/fps/fps.h"
@@ -71,7 +72,7 @@ struct shady_toplevel *shady_toplevel_at_3d(struct shady_server *server,
 		float layout_y = (float)(toplevel->scene_tree->node.y + oy);
 
 		float model[16];
-		if(server->experimental.camera.first_person&&!toplevel->experimental.fps_expanded){
+		if(shady_spatial_state(server)->runtime.camera.first_person&&!toplevel->experimental.fps_expanded){
 			float cx=(layout_x+tw*.5f-logical_w*.5f)/logical_h,cy=.5f-(layout_y+th*.5f)/logical_h;
 			shady_window_cube_model(model,cx,cy,toplevel->experimental.z,SHADY_FPS_CUBE_SIZE,toplevel->experimental.motion.tilt_x,toplevel->experimental.motion.tilt_y);
 		}else shady_window_model(model,layout_x,layout_y,tw,th,logical_w,logical_h,toplevel->experimental.z,toplevel->experimental.motion.tilt_x,toplevel->experimental.motion.tilt_y);
@@ -117,8 +118,8 @@ struct shady_toplevel *shady_toplevel_at_camera_center_hit(
 		float *hit_x, float *hit_y, float *hit_z) {
 	if (distance_out) *distance_out = 0.f;
 	struct shady_vec3 eye, forward;
-	shady_camera_eye(&server->experimental.camera, &eye);
-	shady_camera_basis(&server->experimental.camera, NULL, NULL, &forward);
+	shady_camera_eye(&shady_spatial_state(server)->runtime.camera, &eye);
+	shady_camera_basis(&shady_spatial_state(server)->runtime.camera, NULL, NULL, &forward);
 	struct shady_ray ray = { .origin = eye, .dir = forward };
 
 	struct wlr_output *wlr_output = NULL;
@@ -147,7 +148,7 @@ struct shady_toplevel *shady_toplevel_at_camera_center_hit(
 		float th = (float)surf->current.height;
 		if (tw <= 0.f || th <= 0.f) continue;
 		float model[16];
-		if(server->experimental.camera.first_person&&!toplevel->experimental.fps_expanded){
+		if(shady_spatial_state(server)->runtime.camera.first_person&&!toplevel->experimental.fps_expanded){
 			float lx=(float)(toplevel->scene_tree->node.x+ox),ly=(float)(toplevel->scene_tree->node.y+oy);
 			float cx=(lx+tw*.5f-logical_w*.5f)/logical_h,cy=.5f-(ly+th*.5f)/logical_h;
 			shady_window_cube_model(model,cx,cy,toplevel->experimental.z,SHADY_FPS_CUBE_SIZE,toplevel->experimental.motion.tilt_x,toplevel->experimental.motion.tilt_y);

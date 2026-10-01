@@ -1,4 +1,5 @@
 #include "environment.h"
+#include "../spatial/state.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <GLES2/gl2.h>
@@ -54,16 +55,16 @@ bool shady_environment_load_colliders(struct shady_server*s){
 	if(!s->config.environment_obj||!s->config.environment_obj_path[0])return true;
 	struct shady_box_collider boxes[SHADY_WORLD_MAX_COLLIDERS]; size_t n=0;
 	if(!shady_obj_load_colliders(s->config.environment_obj_path,boxes,SHADY_WORLD_MAX_COLLIDERS,&n))return false;
-	for(size_t i=0;i<n;i++)if(!shady_world_add_collider(&s->experimental.world,boxes[i]))return false;
+	for(size_t i=0;i<n;i++)if(!shady_world_add_collider(&shady_spatial_state(s)->runtime.world,boxes[i]))return false;
 	struct shady_triangle_collider tris[SHADY_WORLD_MAX_TRIANGLES];size_t tn=0;
 	if(!shady_obj_load_collision_triangles(s->config.environment_obj_path,
 			tris,SHADY_WORLD_MAX_TRIANGLES,&tn))return false;
-	for(size_t i=0;i<tn;i++)if(!shady_world_add_triangle(&s->experimental.world,&tris[i]))return false;
+	for(size_t i=0;i<tn;i++)if(!shady_world_add_triangle(&shady_spatial_state(s)->runtime.world,&tris[i]))return false;
 	wlr_log(WLR_INFO,"[SHADY COLLISION] ✅ WORLD READY: %zu OBJ groups / %zu triangles registered",n,tn);
 	return true;
 }
 void shady_environment_fini(void){if(mesh_vbo)glDeleteBuffers(1,&mesh_vbo);if(mesh_prog)glDeleteProgram(mesh_prog);if(tex)glDeleteTextures(1,&tex);if(vbo)glDeleteBuffers(1,&vbo);if(prog)glDeleteProgram(prog);mesh_vbo=mesh_prog=tex=vbo=prog=0;mesh_vertex_count=0;loaded_obj_path[0]=0;loaded_path[0]=0;}
-void shady_environment_draw(struct shady_server*s,struct shady_gl_pipeline*p,const float view[16],const float proj[16]){(void)p;(void)view;(void)proj;if(!s->config.sky||!s->config.sky_path[0])return;if(!tex||strcmp(loaded_path,s->config.sky_path))if(!load_ppm(s->config.sky_path))return;GLint vp[4];glGetIntegerv(GL_VIEWPORT,vp);glDisable(GL_DEPTH_TEST);glDepthMask(GL_FALSE);glUseProgram(prog);glUniform1i(u_tex,0);struct shady_vec3 r,u,f;shady_camera_basis(&s->experimental.camera,&r,&u,&f);glUniform3f(u_right,r.x,r.y,r.z);glUniform3f(u_up,u.x,u.y,u.z);glUniform3f(u_forward,f.x,f.y,f.z);glUniform1f(u_aspect,vp[3]?((float)vp[2]/vp[3]):1.f);glActiveTexture(GL_TEXTURE0);glBindTexture(GL_TEXTURE_2D,tex);glBindBuffer(GL_ARRAY_BUFFER,vbo);glVertexAttribPointer(0,2,GL_FLOAT,GL_FALSE,0,0);glEnableVertexAttribArray(0);glDrawArrays(GL_TRIANGLES,0,6);glDisableVertexAttribArray(0);glBindBuffer(GL_ARRAY_BUFFER,0);glUseProgram(0);glDepthMask(GL_TRUE);glEnable(GL_DEPTH_TEST);}
+void shady_environment_draw(struct shady_server*s,struct shady_gl_pipeline*p,const float view[16],const float proj[16]){(void)p;(void)view;(void)proj;if(!s->config.sky||!s->config.sky_path[0])return;if(!tex||strcmp(loaded_path,s->config.sky_path))if(!load_ppm(s->config.sky_path))return;GLint vp[4];glGetIntegerv(GL_VIEWPORT,vp);glDisable(GL_DEPTH_TEST);glDepthMask(GL_FALSE);glUseProgram(prog);glUniform1i(u_tex,0);struct shady_vec3 r,u,f;shady_camera_basis(&shady_spatial_state(s)->runtime.camera,&r,&u,&f);glUniform3f(u_right,r.x,r.y,r.z);glUniform3f(u_up,u.x,u.y,u.z);glUniform3f(u_forward,f.x,f.y,f.z);glUniform1f(u_aspect,vp[3]?((float)vp[2]/vp[3]):1.f);glActiveTexture(GL_TEXTURE0);glBindTexture(GL_TEXTURE_2D,tex);glBindBuffer(GL_ARRAY_BUFFER,vbo);glVertexAttribPointer(0,2,GL_FLOAT,GL_FALSE,0,0);glEnableVertexAttribArray(0);glDrawArrays(GL_TRIANGLES,0,6);glDisableVertexAttribArray(0);glBindBuffer(GL_ARRAY_BUFFER,0);glUseProgram(0);glDepthMask(GL_TRUE);glEnable(GL_DEPTH_TEST);}
 
 void shady_environment_draw_mesh(struct shady_server*s,const float vp[16]){
 	if(!s->config.environment_obj||!s->config.environment_obj_path[0])return;

@@ -10,6 +10,7 @@
 #include "../../render/render.h"
 #include "../physics/physics.h"
 #include "../fps/fps.h"
+#include "../spatial/state.h"
 #include <string.h>
 #include <wlr/types/wlr_keyboard.h>
 #include <wlr/types/wlr_xdg_shell.h>
@@ -40,23 +41,32 @@ static int l_shady_bind(lua_State *L){
 	struct lua_bind *b=&lua_binds[lua_bind_count];if(!parse_lua_bind(spec,&b->sym,&b->modifiers))return luaL_error(L,"invalid key binding: %s",spec);
 	lua_pushvalue(L,2);b->ref=luaL_ref(L,LUA_REGISTRYINDEX);lua_bind_count++;return 0;
 }
+static struct shady_spatial_state *lua_spatial(lua_State *L) {
+	struct shady_spatial_state *state = shady_spatial_state(lua_server);
+	if (!state) {
+		luaL_error(L, "spatial module is not available in this build/session");
+		return NULL;
+	}
+	return state;
+}
+
 static int l_shady_camera(lua_State *L){
-	const char *key=luaL_checkstring(L,1);float v=(float)luaL_checknumber(L,2);struct shady_camera *c=&lua_server->experimental.camera;
+	const char *key=luaL_checkstring(L,1);float v=(float)luaL_checknumber(L,2);struct shady_camera *c=&lua_spatial(L)->runtime.camera;
 	if(!strcmp(key,"yaw"))c->yaw=v;else if(!strcmp(key,"pitch"))c->pitch=v;else if(!strcmp(key,"distance"))c->distance=v;
 	else if(!strcmp(key,"target_x"))c->target_x=v;else if(!strcmp(key,"target_y"))c->target_y=v;else if(!strcmp(key,"target_z"))c->target_z=v;
 	else return luaL_error(L, "unknown camera property: %s", key);
 	return 0;
 }
 static int l_shady_quit(lua_State *L){(void)L;if(lua_server->wl_display)wl_display_terminate(lua_server->wl_display);return 0;}
-static int l_shady_toggle_gravity(lua_State *L){(void)L;shady_physics_toggle_gravity(lua_server);return 0;}
+static int l_shady_toggle_gravity(lua_State *L){lua_spatial(L);shady_physics_toggle_gravity(lua_server);return 0;}
 static int l_shady_windows(lua_State *L){
 	lua_newtable(L);int n=1;struct shady_toplevel*t;
 	wl_list_for_each(t,&lua_server->toplevels,link){push_window(L,t);lua_rawseti(L,-2,n++);}return 1;
 }
-static int l_shady_expand_all(lua_State *L){(void)L;struct shady_toplevel*t;wl_list_for_each(t,&lua_server->toplevels,link){t->experimental.fps_expanded=true;shady_physics_stop(t);}lua_server->experimental.fps.expanded_toplevel=NULL;lua_server->experimental.fps.input_capture=false;shady_render_schedule_all_outputs(lua_server);return 0;}
-static int l_shady_fold_all(lua_State *L){(void)L;struct shady_toplevel*t;wl_list_for_each(t,&lua_server->toplevels,link)t->experimental.fps_expanded=false;lua_server->experimental.fps.expanded_toplevel=NULL;lua_server->experimental.fps.input_capture=lua_server->experimental.camera.first_person;shady_render_schedule_all_outputs(lua_server);return 0;}
-static int l_shady_respawn_all(lua_State *L){(void)L;shady_physics_respawn_all(lua_server);return 0;}
-static int l_shady_toggle_fps(lua_State *L){(void)L;shady_fps_toggle(lua_server);return 0;}
+static int l_shady_expand_all(lua_State *L){struct shady_spatial_state *spatial=lua_spatial(L);struct shady_toplevel*t;wl_list_for_each(t,&lua_server->toplevels,link){t->experimental.fps_expanded=true;shady_physics_stop(t);}spatial->runtime.fps.expanded_toplevel=NULL;spatial->runtime.fps.input_capture=false;shady_render_schedule_all_outputs(lua_server);return 0;}
+static int l_shady_fold_all(lua_State *L){struct shady_spatial_state *spatial=lua_spatial(L);struct shady_toplevel*t;wl_list_for_each(t,&lua_server->toplevels,link)t->experimental.fps_expanded=false;spatial->runtime.fps.expanded_toplevel=NULL;spatial->runtime.fps.input_capture=spatial->runtime.camera.first_person;shady_render_schedule_all_outputs(lua_server);return 0;}
+static int l_shady_respawn_all(lua_State *L){lua_spatial(L);shady_physics_respawn_all(lua_server);return 0;}
+static int l_shady_toggle_fps(lua_State *L){lua_spatial(L);shady_fps_toggle(lua_server);return 0;}
 
 static int l_shady_config(lua_State *L){
 	const char *key=luaL_checkstring(L,1),*value;

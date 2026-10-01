@@ -63,6 +63,7 @@ bool shady_modules_initialize_all(struct shady_server *server);
 void shady_modules_start_all(struct shady_server *server);
 void shady_modules_stop_all(struct shady_server *server);
 void shady_modules_destroy_all(struct shady_server *server);
+void shady_modules_release_states(struct shady_server *server);
 
 void shady_modules_toplevel_map(struct shady_toplevel *toplevel);
 void shady_modules_toplevel_unmap(struct shady_toplevel *toplevel);

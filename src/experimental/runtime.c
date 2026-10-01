@@ -4,6 +4,7 @@
 #include <wayland-server-core.h>
 
 #include "../shady.h"
+#include "../modules/spatial/state.h"
 #include "../modules/fps/fps.h"
 #include "../modules/physics/physics.h"
 #include "../modules/window_motion/window_motion.h"
@@ -14,15 +15,15 @@ bool shady_experimental_update(struct shady_server *server,
 	struct timespec now;
 	clock_gettime(CLOCK_MONOTONIC, &now);
 
-	if (!server->experimental.clock_ready) {
-		server->experimental.last_tick = now;
-		server->experimental.clock_ready = true;
+	if (!shady_spatial_state(server)->runtime.clock_ready) {
+		shady_spatial_state(server)->runtime.last_tick = now;
+		shady_spatial_state(server)->runtime.clock_ready = true;
 		return false;
 	}
 
 	float dt =
-		(float)(now.tv_sec - server->experimental.last_tick.tv_sec) +
-		(float)(now.tv_nsec - server->experimental.last_tick.tv_nsec) /
+		(float)(now.tv_sec - shady_spatial_state(server)->runtime.last_tick.tv_sec) +
+		(float)(now.tv_nsec - shady_spatial_state(server)->runtime.last_tick.tv_nsec) /
 			1000000000.0f;
 
 	/*
@@ -33,7 +34,7 @@ bool shady_experimental_update(struct shady_server *server,
 		return false;
 	}
 
-	server->experimental.last_tick = now;
+	shady_spatial_state(server)->runtime.last_tick = now;
 	if (dt > 0.033f) {
 		dt = 0.033f;
 	}

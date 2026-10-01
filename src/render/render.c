@@ -27,6 +27,7 @@
 #include "pick3d.h"
 #include "../experimental/runtime.h"
 #include "../modules/desktop/state.h"
+#include "../modules/spatial/state.h"
 #include "../modules/fps/fps.h"
 #include "../modules/close_animation/close_animation.h"
 #include "../modules/scene_effects/scene_effects.h"
@@ -260,7 +261,7 @@ void shady_render_camera_matrices(
 	float proj[16]
 ) {
 	shady_camera_view(
-		&server->experimental.camera,
+		&shady_spatial_state(server)->runtime.camera,
 		view
 	);
 
@@ -668,7 +669,7 @@ void shady_render_output_frame(
 		server, logical_w, logical_h);
 
 	/* Camera physics may have changed the view, so rebuild matrices. */
-	if (server->experimental.camera.first_person && simulation_advanced) {
+	if (shady_spatial_state(server)->runtime.camera.first_person && simulation_advanced) {
 		shady_render_camera_matrices(server, buf_w, buf_h, view, proj);
 		shady_mat4_multiply(vp, proj, view);
 	}
@@ -809,7 +810,7 @@ void shady_render_output_frame(
 			}
 		}
 
-		if(server->experimental.camera.first_person&&!toplevel->experimental.fps_expanded){
+		if(shady_spatial_state(server)->runtime.camera.first_person&&!toplevel->experimental.fps_expanded){
 			float cx=(layout_x+tw*.5f-logical_w*.5f)/logical_h;
 			float cy=.5f-(layout_y+th*.5f)/logical_h;
 			shady_window_cube_model(model,cx,cy,toplevel->experimental.z,SHADY_FPS_CUBE_SIZE,
@@ -931,31 +932,31 @@ void shady_render_output_frame(
 	}
 
 
-	if (server->experimental.camera.first_person) {
+	if (shady_spatial_state(server)->runtime.camera.first_person) {
 		float cross_distance = 0.f;
 		bool cross_target = shady_toplevel_at_camera_center(server, &cross_distance) != NULL;
 		shady_gl_pipeline_draw_crosshair(&pipeline, cross_target,
-			shady_fps_is_holding(server, NULL) ? false : server->experimental.fps.held_toplevel != NULL);
+			shady_fps_is_holding(server, NULL) ? false : shady_spatial_state(server)->runtime.fps.held_toplevel != NULL);
 	}
 
-	if (server->experimental.debug_ray) {
+	if (shady_spatial_state(server)->runtime.debug_ray) {
 		/* The default floor/platform occupy the first two slots. Authored OBJ
 		 * collision groups are orange so they are easy to distinguish. */
-		for (size_t i=0;i<server->experimental.world.collider_count;i++)
+		for (size_t i=0;i<shady_spatial_state(server)->runtime.world.collider_count;i++)
 			shady_gl_pipeline_draw_debug_box(&pipeline,vp,
-				&server->experimental.world.colliders[i],i>=1);
+				&shady_spatial_state(server)->runtime.world.colliders[i],i>=1);
 		/* Yellow edges are the actual authored collision_* faces. Orange boxes
 		 * are only their coarse broad-phase bounds. */
-		for(size_t i=0;i<server->experimental.world.triangle_count;i++)
+		for(size_t i=0;i<shady_spatial_state(server)->runtime.world.triangle_count;i++)
 			shady_gl_pipeline_draw_debug_triangle(&pipeline,vp,
-				&server->experimental.world.triangles[i]);
+				&shady_spatial_state(server)->runtime.world.triangles[i]);
 		struct shady_toplevel *debug_t;
 		wl_list_for_each(debug_t,&server->toplevels,link){
 			struct wlr_surface *ds=debug_t->xdg_toplevel->base->surface;
 			if(!ds->mapped)continue;
 			float dw=(float)ds->current.width,dh=(float)ds->current.height;
 			if(dw<=0.f||dh<=0.f)continue;
-			if(server->experimental.camera.first_person&&!debug_t->experimental.fps_expanded){
+			if(shady_spatial_state(server)->runtime.camera.first_person&&!debug_t->experimental.fps_expanded){
 				/* Debug the authoritative physics cube, not only the textured
 				 * window face. This shows all 12 edges / six collision faces. */
 				float dx=(float)debug_t->scene_tree->node.x+ox;
@@ -978,10 +979,10 @@ void shady_render_output_frame(
 		}
 	}
 
-	if (server->experimental.debug_ray && server->experimental.camera.first_person) {
+	if (shady_spatial_state(server)->runtime.debug_ray && shady_spatial_state(server)->runtime.camera.first_person) {
 		struct shady_vec3 eye, forward;
-		shady_camera_eye(&server->experimental.camera, &eye);
-		shady_camera_basis(&server->experimental.camera, NULL, NULL, &forward);
+		shady_camera_eye(&shady_spatial_state(server)->runtime.camera, &eye);
+		shady_camera_basis(&shady_spatial_state(server)->runtime.camera, NULL, NULL, &forward);
 		float distance = 0.f;
 		bool hit = shady_toplevel_at_camera_center(server, &distance) != NULL;
 		if (!hit) distance = 4.0f;

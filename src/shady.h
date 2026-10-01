@@ -131,14 +131,6 @@ struct shady_server {
 	struct shady_config config;
 	struct shady_module_manager modules;
 
-	/* Experimental spatial-desktop state is intentionally kept behind one
-	 * boundary so the Wayland compositor core does not depend on individual
-	 * effects/physics/FPS implementation details. */
-	struct shady_experimental_state experimental;
-
-	double cam_grab_x, cam_grab_y;
-	float cam_grab_yaw, cam_grab_pitch;
-	float cam_grab_target_x, cam_grab_target_y, cam_grab_target_z;
 };
 
 struct shady_output {

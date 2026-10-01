@@ -18,6 +18,7 @@
 #include "../fps/fps.h"
 #include "../physics/physics.h"
 #include "../window_motion/window_motion.h"
+#include "state.h"
 
 #define CAMERA_ORBIT_SENS 0.005f
 #define CAMERA_PAN_SENS 0.0025f
@@ -63,12 +64,12 @@ static struct shady_toplevel *focused_toplevel(struct shady_server *server) {
 }
 
 static bool spatial_init(struct shady_server *server) {
-	server->experimental.world = shady_world_default();
+	shady_spatial_state(server)->runtime.world = shady_world_default();
 	if (!shady_environment_load_colliders(server)) {
 		wlr_log(WLR_ERROR, "spatial: failed to load environment collision groups");
 	}
 	shady_physics_init(server);
-	shady_camera_reset(&server->experimental.camera);
+	shady_camera_reset(&shady_spatial_state(server)->runtime.camera);
 	return shady_render_init(server->renderer);
 }
 
@@ -111,25 +112,25 @@ static bool spatial_pointer_motion(struct shady_server *server,
 		return true;
 	}
 	if (server->cursor_mode == SHADY_CURSOR_CAMERA_ORBIT) {
-		server->experimental.camera.yaw -=
+		shady_spatial_state(server)->runtime.camera.yaw -=
 			(float)event->delta_x * CAMERA_ORBIT_SENS;
-		server->experimental.camera.pitch -=
+		shady_spatial_state(server)->runtime.camera.pitch -=
 			(float)event->delta_y * CAMERA_ORBIT_SENS;
-		clamp_camera(&server->experimental.camera);
+		clamp_camera(&shady_spatial_state(server)->runtime.camera);
 		shady_render_schedule_all_outputs(server);
 		return true;
 	}
 	if (server->cursor_mode == SHADY_CURSOR_CAMERA_PAN) {
 		struct shady_vec3 right, up;
-		shady_camera_basis(&server->experimental.camera, &right, &up, NULL);
-		float scale = server->experimental.camera.distance * CAMERA_PAN_SENS;
-		server->experimental.camera.target_x +=
+		shady_camera_basis(&shady_spatial_state(server)->runtime.camera, &right, &up, NULL);
+		float scale = shady_spatial_state(server)->runtime.camera.distance * CAMERA_PAN_SENS;
+		shady_spatial_state(server)->runtime.camera.target_x +=
 			-right.x * (float)event->delta_x * scale +
 			up.x * (float)event->delta_y * scale;
-		server->experimental.camera.target_y +=
+		shady_spatial_state(server)->runtime.camera.target_y +=
 			-right.y * (float)event->delta_x * scale +
 			up.y * (float)event->delta_y * scale;
-		server->experimental.camera.target_z +=
+		shady_spatial_state(server)->runtime.camera.target_z +=
 			-right.z * (float)event->delta_x * scale +
 			up.z * (float)event->delta_y * scale;
 		shady_render_schedule_all_outputs(server);
@@ -141,8 +142,8 @@ static bool spatial_pointer_motion(struct shady_server *server,
 static bool spatial_pointer_motion_absolute(struct shady_server *server,
 		struct wlr_pointer_motion_absolute_event *event) {
 	(void)event;
-	if (server->experimental.camera.first_person &&
-			server->experimental.fps.input_capture) {
+	if (shady_spatial_state(server)->runtime.camera.first_person &&
+			shady_spatial_state(server)->runtime.fps.input_capture) {
 		shady_fps_handle_motion(server, 0.0, 0.0);
 		return true;
 	}
@@ -189,8 +190,8 @@ static bool spatial_pointer_axis(struct shady_server *server,
 		return true;
 	}
 
-	server->experimental.camera.distance += (float)(event->delta * 0.01);
-	clamp_camera(&server->experimental.camera);
+	shady_spatial_state(server)->runtime.camera.distance += (float)(event->delta * 0.01);
+	clamp_camera(&shady_spatial_state(server)->runtime.camera);
 	shady_render_schedule_all_outputs(server);
 	return true;
 }
@@ -204,7 +205,7 @@ static bool spatial_key(struct shady_server *server, const xkb_keysym_t *syms,
 	for (int i = 0; i < nsyms; i++) {
 		xkb_keysym_t sym = syms[i];
 		if (bind_matches(&c->bind_debug_ray, sym, modifiers)) {
-			server->experimental.debug_ray = !server->experimental.debug_ray;
+			shady_spatial_state(server)->runtime.debug_ray = !shady_spatial_state(server)->runtime.debug_ray;
 			shady_render_schedule_all_outputs(server);
 			return true;
 		}
@@ -227,30 +228,30 @@ static bool spatial_key(struct shady_server *server, const xkb_keysym_t *syms,
 				bind_matches(&c->bind_camera_right, sym, modifiers) ||
 				bind_matches(&c->bind_camera_up, sym, modifiers) ||
 				bind_matches(&c->bind_camera_down, sym, modifiers)) {
-			shady_camera_basis(&server->experimental.camera,
+			shady_camera_basis(&shady_spatial_state(server)->runtime.camera,
 				&right, &up, &forward);
 			float sign = (bind_matches(&c->bind_camera_left, sym, modifiers) ||
 				bind_matches(&c->bind_camera_down, sym, modifiers)) ? -1.f : 1.f;
 			struct shady_vec3 v =
 				(bind_matches(&c->bind_camera_left, sym, modifiers) ||
 				bind_matches(&c->bind_camera_right, sym, modifiers)) ? right : up;
-			server->experimental.camera.target_x += v.x * CAMERA_KEY_PAN * sign;
-			server->experimental.camera.target_y += v.y * CAMERA_KEY_PAN * sign;
-			server->experimental.camera.target_z += v.z * CAMERA_KEY_PAN * sign;
+			shady_spatial_state(server)->runtime.camera.target_x += v.x * CAMERA_KEY_PAN * sign;
+			shady_spatial_state(server)->runtime.camera.target_y += v.y * CAMERA_KEY_PAN * sign;
+			shady_spatial_state(server)->runtime.camera.target_z += v.z * CAMERA_KEY_PAN * sign;
 			changed = true;
 		} else if (bind_matches(&c->bind_camera_yaw_left, sym, modifiers)) {
-			server->experimental.camera.yaw += CAMERA_KEY_ORBIT; changed = true;
+			shady_spatial_state(server)->runtime.camera.yaw += CAMERA_KEY_ORBIT; changed = true;
 		} else if (bind_matches(&c->bind_camera_yaw_right, sym, modifiers)) {
-			server->experimental.camera.yaw -= CAMERA_KEY_ORBIT; changed = true;
+			shady_spatial_state(server)->runtime.camera.yaw -= CAMERA_KEY_ORBIT; changed = true;
 		} else if (bind_matches(&c->bind_camera_zoom_in, sym, modifiers)) {
-			server->experimental.camera.distance -= CAMERA_ZOOM_STEP; changed = true;
+			shady_spatial_state(server)->runtime.camera.distance -= CAMERA_ZOOM_STEP; changed = true;
 		} else if (bind_matches(&c->bind_camera_zoom_out, sym, modifiers)) {
-			server->experimental.camera.distance += CAMERA_ZOOM_STEP; changed = true;
+			shady_spatial_state(server)->runtime.camera.distance += CAMERA_ZOOM_STEP; changed = true;
 		} else if (bind_matches(&c->bind_camera_reset, sym, modifiers)) {
-			shady_camera_reset(&server->experimental.camera); changed = true;
+			shady_camera_reset(&shady_spatial_state(server)->runtime.camera); changed = true;
 		}
 		if (changed) {
-			clamp_camera(&server->experimental.camera);
+			clamp_camera(&shady_spatial_state(server)->runtime.camera);
 			shady_render_schedule_all_outputs(server);
 			return true;
 		}
@@ -260,6 +261,7 @@ static bool spatial_key(struct shady_server *server, const xkb_keysym_t *syms,
 
 static const struct shady_module spatial_module = {
 	.name = "spatial",
+	.state_size = sizeof(struct shady_spatial_state),
 	.enabled = spatial_enabled,
 	.init = spatial_init,
 	.destroy = spatial_destroy,

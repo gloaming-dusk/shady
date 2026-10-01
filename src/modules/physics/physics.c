@@ -1,4 +1,5 @@
 #include "physics.h"
+#include "../spatial/state.h"
 #include <math.h>
 #include <wlr/types/wlr_compositor.h>
 #include <wlr/types/wlr_scene.h>
@@ -123,17 +124,17 @@ bool shady_physics_window_body(const struct shady_toplevel *t,float logical_w,fl
 }
 
 void shady_physics_init(struct shady_server *server) {
-	server->experimental.physics.gravity_enabled=server->config.physics_enabled && server->config.window_gravity;
+	shady_spatial_state(server)->runtime.physics.gravity_enabled=server->config.physics_enabled && server->config.window_gravity;
 }
 void shady_physics_toggle_gravity(struct shady_server *server) {
 	if (!server->config.physics_enabled) return;
-	server->experimental.physics.gravity_enabled=!server->experimental.physics.gravity_enabled;
+	shady_spatial_state(server)->runtime.physics.gravity_enabled=!shady_spatial_state(server)->runtime.physics.gravity_enabled;
 	struct shady_toplevel *t;
 	wl_list_for_each(t,&server->toplevels,link) t->experimental.physics.vy=0.f;
 	shady_render_schedule_all_outputs(server);
 }
 void shady_physics_update(struct shady_server *server,float dt,float logical_w,float logical_h) {
-	if(!server->config.physics_enabled || !server->experimental.physics.gravity_enabled || !server->experimental.camera.first_person || dt<=0.f || logical_w<=0.f || logical_h<=0.f) return;
+	if(!server->config.physics_enabled || !shady_spatial_state(server)->runtime.physics.gravity_enabled || !shady_spatial_state(server)->runtime.camera.first_person || dt<=0.f || logical_w<=0.f || logical_h<=0.f) return;
 	const float restitution=.22f, friction_rate=7.f, angular_kick=.22f;
 	struct shady_toplevel *t;
 	wl_list_for_each(t,&server->toplevels,link) {
@@ -170,11 +171,11 @@ void shady_physics_update(struct shady_server *server,float dt,float logical_w,f
 		float step_dt=dt/(float)steps;
 		bool hit_x=false,hit_y=false,hit_z=false;
 		for(int step=0;step<steps;step++){
-			hit_y|=sweep_cube_axis(&server->experimental.world,center,half,1,
+			hit_y|=sweep_cube_axis(&shady_spatial_state(server)->runtime.world,center,half,1,
 				t->experimental.physics.vy*step_dt,&t->experimental.physics.vy,restitution);
-			hit_x|=sweep_cube_axis(&server->experimental.world,center,half,0,
+			hit_x|=sweep_cube_axis(&shady_spatial_state(server)->runtime.world,center,half,0,
 				t->experimental.physics.vx*step_dt,&t->experimental.physics.vx,restitution);
-			hit_z|=sweep_cube_axis(&server->experimental.world,center,half,2,
+			hit_z|=sweep_cube_axis(&shady_spatial_state(server)->runtime.world,center,half,2,
 				t->experimental.physics.vz*step_dt,&t->experimental.physics.vz,restitution);
 		}
 		center_x=center[0];center_y=center[1];t->experimental.z=center[2];
@@ -198,8 +199,8 @@ void shady_physics_update(struct shady_server *server,float dt,float logical_w,f
 		 * crossing so elevated colliders cannot pull a window upward. */
 		if (t->experimental.physics.vy <= 0.f) {
 			const float contact_slop=.025f;
-			for (size_t i=0;i<server->experimental.world.collider_count;i++) {
-				const struct shady_box_collider *b=&server->experimental.world.colliders[i];
+			for (size_t i=0;i<shady_spatial_state(server)->runtime.world.collider_count;i++) {
+				const struct shady_box_collider *b=&shady_spatial_state(server)->runtime.world.colliders[i];
 				float y=b->max_y;
 				if(!shady_box_overlap_xz(b,&body))continue;
 				bool crossed=previous_bottom>=y && body.min_y<=y;
