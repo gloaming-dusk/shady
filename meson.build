@@ -141,3 +141,9 @@ shared_module('shady-plugin-hello',
   include_directories: include_directories('include'),
   build_by_default: false,
   install: false)
+
+shared_module('shady-plugin-counter',
+  'examples/plugins/counter.c',
+  include_directories: include_directories('include'),
+  build_by_default: false,
+  install: false)

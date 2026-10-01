@@ -173,18 +173,24 @@ bool shady_modules_resolve(struct shady_server *server) {
 	const struct shady_module *old_modules[SHADY_MAX_MODULES] = {0};
 	void *old_handles[SHADY_MAX_MODULES] = {0};
 	void *old_bases[SHADY_MAX_MODULES] = {0};
+	uint32_t old_abis[SHADY_MAX_MODULES] = {0};
+	const struct shady_plugin_v2 *old_v2[SHADY_MAX_MODULES] = {0};
 	char *old_paths[SHADY_MAX_MODULES] = {0};
 	char *old_names[SHADY_MAX_MODULES] = {0};
 	int8_t old_overrides[SHADY_MAX_MODULES] = {0};
 	memcpy(old_modules, manager->modules, sizeof(old_modules));
 	memcpy(old_handles, manager->plugin_handle, sizeof(old_handles));
 	memcpy(old_bases, manager->plugin_base, sizeof(old_bases));
+	memcpy(old_abis, manager->plugin_abi, sizeof(old_abis));
+	memcpy(old_v2, manager->plugin_v2, sizeof(old_v2));
 	memcpy(old_paths, manager->plugin_path, sizeof(old_paths));
 	memcpy(old_names, manager->plugin_name, sizeof(old_names));
 	memcpy(old_overrides, manager->enable_override, sizeof(old_overrides));
 	memcpy(manager->modules, ordered, sizeof(manager->modules));
 	memset(manager->plugin_handle, 0, sizeof(manager->plugin_handle));
 	memset(manager->plugin_base, 0, sizeof(manager->plugin_base));
+	memset(manager->plugin_abi, 0, sizeof(manager->plugin_abi));
+	memset(manager->plugin_v2, 0, sizeof(manager->plugin_v2));
 	memset(manager->plugin_path, 0, sizeof(manager->plugin_path));
 	memset(manager->plugin_name, 0, sizeof(manager->plugin_name));
 	memset(manager->enable_override, 0, sizeof(manager->enable_override));
@@ -193,6 +199,8 @@ bool shady_modules_resolve(struct shady_server *server) {
 			if (manager->modules[i] == old_modules[j]) {
 				manager->plugin_handle[i] = old_handles[j];
 				manager->plugin_base[i] = old_bases[j];
+				manager->plugin_abi[i] = old_abis[j];
+				manager->plugin_v2[i] = old_v2[j];
 				manager->plugin_path[i] = old_paths[j];
 				manager->plugin_name[i] = old_names[j];
 				manager->enable_override[i] = old_overrides[j];
@@ -302,6 +310,8 @@ void shady_modules_close_plugins(struct shady_server *server) {
 			dlclose(manager->plugin_handle[i - 1]);
 			manager->plugin_handle[i - 1] = NULL;
 			manager->plugin_base[i - 1] = NULL;
+			manager->plugin_abi[i - 1] = 0;
+			manager->plugin_v2[i - 1] = NULL;
 		}
 		free(manager->plugin_path[i - 1]);
 		manager->plugin_path[i - 1] = NULL;

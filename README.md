@@ -350,7 +350,7 @@ Meson exposes the top-level modules and spatial subfeatures:
 -Dscene_effects=enabled|disabled|auto
 ```
 
-Built-ins and external native plugins now share the same module descriptor model. External plugins use the explicitly versioned **experimental** `SHADY_PLUGIN_ABI_V1`; ABI compatibility is guaranteed only for that version and must be bumped when the public module layout changes.
+Built-ins and external native plugins share the same module descriptor model. External plugins use explicitly versioned experimental ABIs. **V1** is the simple/stateless entry contract; **V2** adds explicit state migration while continuing to use the V1 host API table. ABI compatibility is scoped to each declared ABI version.
 
 ### Native C plugins
 
@@ -385,9 +385,9 @@ const struct shady_module *shady_plugin_entry_v1(
 
 The host API is object-oriented around opaque `shady_host`, `shady_window`, `shady_output`, `shady_seat`, and `shady_module_handle` values. It exposes object enumeration and queries, window validity/focus/close operations, module/window state access for module-owned data, logging, capability checks, config mutation, render scheduling, compositor termination, and event subscriptions for the same event stream used by Lua. `subscribe_event_handle()` returns a `shady_subscription_id` that can be removed with `unsubscribe_event()`. The older boolean `subscribe_event()` remains available as a convenience wrapper.
 
-Plugins never need the private layout of Shady's server/window/output structs. Plugins are loaded from bootstrap Lua with `shady.plugin(path)` and then participate in normal capability resolution, initialization, hooks, events, and reverse-order teardown. `examples/plugins/hello.c` exercises the host/seat/output/module/event APIs.
+Plugins never need the private layout of Shady's server/window/output structs. Plugins are loaded from bootstrap Lua with `shady.plugin(path)` and then participate in normal capability resolution, initialization, hooks, events, and reverse-order teardown. `examples/plugins/hello.c` exercises the V1 host/seat/output/module/event APIs. `examples/plugins/counter.c` is a V2 stateful plugin showing module and per-window migration.
 
-### Hot reload
+### Hot reload and state migration
 
 Runtime Lua can hot-unload or reload external plugins by module name:
 
@@ -396,7 +396,26 @@ shady.unload_plugin("hello-plugin")
 shady.reload_plugin("hello-plugin")
 ```
 
-The current hot-reload contract intentionally supports only **stateless plugins** (`state_size == 0` and `toplevel_state_size == 0`). Shady also refuses unload when another active module requires or optionally consumes one of the plugin's provided capabilities. This keeps existing module/window state slots stable while the `.so` is replaced in place.
+Plain hot-**unload** remains intentionally limited to stateless plugins because removing a stateful module leaves nowhere to preserve live state. Hot-**reload** supports stateful plugins through `SHADY_PLUGIN_ABI_V2`.
+
+A V2 descriptor keeps `struct shady_module` unchanged and adds a schema version plus snapshot/restore callbacks for module state and per-window state. Snapshot memory is allocated by Shady, not the plugin, so it remains valid after the old `.so` is unmapped. The new plugin receives the previous schema version and can migrate older snapshots into a new state layout.
+
+The reload flow is:
+
+```text
+stage a fresh copy of the new .so
+        -> dlopen and validate name/capabilities/ABI
+        -> snapshot old module + live-window state
+        -> stop/destroy old instance
+        -> allocate/init new state
+        -> restore snapshots
+        -> dlclose old .so
+        -> start new instance
+```
+
+The staged copy is created beside the original plugin so a broken replacement can be rejected before the working old plugin is torn down. If new init/restore fails after teardown begins, Shady attempts to re-init the still-mapped old plugin and restore the same snapshot before reporting reload failure.
+
+A reload must preserve all capabilities previously provided by the plugin. Stateful migration also refuses to silently drop existing module or per-window state. `examples/plugins/counter.c` demonstrates V2 module and window snapshot callbacks; its development test preserves both a start counter and a live window marker across reload.
 
 Event subscriptions are owned by the shared object that supplied the callback and are automatically removed before `dlclose()`. When unload/reload is requested from inside an event callback, Shady defers the operation to the Wayland event-loop idle phase so the current event payload and remaining subscribers stay valid until dispatch completes.
 

@@ -4,6 +4,8 @@
 #include <sys/types.h>
 #include <shady/module.h>
 
+struct shady_plugin_v2;
+
 struct shady_module_manager {
 	const struct shady_module *modules[SHADY_MAX_MODULES];
 	bool active[SHADY_MAX_MODULES];
@@ -11,6 +13,8 @@ struct shady_module_manager {
 	void *state[SHADY_MAX_MODULES];
 	void *plugin_handle[SHADY_MAX_MODULES];
 	void *plugin_base[SHADY_MAX_MODULES];
+	uint32_t plugin_abi[SHADY_MAX_MODULES];
+	const struct shady_plugin_v2 *plugin_v2[SHADY_MAX_MODULES];
 	char *plugin_path[SHADY_MAX_MODULES];
 	char *plugin_name[SHADY_MAX_MODULES];
 	struct shady_module plugin_stub[SHADY_MAX_MODULES];

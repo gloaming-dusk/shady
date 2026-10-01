@@ -81,9 +81,9 @@ static void xdg_toplevel_map(struct wl_listener *listener, void *data) {
 	struct shady_toplevel *toplevel = wl_container_of(listener, toplevel, map);
 
 	wl_list_insert(&toplevel->server->toplevels, &toplevel->link);
+	shady_modules_toplevel_map(toplevel);
 	shady_event_emit_window(toplevel->server, SHADY_EVENT_WINDOW_MAPPED, toplevel);
 	focus_toplevel(toplevel);
-	shady_modules_toplevel_map(toplevel);
 }
 
 static void xdg_toplevel_unmap(struct wl_listener *listener, void *data) {

@@ -8,6 +8,8 @@
 
 #define SHADY_PLUGIN_ABI_V1 1u
 #define SHADY_PLUGIN_ENTRY_V1 "shady_plugin_entry_v1"
+#define SHADY_PLUGIN_ABI_V2 2u
+#define SHADY_PLUGIN_ENTRY_V2 "shady_plugin_entry_v2"
 
 /* Opaque host objects. Plugins must only inspect them through the API table. */
 struct shady_host_handle;
@@ -79,6 +81,37 @@ struct shady_plugin_api_v1 {
 };
 
 typedef const struct shady_module *(*shady_plugin_entry_v1_fn)(
+	uint32_t host_abi,
+	const struct shady_plugin_api_v1 *api,
+	shady_host host);
+
+/*
+ * V2 adds explicit state migration without changing struct shady_module.
+ * Snapshot buffers are allocated and freed by the host. Plugins only write
+ * into/read from those buffers, so snapshots remain valid across dlclose().
+ */
+struct shady_plugin_v2 {
+	uint32_t struct_size;
+	const struct shady_module *module;
+	uint32_t state_schema_version;
+
+	size_t (*module_snapshot_size)(shady_host host, const void *state);
+	bool (*save_module_state)(shady_host host, const void *state,
+		void *snapshot, size_t snapshot_size);
+	bool (*restore_module_state)(shady_host host, void *state,
+		const void *snapshot, size_t snapshot_size,
+		uint32_t previous_schema_version);
+
+	size_t (*window_snapshot_size)(shady_host host, shady_window window,
+		const void *state);
+	bool (*save_window_state)(shady_host host, shady_window window,
+		const void *state, void *snapshot, size_t snapshot_size);
+	bool (*restore_window_state)(shady_host host, shady_window window,
+		void *state, const void *snapshot, size_t snapshot_size,
+		uint32_t previous_schema_version);
+};
+
+typedef const struct shady_plugin_v2 *(*shady_plugin_entry_v2_fn)(
 	uint32_t host_abi,
 	const struct shady_plugin_api_v1 *api,
 	shady_host host);

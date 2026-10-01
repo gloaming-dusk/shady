@@ -2,9 +2,11 @@
 #include "plugin.h"
 
 #include <dlfcn.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #include <wayland-server-core.h>
 #include <wlr/types/wlr_output.h>
 #include <wlr/types/wlr_seat.h>
@@ -259,27 +261,94 @@ static bool list_contains(const char *const *items, const char *value) {
 	return false;
 }
 
+static char *plugin_reload_copy(const char *path) {
+	size_t len = strlen(path) + sizeof(".reload-XXXXXX");
+	char *tmp = malloc(len);
+	if (!tmp) return NULL;
+	snprintf(tmp, len, "%s.reload-XXXXXX", path);
+	int out = mkstemp(tmp);
+	if (out < 0) {
+		free(tmp);
+		return NULL;
+	}
+	int in = open(path, O_RDONLY);
+	if (in < 0) {
+		close(out);
+		unlink(tmp);
+		free(tmp);
+		return NULL;
+	}
+	char buffer[65536];
+	bool ok = true;
+	for (;;) {
+		ssize_t n = read(in, buffer, sizeof(buffer));
+		if (n == 0) break;
+		if (n < 0) { ok = false; break; }
+		ssize_t off = 0;
+		while (off < n) {
+			ssize_t written = write(out, buffer + off, (size_t)(n - off));
+			if (written <= 0) { ok = false; break; }
+			off += written;
+		}
+		if (!ok) break;
+	}
+	close(in);
+	close(out);
+	if (!ok) {
+		unlink(tmp);
+		free(tmp);
+		return NULL;
+	}
+	return tmp;
+}
+
 static bool plugin_open(struct shady_server *server, const char *path,
-		void **handle_out, void **base_out, const struct shady_module **module_out) {
+		void **handle_out, void **base_out, const struct shady_module **module_out,
+		uint32_t *abi_out, const struct shady_plugin_v2 **v2_out) {
 	void *handle = dlopen(path, RTLD_NOW | RTLD_LOCAL);
 	if (!handle) {
 		wlr_log(WLR_ERROR, "plugin: failed to load %s: %s", path, dlerror());
 		return false;
 	}
+
 	dlerror();
-	shady_plugin_entry_v1_fn entry =
+	shady_plugin_entry_v2_fn entry_v2 =
+		(shady_plugin_entry_v2_fn)dlsym(handle, SHADY_PLUGIN_ENTRY_V2);
+	const char *v2_error = dlerror();
+	if (!v2_error && entry_v2) {
+		Dl_info info = {0};
+		void *base = dladdr((void *)entry_v2, &info) != 0 ? info.dli_fbase : NULL;
+		const struct shady_plugin_v2 *descriptor =
+			entry_v2(SHADY_PLUGIN_ABI_V2, &plugin_api, (shady_host)server);
+		if (!descriptor || descriptor->struct_size < sizeof(*descriptor) ||
+				!descriptor->module || !descriptor->module->name) {
+			wlr_log(WLR_ERROR, "plugin: %s rejected ABI v%u", path, SHADY_PLUGIN_ABI_V2);
+			shady_event_unsubscribe_owner(server, base);
+			dlclose(handle);
+			return false;
+		}
+		*handle_out = handle;
+		*base_out = base;
+		*module_out = descriptor->module;
+		*abi_out = SHADY_PLUGIN_ABI_V2;
+		*v2_out = descriptor;
+		return true;
+	}
+
+	dlerror();
+	shady_plugin_entry_v1_fn entry_v1 =
 		(shady_plugin_entry_v1_fn)dlsym(handle, SHADY_PLUGIN_ENTRY_V1);
-	const char *error = dlerror();
-	if (error || !entry) {
-		wlr_log(WLR_ERROR, "plugin: %s does not export %s: %s",
-			path, SHADY_PLUGIN_ENTRY_V1, error ? error : "symbol missing");
+	const char *v1_error = dlerror();
+	if (v1_error || !entry_v1) {
+		wlr_log(WLR_ERROR, "plugin: %s exports neither %s nor %s",
+			path, SHADY_PLUGIN_ENTRY_V2, SHADY_PLUGIN_ENTRY_V1);
 		dlclose(handle);
 		return false;
 	}
 	Dl_info info = {0};
-	void *base = dladdr((void *)entry, &info) != 0 ? info.dli_fbase : NULL;
+	void *base = dladdr((void *)entry_v1, &info) != 0 ? info.dli_fbase : NULL;
 	const struct shady_module *module =
-		entry(SHADY_PLUGIN_ABI_V1, &plugin_api, (shady_host)server);
+		entry_v1(SHADY_PLUGIN_ABI_V1, &plugin_api, (shady_host)server);
 	if (!module || !module->name) {
 		wlr_log(WLR_ERROR, "plugin: %s rejected ABI v%u", path, SHADY_PLUGIN_ABI_V1);
 		shady_event_unsubscribe_owner(server, base);
@@ -289,11 +358,134 @@ static bool plugin_open(struct shady_server *server, const char *path,
 	*handle_out = handle;
 	*base_out = base;
 	*module_out = module;
+	*abi_out = SHADY_PLUGIN_ABI_V1;
+	*v2_out = NULL;
 	return true;
 }
 
 static bool plugin_stateless(const struct shady_module *module) {
 	return module && module->state_size == 0 && module->toplevel_state_size == 0;
+}
+
+struct plugin_window_snapshot {
+	struct shady_toplevel *window;
+	void *data;
+	size_t size;
+};
+
+struct plugin_reload_snapshot {
+	uint32_t schema_version;
+	void *module_data;
+	size_t module_size;
+	struct plugin_window_snapshot *windows;
+	size_t window_count;
+};
+
+static void plugin_snapshot_finish(struct plugin_reload_snapshot *snapshot) {
+	if (!snapshot) return;
+	free(snapshot->module_data);
+	for (size_t i = 0; i < snapshot->window_count; i++) {
+		free(snapshot->windows[i].data);
+	}
+	free(snapshot->windows);
+	memset(snapshot, 0, sizeof(*snapshot));
+}
+
+static bool plugin_snapshot_capture(struct shady_server *server, size_t index,
+		struct plugin_reload_snapshot *snapshot) {
+	struct shady_module_manager *manager = &server->modules;
+	const struct shady_module *module = manager->modules[index];
+	const struct shady_plugin_v2 *v2 = manager->plugin_v2[index];
+	memset(snapshot, 0, sizeof(*snapshot));
+	if (!manager->active[index] || plugin_stateless(module)) return true;
+	if (manager->plugin_abi[index] != SHADY_PLUGIN_ABI_V2 || !v2) {
+		wlr_log(WLR_ERROR, "plugin: stateful reload requires ABI v2: %s", module->name);
+		return false;
+	}
+	snapshot->schema_version = v2->state_schema_version;
+
+	if (module->state_size > 0) {
+		if (!v2->module_snapshot_size || !v2->save_module_state) {
+			wlr_log(WLR_ERROR, "plugin: %s lacks module state save callbacks", module->name);
+			return false;
+		}
+		snapshot->module_size = v2->module_snapshot_size((shady_host)server,
+			manager->state[index]);
+		if (snapshot->module_size == 0) {
+			wlr_log(WLR_ERROR, "plugin: %s returned empty module snapshot", module->name);
+			return false;
+		}
+		snapshot->module_data = malloc(snapshot->module_size);
+		if (!snapshot->module_data || !v2->save_module_state((shady_host)server,
+				manager->state[index], snapshot->module_data, snapshot->module_size)) {
+			wlr_log(WLR_ERROR, "plugin: %s failed to save module state", module->name);
+			plugin_snapshot_finish(snapshot);
+			return false;
+		}
+	}
+
+	if (module->toplevel_state_size > 0) {
+		if (!v2->window_snapshot_size || !v2->save_window_state) {
+			wlr_log(WLR_ERROR, "plugin: %s lacks window state save callbacks", module->name);
+			plugin_snapshot_finish(snapshot);
+			return false;
+		}
+		struct shady_toplevel *window;
+		wl_list_for_each(window, &server->all_toplevels, all_link) snapshot->window_count++;
+		if (snapshot->window_count > 0) {
+			snapshot->windows = calloc(snapshot->window_count, sizeof(*snapshot->windows));
+			if (!snapshot->windows) {
+				plugin_snapshot_finish(snapshot);
+				return false;
+			}
+		}
+		size_t i = 0;
+		wl_list_for_each(window, &server->all_toplevels, all_link) {
+			struct plugin_window_snapshot *entry = &snapshot->windows[i++];
+			entry->window = window;
+			entry->size = v2->window_snapshot_size((shady_host)server,
+				(shady_window)window, window->module_state[index]);
+			if (entry->size == 0) {
+				wlr_log(WLR_ERROR, "plugin: %s returned empty window snapshot", module->name);
+				plugin_snapshot_finish(snapshot);
+				return false;
+			}
+			entry->data = malloc(entry->size);
+			if (!entry->data || !v2->save_window_state((shady_host)server,
+					(shady_window)window, window->module_state[index],
+					entry->data, entry->size)) {
+				wlr_log(WLR_ERROR, "plugin: %s failed to save window state", module->name);
+				plugin_snapshot_finish(snapshot);
+				return false;
+			}
+		}
+	}
+	return true;
+}
+
+static bool plugin_snapshot_restore(struct shady_server *server, size_t index,
+		const struct shady_plugin_v2 *v2,
+		const struct plugin_reload_snapshot *snapshot) {
+	const struct shady_module *module = server->modules.modules[index];
+	if (snapshot->module_data) {
+		if (!v2 || !v2->restore_module_state || module->state_size == 0 ||
+				!v2->restore_module_state((shady_host)server, server->modules.state[index],
+				snapshot->module_data, snapshot->module_size, snapshot->schema_version)) {
+			wlr_log(WLR_ERROR, "plugin: %s failed to restore module state", module->name);
+			return false;
+		}
+	}
+	for (size_t i = 0; i < snapshot->window_count; i++) {
+		const struct plugin_window_snapshot *entry = &snapshot->windows[i];
+		if (!v2 || !v2->restore_window_state || module->toplevel_state_size == 0 ||
+				!v2->restore_window_state((shady_host)server, (shady_window)entry->window,
+					entry->window->module_state[index], entry->data, entry->size,
+					snapshot->schema_version)) {
+			wlr_log(WLR_ERROR, "plugin: %s failed to restore window state", module->name);
+			return false;
+		}
+	}
+	return true;
 }
 
 static bool plugin_has_active_dependents(struct shady_server *server, size_t index) {
@@ -351,7 +543,9 @@ bool shady_plugin_load(struct shady_server *server, const char *path) {
 	}
 	void *handle = NULL, *base = NULL;
 	const struct shady_module *module = NULL;
-	if (!plugin_open(server, path, &handle, &base, &module)) return false;
+	uint32_t abi = 0;
+	const struct shady_plugin_v2 *v2 = NULL;
+	if (!plugin_open(server, path, &handle, &base, &module, &abi, &v2)) return false;
 	char *path_copy = strdup(path);
 	char *name_copy = strdup(module->name);
 	if (!path_copy || !name_copy) {
@@ -373,6 +567,8 @@ bool shady_plugin_load(struct shady_server *server, const char *path) {
 	size_t index = server->modules.count - 1;
 	server->modules.plugin_handle[index] = handle;
 	server->modules.plugin_base[index] = base;
+	server->modules.plugin_abi[index] = abi;
+	server->modules.plugin_v2[index] = v2;
 	server->modules.plugin_path[index] = path_copy;
 	server->modules.plugin_name[index] = name_copy;
 	wlr_log(WLR_INFO, "plugin: loaded %s from %s", module->name, path);
@@ -407,6 +603,8 @@ static bool plugin_unload_now(struct shady_server *server, const char *name) {
 	dlclose(manager->plugin_handle[index]);
 	manager->plugin_handle[index] = NULL;
 	manager->plugin_base[index] = NULL;
+	manager->plugin_abi[index] = 0;
+	manager->plugin_v2[index] = NULL;
 	manager->plugin_stub[index] = (struct shady_module){
 		.name = manager->plugin_name[index],
 	};
@@ -415,50 +613,207 @@ static bool plugin_unload_now(struct shady_server *server, const char *name) {
 	return true;
 }
 
+struct plugin_window_swap {
+	struct shady_toplevel *window;
+	void *old_state;
+	void *new_state;
+};
+
+static bool plugin_provides_compatible(const struct shady_module *old_module,
+		const struct shady_module *new_module) {
+	if (!old_module->provides) return true;
+	for (size_t i = 0; old_module->provides[i]; i++) {
+		if (!list_contains(new_module->provides, old_module->provides[i])) return false;
+	}
+	return true;
+}
+
 static bool plugin_reload_now(struct shady_server *server, const char *name) {
 	ssize_t found = shady_module_index_by_name(server, name);
 	if (found < 0) return false;
 	size_t index = (size_t)found;
 	struct shady_module_manager *manager = &server->modules;
-	if (!manager->plugin_path[index]) {
-		wlr_log(WLR_ERROR, "plugin: %s has no reloadable plugin path", name);
+	if (!manager->plugin_path[index] || !manager->plugin_handle[index]) {
+		wlr_log(WLR_ERROR, "plugin: %s is not currently loaded", name);
 		return false;
 	}
-	if (manager->plugin_handle[index] && !plugin_unload_now(server, name)) return false;
-	char *path = strdup(manager->plugin_path[index]);
-	if (!path) return false;
-	void *handle = NULL, *base = NULL;
-	const struct shady_module *module = NULL;
-	if (!plugin_open(server, path, &handle, &base, &module)) { free(path); return false; }
-	if (strcmp(module->name, manager->plugin_name[index]) != 0 || !plugin_stateless(module) ||
-			!plugin_contract_available(server, module, index)) {
+
+	const struct shady_module *old_module = manager->modules[index];
+	const struct shady_plugin_v2 *old_v2 = manager->plugin_v2[index];
+	uint32_t old_abi = manager->plugin_abi[index];
+	void *old_handle = manager->plugin_handle[index];
+	void *old_base = manager->plugin_base[index];
+	bool was_active = manager->active[index];
+	bool was_started = manager->module_started[index];
+	void *old_module_state = manager->state[index];
+
+	char *reload_path = plugin_reload_copy(manager->plugin_path[index]);
+	if (!reload_path) {
+		wlr_log(WLR_ERROR, "plugin: failed to stage reload copy for %s", name);
+		return false;
+	}
+	void *new_handle = NULL, *new_base = NULL;
+	const struct shady_module *new_module = NULL;
+	uint32_t new_abi = 0;
+	const struct shady_plugin_v2 *new_v2 = NULL;
+	bool opened = plugin_open(server, reload_path, &new_handle, &new_base,
+		&new_module, &new_abi, &new_v2);
+	unlink(reload_path);
+	free(reload_path);
+	if (!opened) return false;
+
+	if (strcmp(new_module->name, manager->plugin_name[index]) != 0 ||
+			!plugin_contract_available(server, new_module, index) ||
+			!plugin_provides_compatible(old_module, new_module)) {
 		wlr_log(WLR_ERROR, "plugin: reload contract rejected for %s", name);
-		shady_event_unsubscribe_owner(server, base);
-		dlclose(handle);
-		free(path);
+		shady_event_unsubscribe_owner(server, new_base);
+		dlclose(new_handle);
 		return false;
 	}
-	manager->modules[index] = module;
-	manager->plugin_handle[index] = handle;
-	manager->plugin_base[index] = base;
-	if (module->init && !module->init(server)) {
-		wlr_log(WLR_ERROR, "plugin: re-init failed for %s", name);
-		shady_event_unsubscribe_owner(server, base);
-		dlclose(handle);
-		manager->plugin_handle[index] = NULL;
-		manager->plugin_base[index] = NULL;
-		manager->modules[index] = &manager->plugin_stub[index];
-		free(path);
+
+	bool stateful = was_active && (!plugin_stateless(old_module) || !plugin_stateless(new_module));
+	if (stateful && (old_abi != SHADY_PLUGIN_ABI_V2 || new_abi != SHADY_PLUGIN_ABI_V2 ||
+			!old_v2 || !new_v2)) {
+		wlr_log(WLR_ERROR, "plugin: stateful reload requires ABI v2 on both sides: %s", name);
+		shady_event_unsubscribe_owner(server, new_base);
+		dlclose(new_handle);
 		return false;
 	}
-	manager->active[index] = true;
-	if (manager->started) {
-		if (module->start) module->start(server);
+	if (was_active && old_module->state_size > 0 && new_module->state_size == 0) {
+		wlr_log(WLR_ERROR, "plugin: %s cannot drop module state during hot reload", name);
+		shady_event_unsubscribe_owner(server, new_base);
+		dlclose(new_handle);
+		return false;
+	}
+	if (was_active && old_module->toplevel_state_size > 0 && new_module->toplevel_state_size == 0) {
+		wlr_log(WLR_ERROR, "plugin: %s cannot drop window state during hot reload", name);
+		shady_event_unsubscribe_owner(server, new_base);
+		dlclose(new_handle);
+		return false;
+	}
+
+	struct plugin_reload_snapshot snapshot;
+	if (!plugin_snapshot_capture(server, index, &snapshot)) {
+		shady_event_unsubscribe_owner(server, new_base);
+		dlclose(new_handle);
+		return false;
+	}
+
+	size_t window_count = 0;
+	struct shady_toplevel *window;
+	wl_list_for_each(window, &server->all_toplevels, all_link) window_count++;
+	struct plugin_window_swap *swaps = window_count > 0
+		? calloc(window_count, sizeof(*swaps)) : NULL;
+	if (window_count > 0 && !swaps) {
+		plugin_snapshot_finish(&snapshot);
+		shady_event_unsubscribe_owner(server, new_base);
+		dlclose(new_handle);
+		return false;
+	}
+	void *new_module_state = was_active && new_module->state_size > 0
+		? calloc(1, new_module->state_size) : NULL;
+	if (was_active && new_module->state_size > 0 && !new_module_state) {
+		free(swaps);
+		plugin_snapshot_finish(&snapshot);
+		shady_event_unsubscribe_owner(server, new_base);
+		dlclose(new_handle);
+		return false;
+	}
+	size_t wi = 0;
+	wl_list_for_each(window, &server->all_toplevels, all_link) {
+		swaps[wi].window = window;
+		swaps[wi].old_state = window->module_state[index];
+		if (was_active && new_module->toplevel_state_size > 0) {
+			swaps[wi].new_state = calloc(1, new_module->toplevel_state_size);
+			if (!swaps[wi].new_state) {
+				for (size_t j = 0; j < wi; j++) free(swaps[j].new_state);
+				free(new_module_state);
+				free(swaps);
+				plugin_snapshot_finish(&snapshot);
+				shady_event_unsubscribe_owner(server, new_base);
+				dlclose(new_handle);
+				return false;
+			}
+		}
+		wi++;
+	}
+
+	if (was_started) {
+		shady_event_emit_module(server, SHADY_EVENT_MODULE_STOPPED, old_module);
+		if (old_module->stop) old_module->stop(server);
+		manager->module_started[index] = false;
+	}
+	if (was_active && old_module->destroy) old_module->destroy(server);
+	manager->active[index] = false;
+
+	manager->modules[index] = new_module;
+	manager->plugin_handle[index] = new_handle;
+	manager->plugin_base[index] = new_base;
+	manager->plugin_abi[index] = new_abi;
+	manager->plugin_v2[index] = new_v2;
+	manager->state[index] = new_module_state;
+	for (size_t i = 0; i < window_count; i++) {
+		swaps[i].window->module_state[index] = swaps[i].new_state;
+	}
+
+	bool new_ok = true;
+	if (was_active) {
+		new_ok = !new_module->init || new_module->init(server);
+		if (new_ok) {
+			manager->active[index] = true;
+			new_ok = plugin_snapshot_restore(server, index, new_v2, &snapshot);
+		}
+	}
+
+	if (!new_ok) {
+		wlr_log(WLR_ERROR, "plugin: reload failed, rolling back %s", name);
+		if (manager->active[index] && new_module->destroy) new_module->destroy(server);
+		manager->active[index] = false;
+		shady_event_unsubscribe_owner(server, new_base);
+		dlclose(new_handle);
+		free(manager->state[index]);
+		for (size_t i = 0; i < window_count; i++) free(swaps[i].window->module_state[index]);
+
+		manager->modules[index] = old_module;
+		manager->plugin_handle[index] = old_handle;
+		manager->plugin_base[index] = old_base;
+		manager->plugin_abi[index] = old_abi;
+		manager->plugin_v2[index] = old_v2;
+		manager->state[index] = old_module_state;
+		for (size_t i = 0; i < window_count; i++) swaps[i].window->module_state[index] = swaps[i].old_state;
+		if (was_active) {
+			bool old_ok = !old_module->init || old_module->init(server);
+			manager->active[index] = old_ok;
+			if (old_ok && stateful && old_v2) {
+				old_ok = plugin_snapshot_restore(server, index, old_v2, &snapshot);
+				manager->active[index] = old_ok;
+			}
+			if (!old_ok) wlr_log(WLR_ERROR, "plugin: rollback re-init failed for %s", name);
+		}
+		if (was_started && manager->active[index]) {
+			if (old_module->start) old_module->start(server);
+			manager->module_started[index] = true;
+			shady_event_emit_module(server, SHADY_EVENT_MODULE_STARTED, old_module);
+		}
+		plugin_snapshot_finish(&snapshot);
+		free(swaps);
+		return false;
+	}
+
+	shady_event_unsubscribe_owner(server, old_base);
+	dlclose(old_handle);
+	free(old_module_state);
+	for (size_t i = 0; i < window_count; i++) free(swaps[i].old_state);
+	if (was_started) {
+		if (new_module->start) new_module->start(server);
 		manager->module_started[index] = true;
-		shady_event_emit_module(server, SHADY_EVENT_MODULE_STARTED, module);
+		shady_event_emit_module(server, SHADY_EVENT_MODULE_STARTED, new_module);
 	}
-	wlr_log(WLR_INFO, "plugin: reloaded %s from %s", name, path);
-	free(path);
+	plugin_snapshot_finish(&snapshot);
+	free(swaps);
+	wlr_log(WLR_INFO, "plugin: reloaded %s from %s (ABI v%u, schema %u)",
+		name, manager->plugin_path[index], new_abi,
+		new_v2 ? new_v2->state_schema_version : 0);
 	return true;
 }
 
