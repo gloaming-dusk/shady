@@ -24,6 +24,14 @@ struct wlr_xdg_shell;
 struct wlr_xdg_toplevel;
 struct wlr_xdg_popup;
 struct wlr_layer_shell_v1;
+struct wlr_relative_pointer_manager_v1;
+struct wlr_pointer_constraints_v1;
+struct wlr_pointer_constraint_v1;
+struct wlr_screencopy_manager_v1;
+struct wlr_idle_notifier_v1;
+struct wlr_primary_selection_v1_device_manager;
+struct wlr_data_control_manager_v1;
+struct wlr_xdg_decoration_manager_v1;
 struct wlr_layer_surface_v1;
 struct wlr_scene_layer_surface_v1;
 struct wlr_keyboard;
@@ -92,6 +100,15 @@ struct shady_server {
 	struct wl_listener new_layer_surface;
 	struct wl_list layer_surfaces;
 
+	struct wlr_relative_pointer_manager_v1 *relative_pointer_manager;
+	struct wlr_pointer_constraints_v1 *pointer_constraints;
+	struct wlr_pointer_constraint_v1 *active_pointer_constraint;
+	struct wlr_screencopy_manager_v1 *screencopy_manager;
+	struct wlr_idle_notifier_v1 *idle_notifier;
+	struct wlr_primary_selection_v1_device_manager *primary_selection_manager;
+	struct wlr_data_control_manager_v1 *data_control_manager;
+	struct wlr_xdg_decoration_manager_v1 *xdg_decoration_manager;
+
 	struct wlr_cursor *cursor;
 	struct wlr_xcursor_manager *cursor_mgr;
 	struct wl_listener cursor_motion;
@@ -105,6 +122,7 @@ struct shady_server {
 	struct wl_listener request_cursor;
 	struct wl_listener pointer_focus_change;
 	struct wl_listener request_set_selection;
+	struct wl_listener request_set_primary_selection;
 	struct wl_list keyboards;
 	enum shady_cursor_mode cursor_mode;
 	struct shady_toplevel *grabbed_toplevel;
@@ -195,6 +213,7 @@ void server_new_input(struct wl_listener *listener, void *data);
 void seat_request_cursor(struct wl_listener *listener, void *data);
 void seat_pointer_focus_change(struct wl_listener *listener, void *data);
 void seat_request_set_selection(struct wl_listener *listener, void *data);
+void seat_request_set_primary_selection(struct wl_listener *listener, void *data);
 void server_cursor_motion(struct wl_listener *listener, void *data);
 void server_cursor_motion_absolute(struct wl_listener *listener, void *data);
 void server_cursor_button(struct wl_listener *listener, void *data);

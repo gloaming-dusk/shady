@@ -4,6 +4,10 @@
 #include <stdlib.h>
 #include <wayland-server-core.h>
 #include <wlr/types/wlr_cursor.h>
+#include <wlr/types/wlr_relative_pointer_v1.h>
+#include <wlr/types/wlr_pointer_constraints_v1.h>
+#include <wlr/types/wlr_idle_notify_v1.h>
+#include <wlr/types/wlr_primary_selection.h>
 #include <wlr/types/wlr_data_device.h>
 #include <wlr/types/wlr_input_device.h>
 #include <wlr/types/wlr_keyboard.h>
@@ -325,6 +329,9 @@ static void keyboard_handle_key(
 	struct shady_server *server = keyboard->server;
 	struct wlr_keyboard_key_event *event = data;
 	struct wlr_seat *seat = server->seat;
+	if (server->idle_notifier) {
+		wlr_idle_notifier_v1_notify_activity(server->idle_notifier, server->seat);
+	}
 
 	uint32_t keycode = event->keycode + 8;
 	const xkb_keysym_t *syms;
@@ -428,6 +435,23 @@ void seat_pointer_focus_change(struct wl_listener *listener, void *data) {
 	struct shady_server *server = wl_container_of(
 			listener, server, pointer_focus_change);
 	struct wlr_seat_pointer_focus_change_event *event = data;
+
+	if (server->active_pointer_constraint) {
+		wlr_pointer_constraint_v1_send_deactivated(
+			server->active_pointer_constraint);
+		server->active_pointer_constraint = NULL;
+	}
+
+	if (event->new_surface && server->pointer_constraints) {
+		struct wlr_pointer_constraint_v1 *constraint =
+			wlr_pointer_constraints_v1_constraint_for_surface(
+				server->pointer_constraints, event->new_surface, server->seat);
+		if (constraint) {
+			server->active_pointer_constraint = constraint;
+			wlr_pointer_constraint_v1_send_activated(constraint);
+		}
+	}
+
 	if (event->new_surface == NULL) {
 		wlr_cursor_set_xcursor(server->cursor, server->cursor_mgr, "default");
 	}
@@ -440,12 +464,33 @@ void seat_request_set_selection(struct wl_listener *listener, void *data) {
 	wlr_seat_set_selection(server->seat, event->source, event->serial);
 }
 
+void seat_request_set_primary_selection(struct wl_listener *listener, void *data) {
+	struct shady_server *server = wl_container_of(
+			listener, server, request_set_primary_selection);
+	struct wlr_seat_request_set_primary_selection_event *event = data;
+	wlr_seat_set_primary_selection(server->seat, event->source, event->serial);
+}
+
 void server_cursor_motion(struct wl_listener *listener, void *data) {
 	struct shady_server *server =
 		wl_container_of(listener, server, cursor_motion);
 	struct wlr_pointer_motion_event *event = data;
+	if (server->idle_notifier) {
+		wlr_idle_notifier_v1_notify_activity(server->idle_notifier, server->seat);
+	}
+	if (server->relative_pointer_manager) {
+		wlr_relative_pointer_manager_v1_send_relative_motion(
+			server->relative_pointer_manager, server->seat,
+			(uint64_t)event->time_msec * 1000,
+			event->delta_x, event->delta_y,
+			event->unaccel_dx, event->unaccel_dy);
+	}
 	if (server->config.spatial_mode && shady_fps_handle_motion(server, event->delta_x, event->delta_y))
 		return;
+	if (server->active_pointer_constraint &&
+			server->active_pointer_constraint->type == WLR_POINTER_CONSTRAINT_V1_LOCKED) {
+		return;
+	}
 	wlr_cursor_move(server->cursor, &event->pointer->base,
 			event->delta_x, event->delta_y);
 	process_cursor_motion(server, event->time_msec);
@@ -456,6 +501,9 @@ void server_cursor_motion_absolute(
 	struct shady_server *server =
 		wl_container_of(listener, server, cursor_motion_absolute);
 	struct wlr_pointer_motion_absolute_event *event = data;
+	if (server->idle_notifier) {
+		wlr_idle_notifier_v1_notify_activity(server->idle_notifier, server->seat);
+	}
 	if (server->config.spatial_mode && server->experimental.camera.first_person && server->experimental.fps.input_capture) {
 		shady_fps_handle_motion(server, 0.0, 0.0);
 		return;
@@ -477,6 +525,9 @@ void server_cursor_button(struct wl_listener *listener, void *data) {
 	struct shady_server *server =
 		wl_container_of(listener, server, cursor_button);
 	struct wlr_pointer_button_event *event = data;
+	if (server->idle_notifier) {
+		wlr_idle_notifier_v1_notify_activity(server->idle_notifier, server->seat);
+	}
 	uint32_t mods = seat_modifiers(server);
 
 	if (server->config.spatial_mode && shady_fps_handle_button(server, event->button, event->state))
@@ -530,6 +581,9 @@ void server_cursor_axis(struct wl_listener *listener, void *data) {
 	struct shady_server *server =
 		wl_container_of(listener, server, cursor_axis);
 	struct wlr_pointer_axis_event *event = data;
+	if (server->idle_notifier) {
+		wlr_idle_notifier_v1_notify_activity(server->idle_notifier, server->seat);
+	}
 
 	if (server->config.spatial_mode && shady_fps_handle_axis(server, event))
 		return;

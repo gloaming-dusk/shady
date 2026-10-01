@@ -13,6 +13,13 @@
 #include <wlr/types/wlr_cursor.h>
 #include <wlr/types/wlr_data_device.h>
 #include <wlr/types/wlr_layer_shell_v1.h>
+#include <wlr/types/wlr_relative_pointer_v1.h>
+#include <wlr/types/wlr_pointer_constraints_v1.h>
+#include <wlr/types/wlr_screencopy_v1.h>
+#include <wlr/types/wlr_idle_notify_v1.h>
+#include <wlr/types/wlr_primary_selection_v1.h>
+#include <wlr/types/wlr_data_control_v1.h>
+#include <wlr/types/wlr_xdg_decoration_v1.h>
 #include <wlr/types/wlr_output_layout.h>
 #include <wlr/types/wlr_scene.h>
 #include <wlr/types/wlr_seat.h>
@@ -163,6 +170,21 @@ int main(int argc, char *argv[]) {
 	server.new_layer_surface.notify = server_new_layer_surface;
 	wl_signal_add(&server.layer_shell->events.new_surface, &server.new_layer_surface);
 
+	server.relative_pointer_manager =
+		wlr_relative_pointer_manager_v1_create(server.wl_display);
+	server.pointer_constraints =
+		wlr_pointer_constraints_v1_create(server.wl_display);
+	server.screencopy_manager =
+		wlr_screencopy_manager_v1_create(server.wl_display);
+	server.idle_notifier =
+		wlr_idle_notifier_v1_create(server.wl_display);
+	server.primary_selection_manager =
+		wlr_primary_selection_v1_device_manager_create(server.wl_display);
+	server.data_control_manager =
+		wlr_data_control_manager_v1_create(server.wl_display);
+	server.xdg_decoration_manager =
+		wlr_xdg_decoration_manager_v1_create(server.wl_display);
+
 	server.cursor = wlr_cursor_create();
 	wlr_cursor_attach_output_layout(server.cursor, server.output_layout);
 	server.cursor_mgr = wlr_xcursor_manager_create(NULL, 24);
@@ -194,6 +216,9 @@ int main(int argc, char *argv[]) {
 	server.request_set_selection.notify = seat_request_set_selection;
 	wl_signal_add(&server.seat->events.request_set_selection,
 			&server.request_set_selection);
+	server.request_set_primary_selection.notify = seat_request_set_primary_selection;
+	wl_signal_add(&server.seat->events.request_set_primary_selection,
+			&server.request_set_primary_selection);
 
 	if (!shady_render_init(server.renderer)) {
 		wlr_log(WLR_ERROR, "failed to initialize GLES2 pipeline");
@@ -252,6 +277,7 @@ int main(int argc, char *argv[]) {
 	wl_list_remove(&server.request_cursor.link);
 	wl_list_remove(&server.pointer_focus_change.link);
 	wl_list_remove(&server.request_set_selection.link);
+	wl_list_remove(&server.request_set_primary_selection.link);
 
 	wl_list_remove(&server.new_output.link);
 
