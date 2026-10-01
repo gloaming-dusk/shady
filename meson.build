@@ -147,3 +147,9 @@ shared_module('shady-plugin-counter',
   include_directories: include_directories('include'),
   build_by_default: false,
   install: false)
+
+shared_module('shady-plugin-orbit-layout',
+  'examples/plugins/orbit_layout.c',
+  include_directories: include_directories('include'),
+  build_by_default: false,
+  install: false)

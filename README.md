@@ -124,6 +124,15 @@ For the repository development setup:
 ./test.sh
 ```
 
+For a more opinionated ricing demo, the repository includes **Night Observatory**:
+
+```sh
+nix develop
+./examples/rice/night-observatory/run.sh
+```
+
+It combines a Lua bootstrap config, runtime Lua events/keybindings, the spatial stack, and the hot-reloadable `orbit-layout` native plugin to arrange windows as a loose 3D constellation. See `examples/rice/night-observatory/README.md` for controls and details.
+
 Shady requires the **GLES2** renderer for its custom shaders. The compositor prints the allocated `WAYLAND_DISPLAY` so more clients can be launched from another terminal.
 
 ## Lua configuration and scripting

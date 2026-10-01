@@ -18,6 +18,7 @@
 #include "../module/module.h"
 #include "../event/event.h"
 #include "../render/render.h"
+#include "../modules/spatial/state.h"
 #include "../shady.h"
 
 #define HOST(h) ((struct shady_server *)(h))
@@ -105,6 +106,33 @@ static bool host_window_close(shady_host host, shady_window window) {
 	struct shady_toplevel *toplevel = WINDOW(window);
 	if (!toplevel->xdg_toplevel) return false;
 	wlr_xdg_toplevel_send_close(toplevel->xdg_toplevel);
+	return true;
+}
+
+static bool host_window_position(shady_window window, double *x, double *y, float *z) {
+	struct shady_toplevel *toplevel = WINDOW(window);
+	if (!toplevel || !toplevel->scene_tree) return false;
+	if (x) *x = toplevel->scene_tree->node.x;
+	if (y) *y = toplevel->scene_tree->node.y;
+	if (z) {
+		const struct shady_toplevel_experimental_state *spatial =
+			shady_spatial_toplevel_state_const(toplevel);
+		*z = spatial ? spatial->z : 0.0f;
+	}
+	return true;
+}
+
+static bool host_window_set_position(shady_host host, shady_window window,
+		double x, double y, float z) {
+	if (!host_window_valid(host, window)) return false;
+	struct shady_toplevel *toplevel = WINDOW(window);
+	if (!toplevel->scene_tree) return false;
+	wlr_scene_node_set_position(&toplevel->scene_tree->node, (int)x, (int)y);
+	struct shady_toplevel_experimental_state *spatial =
+		shady_spatial_toplevel_state(toplevel);
+	if (spatial) spatial->z = z;
+	shady_modules_toplevel_moved(toplevel, x, y);
+	if (HOST(host)->renderer) shady_render_schedule_all_outputs(HOST(host));
 	return true;
 }
 
@@ -235,6 +263,8 @@ static const struct shady_plugin_api_v1 plugin_api = {
 	.window_mapped = host_window_mapped,
 	.window_focus = host_window_focus,
 	.window_close = host_window_close,
+	.window_position = host_window_position,
+	.window_set_position = host_window_set_position,
 	.output_count = host_output_count,
 	.output_at = host_output_at,
 	.output_name = host_output_name,
