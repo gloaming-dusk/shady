@@ -14,6 +14,12 @@ if shady.has_capability("spatial") then
 end
 
 local expanded = false
+local terminal = os.getenv("TERMINAL") or "foot"
+local launcher = os.getenv("SHADY_LAUNCHER") or
+    "if command -v fuzzel >/dev/null 2>&1; then exec fuzzel; " ..
+    "elif command -v wofi >/dev/null 2>&1; then exec wofi --show drun; " ..
+    "elif command -v bemenu-run >/dev/null 2>&1; then exec bemenu-run; " ..
+    "else exec " .. terminal .. "; fi"
 
 local function describe_desktop()
     local windows = shady.windows()
@@ -28,6 +34,17 @@ local function describe_desktop()
             window.z and string.format("%.2f", window.z) or "2d"))
     end
 end
+
+-- There is always a way back into the desktop, even when no windows exist.
+shady.bind("Super+Return", function()
+    local ok = shady.spawn(terminal)
+    shady.log("terminal spawn: " .. tostring(ok))
+end)
+
+shady.bind("Super+d", function()
+    local ok = shady.spawn(launcher)
+    shady.log("launcher spawn: " .. tostring(ok))
+end)
 
 -- "Overview": unfold every cube so the whole constellation becomes readable.
 shady.bind("Super+Space", function()

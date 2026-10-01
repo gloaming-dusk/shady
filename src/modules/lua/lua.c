@@ -2,6 +2,7 @@
 #include "state.h"
 #include <stdbool.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include <lua.h>
 #include <lauxlib.h>
 #include <lualib.h>
@@ -78,6 +79,17 @@ static int l_shady_camera(lua_State *L){
 	return 0;
 }
 static int l_shady_quit(lua_State *L){(void)L;if(lua_server->wl_display)wl_display_terminate(lua_server->wl_display);return 0;}
+static int l_shady_spawn(lua_State *L){
+	const char *command=luaL_checkstring(L,1);
+	pid_t pid=fork();
+	if(pid<0){lua_pushboolean(L,0);return 1;}
+	if(pid==0){
+		setsid();
+		execl("/bin/sh","sh","-lc",command,(char*)NULL);
+		_exit(127);
+	}
+	lua_pushboolean(L,1);return 1;
+}
 static int l_shady_toggle_gravity(lua_State *L){lua_spatial(L);shady_physics_toggle_gravity(lua_server);return 0;}
 static bool lua_window_live(struct shady_toplevel *needle){struct shady_toplevel*t;wl_list_for_each(t,&lua_server->toplevels,link)if(t==needle)return true;return false;}
 static bool lua_output_live(struct shady_output *needle){struct shady_output*o;wl_list_for_each(o,&lua_server->outputs,link)if(o==needle)return true;return false;}
@@ -145,6 +157,7 @@ static void install_api(lua_State *L){
 	lua_pushcfunction(L,l_shady_config);lua_setfield(L,-2,"set");
 	lua_pushcfunction(L,l_shady_bind);lua_setfield(L,-2,"bind");
 	lua_pushcfunction(L,l_shady_quit);lua_setfield(L,-2,"quit");
+	lua_pushcfunction(L,l_shady_spawn);lua_setfield(L,-2,"spawn");
 	lua_pushcfunction(L,l_shady_windows);lua_setfield(L,-2,"windows");
 	lua_pushcfunction(L,l_shady_outputs);lua_setfield(L,-2,"outputs");
 	lua_pushcfunction(L,l_shady_seat);lua_setfield(L,-2,"seat");
@@ -194,7 +207,8 @@ bool shady_lua_start(struct shady_server *server){
 }
 bool shady_lua_handle_key(struct shady_server *server,xkb_keysym_t sym,uint32_t modifiers){
 	lua_State *L=shady_lua_state_for(server)->L;uint32_t mask=WLR_MODIFIER_ALT|WLR_MODIFIER_SHIFT|WLR_MODIFIER_CTRL|WLR_MODIFIER_LOGO;
-	for(size_t i=0;L&&i<lua_bind_count;i++)if(lua_binds[i].sym==sym&&lua_binds[i].modifiers==(modifiers&mask)){
+	xkb_keysym_t normalized=xkb_keysym_to_lower(sym);
+	for(size_t i=0;L&&i<lua_bind_count;i++)if(xkb_keysym_to_lower(lua_binds[i].sym)==normalized&&lua_binds[i].modifiers==(modifiers&mask)){
 		lua_rawgeti(L,LUA_REGISTRYINDEX,lua_binds[i].ref);if(lua_pcall(L,0,0,0)!=LUA_OK){wlr_log(WLR_ERROR,"[SHADY LUA] keybind: %s",lua_tostring(L,-1));lua_pop(L,1);}return true;}return false;
 }
 void shady_lua_fini(struct shady_server *server){

@@ -131,7 +131,7 @@ nix develop
 ./examples/rice/night-observatory/run.sh
 ```
 
-It combines a Lua bootstrap config, runtime Lua events/keybindings, the spatial stack, and the hot-reloadable `orbit-layout` native plugin to arrange windows as a loose 3D constellation. See `examples/rice/night-observatory/README.md` for controls and details.
+It combines a Lua bootstrap config, runtime Lua events/keybindings, the spatial stack, and the hot-reloadable `orbit-layout` native plugin to arrange windows as a loose 3D constellation. The demo starts a terminal automatically when launched without extra arguments; `Super+Return` opens another terminal and `Super+D` opens an available launcher. See `examples/rice/night-observatory/README.md` for controls and details.
 
 Shady requires the **GLES2** renderer for its custom shaders. The compositor prints the allocated `WAYLAND_DISPLAY` so more clients can be launched from another terminal.
 
@@ -230,6 +230,7 @@ Current scripting calls include:
 
 ```lua
 shady.log("hello")
+shady.spawn("foot")
 shady.toggle_gravity()
 shady.toggle_fps()
 shady.quit()
@@ -246,6 +247,8 @@ shady.camera("target_x", 0.0)
 shady.camera("target_y", 0.0)
 shady.camera("target_z", -1.0)
 ```
+
+`shady.spawn(command)` launches a command asynchronously through `sh -lc` and returns whether the child process was created successfully. Shady reaps exited children through the Wayland event loop.
 
 `shady.windows()` returns live `Window` objects. The same object model also exposes `shady.outputs()` (`Output` objects with `name`, `width`, `height`, `scale`), `shady.seat()` (`Seat.name`), and `shady.modules()` (`Module.name`, `Module.active`). This mirrors the opaque Window/Output/Seat/Module handles in the C plugin API.
 

@@ -8,7 +8,8 @@ static bool bind_matches(const struct shady_keybind *bind,
 		xkb_keysym_t sym, uint32_t modifiers) {
 	const uint32_t mask = WLR_MODIFIER_ALT | WLR_MODIFIER_SHIFT |
 		WLR_MODIFIER_CTRL | WLR_MODIFIER_LOGO;
-	return bind->sym == sym && bind->modifiers == (modifiers & mask);
+	return xkb_keysym_to_lower(bind->sym) == xkb_keysym_to_lower(sym) &&
+		bind->modifiers == (modifiers & mask);
 }
 
 static bool physics_init_module(struct shady_server *server) {

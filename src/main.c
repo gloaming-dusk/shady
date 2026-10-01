@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <sys/wait.h>
 #include <wayland-server-core.h>
 #include <wlr/backend.h>
 #include <wlr/render/allocator.h>
@@ -48,6 +49,13 @@ static void default_config_path(char *buf, size_t size) {
 static int terminate_display(int signal_number, void *data) {
 	(void)signal_number;
 	wl_display_terminate(data);
+	return 0;
+}
+
+static int reap_children(int signal_number, void *data) {
+	(void)signal_number;
+	(void)data;
+	while (waitpid(-1, NULL, WNOHANG) > 0) {}
 	return 0;
 }
 
@@ -132,6 +140,8 @@ int main(int argc, char *argv[]) {
 		SIGINT, terminate_display, server.wl_display);
 	struct wl_event_source *sigterm = wl_event_loop_add_signal(loop,
 		SIGTERM, terminate_display, server.wl_display);
+	struct wl_event_source *sigchld = wl_event_loop_add_signal(loop,
+		SIGCHLD, reap_children, NULL);
 
 	server.backend = wlr_backend_autocreate(
 		wl_display_get_event_loop(server.wl_display), NULL);
@@ -286,6 +296,7 @@ int main(int argc, char *argv[]) {
 
 	wl_event_source_remove(sigint);
 	wl_event_source_remove(sigterm);
+	wl_event_source_remove(sigchld);
 	wlr_scene_node_destroy(&server.scene->tree.node);
 	wlr_xcursor_manager_destroy(server.cursor_mgr);
 	wlr_cursor_destroy(server.cursor);
