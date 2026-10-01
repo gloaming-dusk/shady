@@ -10,9 +10,7 @@
 #include <wlr/util/edges.h>
 
 #include "shady.h"
-#include "render/render.h"
-#include "modules/fps/fps.h"
-#include "modules/lua/lua.h"
+#include "module/module.h"
 
 void focus_toplevel(struct shady_toplevel *toplevel) {
 	if (toplevel == NULL) {
@@ -94,7 +92,7 @@ static void xdg_toplevel_map(struct wl_listener *listener, void *data) {
 	wl_list_insert(&toplevel->server->toplevels, &toplevel->link);
 
 	focus_toplevel(toplevel);
-	shady_lua_emit(toplevel->server, "window_map", toplevel);
+	shady_modules_toplevel_map(toplevel);
 }
 
 static void xdg_toplevel_unmap(struct wl_listener *listener, void *data) {
@@ -109,11 +107,7 @@ static void xdg_toplevel_unmap(struct wl_listener *listener, void *data) {
 	 * unmap/destroy itself (for example after typing "exit") while it is held.
 	 * Clear it before renderer/physics can observe the stale object.
 	 */
-	shady_lua_emit(toplevel->server, "window_unmap", toplevel);
-	shady_fps_toplevel_gone(toplevel->server, toplevel);
-	shady_render_toplevel_unmap(
-		toplevel
-	);
+	shady_modules_toplevel_unmap(toplevel);
 	wl_list_remove(&toplevel->link);
 }
 
@@ -125,9 +119,7 @@ static void xdg_toplevel_commit(struct wl_listener *listener, void *data) {
 		wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, 0, 0);
 	}
 
-	shady_render_toplevel_commit(
-		toplevel
-	);
+	shady_modules_toplevel_commit(toplevel);
 }
 
 static void xdg_toplevel_destroy(struct wl_listener *listener, void *data) {
@@ -138,11 +130,7 @@ static void xdg_toplevel_destroy(struct wl_listener *listener, void *data) {
 	if (toplevel == toplevel->server->grabbed_toplevel) {
 		reset_cursor_mode(toplevel->server);
 	}
-	shady_fps_toplevel_gone(toplevel->server, toplevel);
-
-	shady_render_toplevel_destroy(
-		toplevel
-	);
+	shady_modules_toplevel_destroy(toplevel);
 
 	wl_list_remove(&toplevel->map.link);
 	wl_list_remove(&toplevel->unmap.link);

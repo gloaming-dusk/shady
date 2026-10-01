@@ -24,6 +24,8 @@ shader_dir = join_paths(meson.project_source_root(), 'shaders')
 shady_sources = [
   layer_shell_protocol_header,
   'src/main.c',
+  'src/module/module.c',
+  'src/module/builtin.c',
   'src/config.c',
   'src/input.c',
   'src/xdg.c',
@@ -38,6 +40,9 @@ shady_sources = [
   'src/experimental/runtime.c',
   'src/modules/environment/environment.c',
   'src/modules/lua/lua.c',
+  'src/modules/lua/module.c',
+  'src/modules/desktop/module.c',
+  'src/modules/spatial/module.c',
   'src/assets/mesh.c',
   'src/assets/obj.c',
 ]

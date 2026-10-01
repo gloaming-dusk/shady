@@ -10,6 +10,7 @@
 
 #include "experimental/state.h"
 #include "modules/lua/state.h"
+#include "module/module.h"
 
 struct wlr_allocator;
 struct wlr_backend;
@@ -151,6 +152,7 @@ struct shady_server {
 	struct wl_listener new_output;
 
 	struct shady_config config;
+	struct shady_module_manager modules;
 	struct shady_lua_state lua;
 
 	/* Experimental spatial-desktop state is intentionally kept behind one

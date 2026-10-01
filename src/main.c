@@ -32,9 +32,7 @@
 
 #include "shady.h"
 #include "render/render.h"
-#include "modules/physics/physics.h"
-#include "modules/environment/environment.h"
-#include "modules/lua/lua.h"
+#include "module/module.h"
 
 static void default_config_path(char *buf, size_t size) {
 	const char *xdg = getenv("XDG_CONFIG_HOME");
@@ -103,12 +101,8 @@ int main(int argc, char *argv[]) {
 		server.config.sky = false;
 		server.config.environment_obj = false;
 	}
-	/* Lua is allowed to override config before world/physics are built. */
-	shady_lua_init(&server);
-	server.experimental.world = shady_world_default();
-	if (!shady_environment_load_colliders(&server))
-		wlr_log(WLR_ERROR, "failed to load environment collision groups");
-	shady_physics_init(&server);
+	shady_modules_init(&server.modules);
+	shady_register_builtin_modules(&server);
 	server.wl_display = wl_display_create();
 	if (!server.wl_display) {
 		return 1;
@@ -170,44 +164,11 @@ int main(int argc, char *argv[]) {
 	server.new_xdg_popup.notify = server_new_xdg_popup;
 	wl_signal_add(&server.xdg_shell->events.new_popup, &server.new_xdg_popup);
 
-	wl_list_init(&server.layer_surfaces);
-	server.layer_shell = wlr_layer_shell_v1_create(server.wl_display, 4);
-	server.new_layer_surface.notify = server_new_layer_surface;
-	wl_signal_add(&server.layer_shell->events.new_surface, &server.new_layer_surface);
-
-	server.relative_pointer_manager =
-		wlr_relative_pointer_manager_v1_create(server.wl_display);
-	server.pointer_constraints =
-		wlr_pointer_constraints_v1_create(server.wl_display);
-	server.screencopy_manager =
-		wlr_screencopy_manager_v1_create(server.wl_display);
-	server.idle_notifier =
-		wlr_idle_notifier_v1_create(server.wl_display);
-	server.primary_selection_manager =
-		wlr_primary_selection_v1_device_manager_create(server.wl_display);
-	server.data_control_manager =
-		wlr_data_control_manager_v1_create(server.wl_display);
-	server.xdg_decoration_manager =
-		wlr_xdg_decoration_manager_v1_create(server.wl_display);
-	server.output_manager =
-		wlr_output_manager_v1_create(server.wl_display);
-	server.output_manager_apply.notify = shady_output_manager_apply;
-	wl_signal_add(&server.output_manager->events.apply, &server.output_manager_apply);
-	server.output_manager_test.notify = shady_output_manager_test;
-	wl_signal_add(&server.output_manager->events.test, &server.output_manager_test);
-
-	server.session_lock_manager =
-		wlr_session_lock_manager_v1_create(server.wl_display);
-	server.new_session_lock.notify = server_new_session_lock;
-	wl_signal_add(&server.session_lock_manager->events.new_lock,
-		&server.new_session_lock);
-
 	server.cursor = wlr_cursor_create();
 	wlr_cursor_attach_output_layout(server.cursor, server.output_layout);
 	server.cursor_mgr = wlr_xcursor_manager_create(NULL, 24);
 
 	server.cursor_mode = SHADY_CURSOR_PASSTHROUGH;
-	shady_camera_reset(&server.experimental.camera);
 	server.cursor_motion.notify = server_cursor_motion;
 	wl_signal_add(&server.cursor->events.motion, &server.cursor_motion);
 	server.cursor_motion_absolute.notify = server_cursor_motion_absolute;
@@ -237,8 +198,8 @@ int main(int argc, char *argv[]) {
 	wl_signal_add(&server.seat->events.request_set_primary_selection,
 			&server.request_set_primary_selection);
 
-	if (!shady_render_init(server.renderer)) {
-		wlr_log(WLR_ERROR, "failed to initialize GLES2 pipeline");
+	if (!shady_modules_initialize_all(&server)) {
+		wlr_log(WLR_ERROR, "failed to initialize modules");
 		return 1;
 	}
 
@@ -276,14 +237,14 @@ int main(int argc, char *argv[]) {
 
 	wlr_log(WLR_INFO, "Running Wayland compositor on WAYLAND_DISPLAY=%s",
 			socket);
+	shady_modules_start_all(&server);
 	wl_display_run(server.wl_display);
+	shady_modules_stop_all(&server);
 
 	wl_display_destroy_clients(server.wl_display);
 
 	wl_list_remove(&server.new_xdg_toplevel.link);
 	wl_list_remove(&server.new_xdg_popup.link);
-	wl_list_remove(&server.new_layer_surface.link);
-
 	wl_list_remove(&server.cursor_motion.link);
 	wl_list_remove(&server.cursor_motion_absolute.link);
 	wl_list_remove(&server.cursor_button.link);
@@ -295,14 +256,10 @@ int main(int argc, char *argv[]) {
 	wl_list_remove(&server.pointer_focus_change.link);
 	wl_list_remove(&server.request_set_selection.link);
 	wl_list_remove(&server.request_set_primary_selection.link);
-	wl_list_remove(&server.output_manager_apply.link);
-	wl_list_remove(&server.output_manager_test.link);
-	wl_list_remove(&server.new_session_lock.link);
 
 	wl_list_remove(&server.new_output.link);
 
-	shady_lua_fini(&server);
-	shady_render_fini();
+	shady_modules_destroy_all(&server);
 
 	wl_event_source_remove(sigint);
 	wl_event_source_remove(sigterm);

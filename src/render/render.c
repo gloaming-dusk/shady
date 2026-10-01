@@ -495,10 +495,6 @@ void shady_render_output_frame(
 	struct wlr_output *wlr_output =
 		output->wlr_output;
 
-	if (!pipeline_ready) {
-		return;
-	}
-
 	struct wlr_scene_output *scene_output =
 		wlr_scene_get_scene_output(
 			server->scene,
@@ -515,6 +511,10 @@ void shady_render_output_frame(
 		if (!wlr_scene_output_commit(scene_output, NULL)) {
 			wlr_log(WLR_ERROR, "failed to commit desktop scene output");
 		}
+		return;
+	}
+
+	if (!pipeline_ready) {
 		return;
 	}
 
