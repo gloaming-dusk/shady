@@ -116,12 +116,24 @@ static void xdg_toplevel_unmap(struct wl_listener *listener, void *data) {
 static void xdg_toplevel_commit(struct wl_listener *listener, void *data) {
 	(void)data;
 	struct shady_toplevel *toplevel = wl_container_of(listener, toplevel, commit);
+	struct wlr_surface *surface = toplevel->xdg_toplevel->base->surface;
 
 	if (toplevel->xdg_toplevel->base->initial_commit) {
 		wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, 0, 0);
 	}
 
 	shady_modules_toplevel_commit(toplevel);
+
+	int width = surface->current.width;
+	int height = surface->current.height;
+	if (surface->mapped && width > 0 && height > 0 &&
+			(width != toplevel->last_surface_width ||
+			 height != toplevel->last_surface_height)) {
+		toplevel->last_surface_width = width;
+		toplevel->last_surface_height = height;
+		shady_event_emit_window(toplevel->server,
+			SHADY_EVENT_WINDOW_RESIZED, toplevel);
+	}
 }
 
 static void xdg_toplevel_destroy(struct wl_listener *listener, void *data) {

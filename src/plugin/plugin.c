@@ -180,8 +180,11 @@ static void host_output_size(shady_output output, int *width, int *height) {
 	struct shady_output *o = OUTPUT(output);
 	int w = 0, h = 0;
 	if (o && o->wlr_output) wlr_output_effective_resolution(o->wlr_output, &w, &h);
-	if (width) *width = w;
-	if (height) *height = h;
+	/* During early backend startup an output can exist before its effective
+	 * mode is known. Preserve caller fallbacks instead of replacing them with
+	 * an unusable 0x0 size. */
+	if (w > 0 && width) *width = w;
+	if (h > 0 && height) *height = h;
 }
 
 static float host_output_scale(shady_output output) {

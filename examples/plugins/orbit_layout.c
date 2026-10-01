@@ -76,6 +76,8 @@ static void place_windows(void) {
 		shady_output output = api->output_at(host, 0);
 		api->output_size(output, &width, &height);
 	}
+	if (width <= 0) width = 1280;
+	if (height <= 0) height = 720;
 
 	/* The focused window owns the readable, central primary position. */
 	if (focused_window)
@@ -119,6 +121,9 @@ static void on_event(shady_host event_host,
 		break;
 	case SHADY_EVENT_WINDOW_FOCUSED:
 		focused_window = event->object.window;
+		place_windows();
+		break;
+	case SHADY_EVENT_WINDOW_RESIZED:
 		place_windows();
 		break;
 	case SHADY_EVENT_WINDOW_UNMAPPED:
@@ -176,6 +181,7 @@ const struct shady_module *shady_plugin_entry_v1(
 	host = host_handle;
 	api->subscribe_event(host, SHADY_EVENT_WINDOW_MAPPED, on_event, NULL);
 	api->subscribe_event(host, SHADY_EVENT_WINDOW_FOCUSED, on_event, NULL);
+	api->subscribe_event(host, SHADY_EVENT_WINDOW_RESIZED, on_event, NULL);
 	api->subscribe_event(host, SHADY_EVENT_WINDOW_UNMAPPED, on_event, NULL);
 	api->subscribe_event(host, SHADY_EVENT_WINDOW_DESTROYED, on_event, NULL);
 	return &module;

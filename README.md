@@ -228,7 +228,7 @@ end)
 shady.off(token)
 ```
 
-Current event names are `window.created`, `window.mapped`, `window.unmapped`, `window.focused`, `window.destroyed`, `output.added`, `output.removed`, `module.started`, and `module.stopped`. Window lifecycle ordering is `created -> mapped -> focused` and shutdown normally follows `unmapped -> destroyed`.
+Current event names are `window.created`, `window.mapped`, `window.unmapped`, `window.focused`, `window.resized`, `window.destroyed`, `output.added`, `output.removed`, `module.started`, and `module.stopped`. Window lifecycle ordering is `created -> mapped -> focused` and shutdown normally follows `unmapped -> destroyed`.
 
 Window callbacks receive `Window` userdata rather than plain tables. Existing property syntax such as `window.title`, `window.app_id`, and `window.z` is preserved; windows also expose `window.mapped`, `window:focus()`, and `window:close()`. Handles validate liveness before dereferencing so stale Lua references degrade to `nil`/`false` instead of touching freed compositor state.
 
