@@ -17,13 +17,6 @@
 #define SHADY_SHADER_DIR "shaders"
 #endif
 
-static const float WINDOW_TINT[4] = {
-	0.85f,
-	0.90f,
-	1.10f,
-	1.0f
-};
-
 #define WOBBLE_MESH_X 16
 #define WOBBLE_MESH_Y 16
 
@@ -715,6 +708,8 @@ bool shady_gl_pipeline_init(
 		glGetUniformLocation(pipeline->prog_2d, "u_close_progress");
 	pipeline->u_model_2d = glGetUniformLocation(pipeline->prog_2d, "u_model");
 	pipeline->u_light_dir_2d = glGetUniformLocation(pipeline->prog_2d, "u_light_dir");
+	pipeline->u_effect_strength_2d = glGetUniformLocation(pipeline->prog_2d, "u_effect_strength");
+	pipeline->u_brightness_2d = glGetUniformLocation(pipeline->prog_2d, "u_brightness");
 
 	/*
 	 * EGL external texture uniforms.
@@ -759,6 +754,8 @@ bool shady_gl_pipeline_init(
 		glGetUniformLocation(pipeline->prog_ext, "u_close_progress");
 	pipeline->u_model_ext = glGetUniformLocation(pipeline->prog_ext, "u_model");
 	pipeline->u_light_dir_ext = glGetUniformLocation(pipeline->prog_ext, "u_light_dir");
+	pipeline->u_effect_strength_ext = glGetUniformLocation(pipeline->prog_ext, "u_effect_strength");
+	pipeline->u_brightness_ext = glGetUniformLocation(pipeline->prog_ext, "u_brightness");
 
 	pipeline->copy_prog_2d =
 	link_program(
@@ -936,7 +933,10 @@ void shady_gl_pipeline_draw_window(
 	float time_seconds,
 	float wobble_x,
 	float wobble_y,
-	float close_progress
+	float close_progress,
+	const float tint[4],
+	float effect_strength,
+	float brightness
 ) {
 	bool external =
 		(target == GL_TEXTURE_EXTERNAL_OES);
@@ -979,17 +979,21 @@ void shady_gl_pipeline_draw_window(
 	GLint u_close_progress = external ? pipeline->u_close_progress_ext : pipeline->u_close_progress_2d;
 	GLint u_model = external ? pipeline->u_model_ext : pipeline->u_model_2d;
 	GLint u_light_dir = external ? pipeline->u_light_dir_ext : pipeline->u_light_dir_2d;
+	GLint u_effect_strength = external ? pipeline->u_effect_strength_ext : pipeline->u_effect_strength_2d;
+	GLint u_brightness = external ? pipeline->u_brightness_ext : pipeline->u_brightness_2d;
 
 	glUseProgram(prog);
 
 	glUniformMatrix4fv(u_mvp, 1, GL_FALSE, mvp);
 	glUniformMatrix4fv(u_model, 1, GL_FALSE, model);
 	glUniform3f(u_light_dir, -0.45f, 0.72f, 0.53f);
+	glUniform1f(u_effect_strength, effect_strength);
+	glUniform1f(u_brightness, brightness);
 
 	glUniform4fv(
 		u_tint,
 		1,
-		WINDOW_TINT
+		tint
 	);
 
 	glUniform1f(

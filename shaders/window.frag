@@ -9,6 +9,8 @@ uniform float u_has_alpha;
 /* Seconds since compositor render timer started. */
 uniform float u_time;
 uniform vec3 u_light_dir;
+uniform float u_effect_strength;
+uniform float u_brightness;
 
 varying vec2 v_uv;
 varying vec3 v_normal;
@@ -23,7 +25,7 @@ void main() {
 	 * contents, so text should remain readable.
 	 */
 	float pulse = 0.5 + 0.5 * sin(u_time * 1.7);
-	float aberration = 0.0007 + 0.0013 * pulse;
+	float aberration = (0.0007 + 0.0013 * pulse) * u_effect_strength;
 
 	vec4 center = texture2D(u_tex, uv);
 
@@ -88,8 +90,8 @@ void main() {
 	/*
 	 * Strong thin edge + subtle halo.
 	 */
-	color.rgb += neon * edge * (0.08 + 0.05 * pulse);
-	color.rgb += neon * soft_edge * 0.018;
+	color.rgb += neon * edge * (0.08 + 0.05 * pulse) * u_effect_strength;
+	color.rgb += neon * soft_edge * 0.018 * u_effect_strength;
 
 	/*
 	 * Very subtle scanline modulation.
@@ -100,12 +102,12 @@ void main() {
 		uv.y * 900.0 + u_time * 2.0
 	);
 
-	color.rgb *= scan;
+	color.rgb *= mix(1.0, scan, u_effect_strength);
 
-	/*
-	 * Preserve the project's original cool tint.
-	 */
-	color *= u_tint;
+	/* Tint and exposure are explicit compositor configuration. */
+	color.rgb *= u_tint.rgb;
+	color.rgb *= u_brightness;
+	color.a *= u_tint.a;
 
 	/* Light follows the normal of the deformed 3D sheet. */
 	vec3 n = normalize(v_normal);
@@ -114,8 +116,8 @@ void main() {
 	float facing = clamp(abs(n.z), 0.0, 1.0);
 	float surface_light = 0.86 + diffuse * 0.14;
 	float grazing = (1.0 - facing) * 0.055;
-	color.rgb *= surface_light;
-	color.rgb += vec3(0.08, 0.16, 0.28) * grazing;
+	color.rgb *= mix(1.0, surface_light, u_effect_strength);
+	color.rgb += vec3(0.08, 0.16, 0.28) * grazing * u_effect_strength;
 
 	gl_FragColor = color;
 }

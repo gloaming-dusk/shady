@@ -132,6 +132,7 @@ static int l_shady_config(lua_State *L){
 	else value=luaL_checkstring(L,2);
 	if(!shady_config_set(&lua_server->config,key,value))
 		return luaL_error(L,"invalid Shady config: %s = %s",key,value);
+	if(lua_server->renderer)shady_render_schedule_all_outputs(lua_server);
 	return 0;
 }
 static int l_shady_log(lua_State *L){

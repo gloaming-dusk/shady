@@ -3,6 +3,7 @@
 #include <ctype.h>
 #include <errno.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <strings.h>
 #include <wlr/util/log.h>
@@ -21,6 +22,10 @@ void shady_config_defaults(struct shady_config *c) {
 		.fps_mode = true,
 		.sky = false,
 		.sky_path = "",
+		.background_color = { 0.055f, 0.060f, 0.085f },
+		.window_tint = { 0.85f, 0.90f, 1.10f },
+		.window_effect_strength = 1.0f,
+		.window_brightness = 1.0f,
 		.environment_obj = false,
 		.environment_obj_path = "",
 		.bind_quit = { XKB_KEY_Escape, 0 },
@@ -48,6 +53,34 @@ static char *trim(char *s) {
 	while (end > s && isspace((unsigned char)end[-1])) end--;
 	*end = '\0';
 	return s;
+}
+
+static bool parse_color(const char *s, float out[3]) {
+	if (!s || !out) return false;
+	if (s[0] == '#' && strlen(s) == 7) {
+		unsigned r = 0, g = 0, b = 0;
+		if (sscanf(s + 1, "%02x%02x%02x", &r, &g, &b) != 3) return false;
+		out[0] = (float)r / 255.0f;
+		out[1] = (float)g / 255.0f;
+		out[2] = (float)b / 255.0f;
+		return true;
+	}
+	float r = 0.f, g = 0.f, b = 0.f;
+	if (sscanf(s, "%f,%f,%f", &r, &g, &b) == 3) {
+		if (r < 0.f || r > 1.f || g < 0.f || g > 1.f || b < 0.f || b > 1.f) return false;
+		out[0] = r; out[1] = g; out[2] = b;
+		return true;
+	}
+	return false;
+}
+
+static bool parse_float_range(const char *s, float min, float max, float *out) {
+	if (!s || !out) return false;
+	char *end = NULL;
+	float value = strtof(s, &end);
+	if (!end || *trim(end) != '\0' || value < min || value > max) return false;
+	*out = value;
+	return true;
 }
 
 static bool parse_bool(const char *s, bool *out) {
@@ -84,6 +117,10 @@ static bool parse_keybind(const char *s, struct shady_keybind *out) {
 
 bool shady_config_set(struct shady_config *c,const char *key,const char *value){
 	if(!strcmp(key,"sky_path")){snprintf(c->sky_path,sizeof(c->sky_path),"%s",value);return true;}
+	if(!strcmp(key,"background_color"))return parse_color(value,c->background_color);
+	if(!strcmp(key,"window_tint"))return parse_color(value,c->window_tint);
+	if(!strcmp(key,"window_effect_strength"))return parse_float_range(value,0.f,1.f,&c->window_effect_strength);
+	if(!strcmp(key,"window_brightness"))return parse_float_range(value,0.25f,3.f,&c->window_brightness);
 	if(!strcmp(key,"environment_obj_path")){snprintf(c->environment_obj_path,sizeof(c->environment_obj_path),"%s",value);return true;}
 #define BIND_SET(name,field) if(!strcmp(key,"bind." name))return parse_keybind(value,&c->field);
 	BIND_SET("quit",bind_quit) BIND_SET("cycle_windows",bind_cycle_windows)

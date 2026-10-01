@@ -435,13 +435,20 @@ static void render_spatial_subsurface_buffer(struct wlr_scene_buffer *buffer,
 		shady_window_motion_state_for_const(ctx->toplevel)->tilt_x,
 		shady_window_motion_state_for_const(ctx->toplevel)->tilt_y);
 	shady_mat4_multiply(mvp, ctx->vp, model);
+	struct shady_server *server = ctx->toplevel->server;
+	const float tint[4] = {
+		server->config.window_tint[0], server->config.window_tint[1],
+		server->config.window_tint[2], 1.0f,
+	};
 
 	shady_gl_pipeline_draw_window(&pipeline,
 		attribs.target, attribs.tex, attribs.has_alpha,
 		mvp, model, ctx->time_seconds,
 		shady_window_motion_state_for_const(ctx->toplevel)->wobble_x,
 		shady_window_motion_state_for_const(ctx->toplevel)->wobble_y,
-		shady_close_state_for_const(ctx->toplevel)->progress);
+		shady_close_state_for_const(ctx->toplevel)->progress,
+		tint, server->config.window_effect_strength,
+		server->config.window_brightness);
 }
 
 static void render_spatial_overlays(struct shady_server *server,
@@ -603,9 +610,9 @@ void shady_render_output_frame(
 	 * the neon edges more visible.
 	 */
 	glClearColor(
-		0.055f,
-		0.060f,
-		0.085f,
+		server->config.background_color[0],
+		server->config.background_color[1],
+		server->config.background_color[2],
 		1.0f
 	);
 
@@ -663,6 +670,10 @@ void shady_render_output_frame(
 	 */
 	float time_seconds =
 		shader_time_seconds();
+	const float window_tint[4] = {
+		server->config.window_tint[0], server->config.window_tint[1],
+		server->config.window_tint[2], 1.0f,
+	};
 
 	/*
 	 * Advance the spatial desktop through one compositor-owned clock. This
@@ -852,7 +863,10 @@ void shady_render_output_frame(
 			time_seconds,
 			shady_window_motion_state_for_const(toplevel)->wobble_x,
 			shady_window_motion_state_for_const(toplevel)->wobble_y,
-			shady_close_state_for_const(toplevel)->progress
+			shady_close_state_for_const(toplevel)->progress,
+			window_tint,
+			server->config.window_effect_strength,
+			server->config.window_brightness
 		);
 
 		/* Render wl_subsurface children from the same scene subtree instead of
@@ -930,7 +944,10 @@ void shady_render_output_frame(
 			time_seconds,
 			0.0f,
 			0.0f,
-			snapshot->progress
+			snapshot->progress,
+			window_tint,
+			server->config.window_effect_strength,
+			server->config.window_brightness
 		);
 	}
 

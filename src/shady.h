@@ -67,6 +67,10 @@ struct shady_config {
 	bool fps_mode;
 	bool sky;
 	char sky_path[512];
+	float background_color[3];
+	float window_tint[3];
+	float window_effect_strength;
+	float window_brightness;
 	bool environment_obj;
 	char environment_obj_path[512];
 

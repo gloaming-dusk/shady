@@ -1,7 +1,7 @@
 # Night Observatory
 
-A small opinionated Shady rice: calm orbit camera, sky/environment rendering,
-soft window motion, and a native constellation layout plugin.
+A small opinionated Shady rice: calm orbit camera, a configurable dark background,
+soft window motion, readable app surfaces, and a native constellation layout plugin.
 
 ## Build
 
@@ -45,6 +45,30 @@ For a self-contained headless smoke test, replace `WLR_BACKENDS=wayland` with
 | Super + Shift + Q | Quit through Lua |
 
 Running `run.sh` with no extra Shady arguments also starts one terminal automatically, so the rice never boots into an unusable empty desktop. Set `SHADY_STARTUP` to choose another default command.
+
+## Visual tuning
+
+The rice keeps the application texture readable and puts the styling around it:
+
+```lua
+shady.set("background_color", "#070B14")
+shady.set("window_tint", "#FFFFFF")
+shady.set("window_effect_strength", 0.04)
+shady.set("window_brightness", 1.18)
+```
+
+`window_effect_strength` ranges from `0.0` (clean application texture) to `1.0`
+(full chromatic edge/scanline/lighting effect). `window_brightness` accepts `0.25`
+to `3.0`. Both `#RRGGBB` and `r,g,b` (0..1) forms are accepted for colors.
+The old `sky.ppm` and `test-room.obj` setup is still present in `config.lua` as an
+opt-in example instead of being forced on every launch.
+
+## Shutdown log note
+
+When Shady exits, nested Wayland clients such as `foot` can print `Broken pipe`
+and `Hangup` while their compositor socket disappears. That is expected during
+shutdown. If the same messages appear while Shady is still running, that is a
+separate compositor/client failure worth investigating.
 
 The point of the demo is not the exact aesthetic. It is to show that a rice can
 be assembled from a Lua bootstrap, a Lua runtime layer, built-in modules, and a

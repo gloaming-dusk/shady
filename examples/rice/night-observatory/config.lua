@@ -21,11 +21,20 @@ shady.set("floor", true)
 shady.set("close_animation", true)
 shady.set("fps_mode", true)
 
--- Use the repository environment as a dim observatory room.
-shady.set("sky", true)
-shady.set("sky_path", root .. "/sky.ppm")
-shady.set("environment_obj", true)
-shady.set("environment_obj_path", root .. "/assets/test-room.obj")
+-- Visual base. Keep the default rice clean and readable: a dark solid sky
+-- with the perspective grid. The old development sky/room are still opt-in.
+shady.set("background_color", "#070B14")
+shady.set("window_tint", "#FFFFFF")
+shady.set("window_effect_strength", 0.04)
+shady.set("window_brightness", 1.18)
+
+shady.set("sky", false)
+shady.set("environment_obj", false)
+-- To bring the development environment back:
+-- shady.set("sky", true)
+-- shady.set("sky_path", root .. "/sky.ppm")
+-- shady.set("environment_obj", true)
+-- shady.set("environment_obj_path", root .. "/assets/test-room.obj")
 
 -- The rice is intentionally composed from modules rather than baking behavior
 -- into the compositor core.

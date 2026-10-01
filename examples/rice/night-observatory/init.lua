@@ -7,10 +7,10 @@ shady.log("Night Observatory is awake")
 if shady.has_capability("spatial") then
     shady.camera("yaw", -0.20)
     shady.camera("pitch", -0.08)
-    shady.camera("distance", 2.35)
+    shady.camera("distance", 1.62)
     shady.camera("target_x", 0.0)
     shady.camera("target_y", 0.0)
-    shady.camera("target_z", -0.72)
+    shady.camera("target_z", -0.64)
 end
 
 local expanded = false
