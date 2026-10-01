@@ -35,13 +35,14 @@
 #include "shady.h"
 #include "render/render.h"
 #include "module/module.h"
+#include "config_lua.h"
 
 static void default_config_path(char *buf, size_t size) {
 	const char *xdg = getenv("XDG_CONFIG_HOME");
 	const char *home = getenv("HOME");
-	if (xdg && *xdg) snprintf(buf, size, "%s/shady/config", xdg);
-	else if (home && *home) snprintf(buf, size, "%s/.config/shady/config", home);
-	else snprintf(buf, size, "shady.conf");
+	if (xdg && *xdg) snprintf(buf, size, "%s/shady/config.lua", xdg);
+	else if (home && *home) snprintf(buf, size, "%s/.config/shady/config.lua", home);
+	else snprintf(buf, size, "config.lua");
 }
 
 static int terminate_display(int signal_number, void *data) {
@@ -54,14 +55,16 @@ int main(int argc, char *argv[]) {
 	wlr_log_init(WLR_DEBUG, NULL);
 	char *startup_cmd = NULL;
 	char *config_path = NULL;
+	char *legacy_config_path = NULL;
 	bool safe_mode = false;
 
 	int c;
 	static const struct option long_options[] = {
 		{ "safe", no_argument, NULL, 'S' },
+		{ "legacy-config", required_argument, NULL, 'L' },
 		{ 0, 0, 0, 0 },
 	};
-	while ((c = getopt_long(argc, argv, "s:c:hS", long_options, NULL)) != -1) {
+	while ((c = getopt_long(argc, argv, "s:c:hSL:", long_options, NULL)) != -1) {
 		switch (c) {
 		case 's':
 			startup_cmd = optarg;
@@ -72,26 +75,42 @@ int main(int argc, char *argv[]) {
 		case 'S':
 			safe_mode = true;
 			break;
+		case 'L':
+			legacy_config_path = optarg;
+			break;
 		default:
-			printf("Usage: %s [-s startup command] [-c config path] [--safe]\n", argv[0]);
+			printf("Usage: %s [-s startup command] [-c config.lua] [--legacy-config path] [--safe]\n", argv[0]);
 			return 0;
 		}
 	}
 	if (optind < argc) {
-		printf("Usage: %s [-s startup command] [-c config path] [--safe]\n", argv[0]);
+		printf("Usage: %s [-s startup command] [-c config.lua] [--legacy-config path] [--safe]\n", argv[0]);
 		return 0;
 	}
 
 	struct shady_server server = {0};
 	shady_config_defaults(&server.config);
+	shady_modules_init(&server.modules);
+	shady_register_builtin_modules(&server);
 	char config_buf[4096];
 	if (!config_path) {
 		default_config_path(config_buf, sizeof(config_buf));
 		config_path = config_buf;
 	}
-	shady_config_load(&server.config, config_path);
+	if (legacy_config_path) {
+		shady_config_load(&server.config, legacy_config_path);
+	}
+	if (!shady_config_lua_load(&server, config_path)) {
+		return 1;
+	}
 	if (safe_mode) {
 		server.config.spatial_mode = false;
+		shady_modules_set_enabled(&server.modules, "spatial", false);
+		shady_modules_set_enabled(&server.modules, "window-motion", false);
+		shady_modules_set_enabled(&server.modules, "physics", false);
+		shady_modules_set_enabled(&server.modules, "fps", false);
+		shady_modules_set_enabled(&server.modules, "close-animation", false);
+		shady_modules_set_enabled(&server.modules, "scene-effects", false);
 		server.config.physics_enabled = false;
 		server.config.window_gravity = false;
 		server.config.window_wobble = false;
@@ -103,8 +122,6 @@ int main(int argc, char *argv[]) {
 		server.config.sky = false;
 		server.config.environment_obj = false;
 	}
-	shady_modules_init(&server.modules);
-	shady_register_builtin_modules(&server);
 	server.wl_display = wl_display_create();
 	if (!server.wl_display) {
 		return 1;
@@ -128,7 +145,7 @@ int main(int argc, char *argv[]) {
 		return 1;
 	}
 #if SHADY_HAS_SPATIAL
-	if (!wlr_renderer_is_gles2(server.renderer)) {
+	if (server.config.spatial_mode && !wlr_renderer_is_gles2(server.renderer)) {
 		wlr_log(WLR_ERROR,
 			"the spatial module requires the GLES2 renderer (unset WLR_RENDERER=pixman)");
 		return 1;
@@ -275,5 +292,6 @@ int main(int argc, char *argv[]) {
 	wlr_backend_destroy(server.backend);
 	wl_display_destroy(server.wl_display);
 	shady_modules_release_states(&server);
+	shady_modules_close_plugins(&server);
 	return 0;
 }

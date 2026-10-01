@@ -18,7 +18,8 @@ lua_enabled = get_option('lua').enabled()
 
 egl = dependency('egl', required: spatial_enabled)
 glesv2 = dependency('glesv2', required: spatial_enabled)
-lua = cc.find_library('lua', required: lua_enabled)
+lua = cc.find_library('lua', required: true)
+dl = cc.find_library('dl', required: false)
 shader_dir = join_paths(meson.project_source_root(), 'shaders')
 
 shady_sources = [
@@ -26,7 +27,9 @@ shady_sources = [
   'src/main.c',
   'src/module/module.c',
   'src/module/builtin.c',
+  'src/plugin/plugin.c',
   'src/config.c',
+  'src/config_lua.c',
   'src/input.c',
   'src/xdg.c',
   'src/layer.c',
@@ -101,12 +104,11 @@ shady_deps = [
   dependency('wayland-server'),
   dependency('xkbcommon'),
   cc.find_library('m', required: true),
+  lua,
+  dl,
 ]
 if spatial_enabled
   shady_deps += [egl, glesv2]
-endif
-if lua_enabled
-  shady_deps += lua
 endif
 
 executable('shady',
@@ -123,6 +125,17 @@ executable('shady',
     '-DSHADY_HAS_CLOSE_ANIMATION=@0@'.format(close_animation_enabled ? 1 : 0),
     '-DSHADY_HAS_SCENE_EFFECTS=@0@'.format(scene_effects_enabled ? 1 : 0),
   ],
-  include_directories: include_directories('src'),
+  include_directories: include_directories('src', 'include'),
   dependencies: shady_deps,
   install: true)
+
+install_headers(
+  'include/shady/module.h',
+  'include/shady/plugin.h',
+  subdir: 'shady')
+
+shared_module('shady-plugin-hello',
+  'examples/plugins/hello.c',
+  include_directories: include_directories('include'),
+  build_by_default: false,
+  install: false)

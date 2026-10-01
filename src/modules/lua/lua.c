@@ -92,6 +92,7 @@ static void install_api(lua_State *L){
 	lua_newtable(L);
 	lua_pushcfunction(L,l_shady_log);lua_setfield(L,-2,"log");
 	lua_pushcfunction(L,l_shady_config);lua_setfield(L,-2,"config");
+	lua_pushcfunction(L,l_shady_config);lua_setfield(L,-2,"set");
 	lua_pushcfunction(L,l_shady_bind);lua_setfield(L,-2,"bind");
 	lua_pushcfunction(L,l_shady_quit);lua_setfield(L,-2,"quit");
 	lua_pushcfunction(L,l_shady_windows);lua_setfield(L,-2,"windows");

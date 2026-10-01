@@ -99,7 +99,7 @@ FPS interaction and visual effects, use:
 WLR_BACKENDS=wayland ./build/shady --safe
 ```
 
-For a genuinely small build, omit the spatial and Lua modules entirely:
+For a genuinely small build, omit the spatial stack and runtime Lua scripting module. The tiny bootstrap Lua config engine remains available so `config.lua` still works:
 
 ```sh
 meson setup build-minimal -Dspatial=disabled -Dlua=disabled
@@ -126,48 +126,52 @@ For the repository development setup:
 
 Shady requires the **GLES2** renderer for its custom shaders. The compositor prints the allocated `WAYLAND_DISPLAY` so more clients can be launched from another terminal.
 
-## Lua scripting
+## Lua configuration and scripting
 
-Shady embeds **Lua 5.4**. Lua is intended for ricing, configuration and compositor orchestration while rendering, collision and physics stay in C.
+Shady embeds **Lua 5.4** and uses it in two phases. `config.lua` is the bootstrap configuration language and runs **before module dependency resolution**; `init.lua` is the optional runtime scripting layer and runs after modules are initialized.
 
-By default Shady looks for:
-
-```text
-$XDG_CONFIG_HOME/shady/init.lua
-```
-
-or, when `XDG_CONFIG_HOME` is unset:
+The bootstrap config defaults to:
 
 ```text
-~/.config/shady/init.lua
+$XDG_CONFIG_HOME/shady/config.lua
 ```
 
-For development or testing, `SHADY_LUA_INIT` can select another script. The repository's `test.sh` uses `test-shady.lua`.
+or `~/.config/shady/config.lua`. Pass `-c /path/to/config.lua` to select another file. A complete example lives at `examples/config.lua`.
 
-### Configuration from Lua
+### Bootstrap configuration
 
 ```lua
-shady.config("physics_enabled", true)
-shady.config("window_gravity", true)
-shady.config("window_wobble", true)
-shady.config("shadows", true)
-shady.config("fps_mode", true)
+shady.set("spatial_mode", true)
+shady.set("window_gravity", true)
+shady.set("window_wobble", true)
+shady.set("shadows", true)
 
-shady.config("sky", true)
-shady.config("sky_path", "/path/to/sky.ppm")
+shady.bind("fps_toggle", "F2")
+shady.bind("fps_capture", "F3")
 
-shady.config("environment_obj", true)
-shady.config("environment_obj_path", "/path/to/world.obj")
+shady.modules({
+    ["window-motion"] = true,
+    ["physics"] = true,
+    ["fps"] = true,
+    ["close-animation"] = true,
+    ["scene-effects"] = true,
+    ["lua"] = true,
+})
 ```
 
-Built-in key bindings can also be configured:
+`shady.config(key, value)` is an alias for `shady.set(key, value)`. `shady.module(name, enabled)` changes one module, while `shady.modules(table)` changes several. These are runtime selections within whatever modules were compiled into the binary.
+
+Native plugins are also loaded from the bootstrap phase:
 
 ```lua
-shady.config("bind.fps_toggle", "F2")
-shady.config("bind.fps_capture", "F3")
-shady.config("bind.gravity_toggle", "F4")
-shady.config("bind.debug_ray", "F5")
+shady.plugin("/absolute/path/to/my-plugin.so")
 ```
+
+Because plugin loading happens before capability resolution, external plugins participate in the same dependency graph as built-in modules.
+
+### Runtime Lua
+
+When the `lua` runtime module is enabled, Shady then looks for `$XDG_CONFIG_HOME/shady/init.lua` (or `~/.config/shady/init.lua`). `SHADY_LUA_INIT` can select another runtime script. Runtime Lua is intended for callbacks, live window inspection, bindings, and orchestration rather than rendering or physics hot loops.
 
 ### Runtime key bindings
 
@@ -270,7 +274,7 @@ bind.fps_toggle = F2
 bind.gravity_toggle = F4
 ```
 
-Use `shady -c /path/to/config` to load one. Lua is now the preferred path for development and ricing.
+Use `shady --legacy-config /path/to/config` to load one. `-c` now selects the bootstrap `config.lua`; Lua is the primary configuration path.
 
 ## Project layout
 
@@ -337,7 +341,40 @@ Meson exposes the top-level modules and spatial subfeatures:
 -Dscene_effects=enabled|disabled|auto
 ```
 
-These are still built-in C modules rather than a stable dynamic-plugin ABI. That keeps the core small without committing Shady to `.so` ABI compatibility yet.
+Built-ins and external native plugins now share the same module descriptor model. External plugins use the explicitly versioned **experimental** `SHADY_PLUGIN_ABI_V1`; ABI compatibility is guaranteed only for that version and must be bumped when the public module layout changes.
+
+### Native C plugins
+
+Public headers are installed as `shady/module.h` and `shady/plugin.h`. A plugin exports one entry symbol and returns a module descriptor:
+
+```c
+#include <shady/plugin.h>
+
+static const struct shady_plugin_api_v1 *api;
+
+static void start(struct shady_server *server) {
+    (void)server;
+    api->log(SHADY_PLUGIN_LOG_INFO, "my plugin started");
+}
+
+static const char *const provides[] = { "example.my-plugin", NULL };
+static const struct shady_module module = {
+    .name = "my-plugin",
+    .provides = provides,
+    .start = start,
+};
+
+const struct shady_module *shady_plugin_entry_v1(
+        uint32_t abi, const struct shady_plugin_api_v1 *host, void *ctx) {
+    (void)ctx;
+    if (abi != SHADY_PLUGIN_ABI_V1 || host->struct_size < sizeof(*host))
+        return NULL;
+    api = host;
+    return &module;
+}
+```
+
+The host API currently exposes logging, capability checks, config mutation, module/window state access, window title/app-id access, render scheduling, and compositor termination. Plugins are loaded from bootstrap Lua with `shady.plugin(path)` and then participate in normal capability resolution, initialization, hooks, and reverse-order teardown. `examples/plugins/hello.c` is a working minimal plugin.
 
 ## Current status
 

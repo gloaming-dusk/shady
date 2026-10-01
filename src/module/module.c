@@ -1,5 +1,6 @@
 #include "module.h"
 
+#include <dlfcn.h>
 #include <stdlib.h>
 #include <sys/types.h>
 #include <string.h>
@@ -7,8 +8,20 @@
 
 #include "../shady.h"
 
+static ssize_t module_index(struct shady_module_manager *manager,
+		const struct shady_module *module) {
+	for (size_t i = 0; i < manager->count; i++) {
+		if (manager->modules[i] == module) return (ssize_t)i;
+	}
+	return -1;
+}
+
 static bool module_enabled(const struct shady_module *module,
 		struct shady_server *server) {
+	ssize_t index = module_index(&server->modules, module);
+	if (index >= 0 && server->modules.enable_override[index] != 0) {
+		return server->modules.enable_override[index] > 0;
+	}
 	return !module->enabled || module->enabled(server);
 }
 
@@ -55,6 +68,26 @@ bool shady_modules_register(struct shady_module_manager *manager,
 	manager->modules[manager->count++] = module;
 	manager->resolved = false;
 	return true;
+}
+
+bool shady_modules_has_registered(const struct shady_module_manager *manager,
+		const char *name) {
+	for (size_t i = 0; i < manager->count; i++) {
+		if (strcmp(manager->modules[i]->name, name) == 0) return true;
+	}
+	return false;
+}
+
+bool shady_modules_set_enabled(struct shady_module_manager *manager,
+		const char *name, bool enabled) {
+	for (size_t i = 0; i < manager->count; i++) {
+		if (strcmp(manager->modules[i]->name, name) == 0) {
+			manager->enable_override[i] = enabled ? 1 : -1;
+			manager->resolved = false;
+			return true;
+		}
+	}
+	return false;
 }
 
 bool shady_module_has_capability(struct shady_server *server, const char *capability) {
@@ -128,8 +161,23 @@ bool shady_modules_resolve(struct shady_server *server) {
 			if (edges[pick][j] && indegree[j] > 0) indegree[j]--;
 		}
 	}
+	const struct shady_module *old_modules[SHADY_MAX_MODULES] = {0};
+	void *old_handles[SHADY_MAX_MODULES] = {0};
+	int8_t old_overrides[SHADY_MAX_MODULES] = {0};
+	memcpy(old_modules, manager->modules, sizeof(old_modules));
+	memcpy(old_handles, manager->plugin_handle, sizeof(old_handles));
+	memcpy(old_overrides, manager->enable_override, sizeof(old_overrides));
 	memcpy(manager->modules, ordered, sizeof(manager->modules));
+	memset(manager->plugin_handle, 0, sizeof(manager->plugin_handle));
+	memset(manager->enable_override, 0, sizeof(manager->enable_override));
 	for (size_t i = 0; i < manager->count; i++) {
+		for (size_t j = 0; j < manager->count; j++) {
+			if (manager->modules[i] == old_modules[j]) {
+				manager->plugin_handle[i] = old_handles[j];
+				manager->enable_override[i] = old_overrides[j];
+				break;
+			}
+		}
 		wlr_log(WLR_DEBUG, "module: resolved[%zu] %s", i,
 			manager->modules[i]->name);
 	}
@@ -218,6 +266,16 @@ void shady_modules_release_states(struct shady_server *server) {
 	for (size_t i = 0; i < manager->count; i++) {
 		free(manager->state[i]);
 		manager->state[i] = NULL;
+	}
+}
+
+void shady_modules_close_plugins(struct shady_server *server) {
+	struct shady_module_manager *manager = &server->modules;
+	for (size_t i = manager->count; i > 0; i--) {
+		if (manager->plugin_handle[i - 1]) {
+			dlclose(manager->plugin_handle[i - 1]);
+			manager->plugin_handle[i - 1] = NULL;
+		}
 	}
 }
 
