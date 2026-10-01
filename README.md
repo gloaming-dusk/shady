@@ -204,7 +204,7 @@ shady_events = {
 }
 ```
 
-Window event tables currently expose `title`, `app_id`, and world `z`.
+Window callbacks now receive `Window` userdata rather than plain tables. Existing property syntax such as `window.title`, `window.app_id`, and `window.z` is preserved; windows also expose `window.mapped`, `window:focus()`, and `window:close()`. Handles validate liveness before dereferencing so stale Lua references degrade to `nil`/`false` instead of touching freed compositor state.
 
 ### Runtime API
 
@@ -229,7 +229,7 @@ shady.camera("target_y", 0.0)
 shady.camera("target_z", -1.0)
 ```
 
-`shady.windows()` returns the currently live toplevels as Lua tables. The API is intentionally small and experimental; the goal is to grow it without moving physics or rendering hot loops into Lua.
+`shady.windows()` returns live `Window` objects. The same object model also exposes `shady.outputs()` (`Output` objects with `name`, `width`, `height`, `scale`), `shady.seat()` (`Seat.name`), and `shady.modules()` (`Module.name`, `Module.active`). This mirrors the opaque Window/Output/Seat/Module handles in the C plugin API.
 
 ## 3D environments
 
@@ -374,7 +374,7 @@ const struct shady_module *shady_plugin_entry_v1(
 }
 ```
 
-The host API currently exposes logging, capability checks, config mutation, module/window state access, window title/app-id access, render scheduling, and compositor termination. Plugins are loaded from bootstrap Lua with `shady.plugin(path)` and then participate in normal capability resolution, initialization, hooks, and reverse-order teardown. `examples/plugins/hello.c` is a working minimal plugin.
+The host API is object-oriented around opaque `shady_host`, `shady_window`, `shady_output`, `shady_seat`, and `shady_module_handle` values. It exposes object enumeration and queries, window validity/focus/close operations, module/window state access for module-owned data, logging, capability checks, config mutation, render scheduling, and compositor termination. Plugins never need the private layout of Shady's server/window/output structs. Plugins are loaded from bootstrap Lua with `shady.plugin(path)` and then participate in normal capability resolution, initialization, hooks, and reverse-order teardown. `examples/plugins/hello.c` exercises the host/seat/output/module object API.
 
 ## Current status
 

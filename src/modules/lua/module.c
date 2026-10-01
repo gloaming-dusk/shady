@@ -8,6 +8,10 @@ static bool lua_init_module(struct shady_server *server) {
 	return shady_lua_init(server);
 }
 
+static void lua_start_module(struct shady_server *server) {
+	(void)shady_lua_start(server);
+}
+
 static void lua_destroy_module(struct shady_server *server) {
 	shady_lua_fini(server);
 }
@@ -54,6 +58,7 @@ static const struct shady_module lua_module = {
 	.optional_requires = lua_optional_requires,
 	.state_size = sizeof(struct shady_lua_state),
 	.init = lua_init_module,
+	.start = lua_start_module,
 	.destroy = lua_destroy_module,
 	.toplevel_map = lua_toplevel_map,
 	.toplevel_unmap = lua_toplevel_unmap,

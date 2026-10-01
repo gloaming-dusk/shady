@@ -15,9 +15,25 @@
 #include <string.h>
 #include <wlr/types/wlr_keyboard.h>
 #include <wlr/types/wlr_xdg_shell.h>
+#include <wlr/types/wlr_output.h>
+#include <wlr/types/wlr_seat.h>
 
 static struct shady_server *lua_server;
+
+#define SHADY_LUA_WINDOW_MT "shady.window"
+#define SHADY_LUA_OUTPUT_MT "shady.output"
+#define SHADY_LUA_SEAT_MT "shady.seat"
+#define SHADY_LUA_MODULE_MT "shady.module"
+
+struct lua_window_handle { struct shady_toplevel *ptr; };
+struct lua_output_handle { struct shady_output *ptr; };
+struct lua_seat_handle { struct wlr_seat *ptr; };
+struct lua_module_handle { const struct shady_module *ptr; };
+
 static void push_window(lua_State *L,struct shady_toplevel *t);
+static void push_output(lua_State *L,struct shady_output *o);
+static void push_seat(lua_State *L,struct wlr_seat *seat);
+static void push_module(lua_State *L,const struct shady_module *module);
 #define SHADY_LUA_MAX_BINDS 32
 struct lua_bind { xkb_keysym_t sym; uint32_t modifiers; int ref; };
 static struct lua_bind lua_binds[SHADY_LUA_MAX_BINDS]; static size_t lua_bind_count;
@@ -60,10 +76,35 @@ static int l_shady_camera(lua_State *L){
 }
 static int l_shady_quit(lua_State *L){(void)L;if(lua_server->wl_display)wl_display_terminate(lua_server->wl_display);return 0;}
 static int l_shady_toggle_gravity(lua_State *L){lua_spatial(L);shady_physics_toggle_gravity(lua_server);return 0;}
-static int l_shady_windows(lua_State *L){
-	lua_newtable(L);int n=1;struct shady_toplevel*t;
-	wl_list_for_each(t,&lua_server->toplevels,link){push_window(L,t);lua_rawseti(L,-2,n++);}return 1;
-}
+static bool lua_window_live(struct shady_toplevel *needle){struct shady_toplevel*t;wl_list_for_each(t,&lua_server->toplevels,link)if(t==needle)return true;return false;}
+static bool lua_output_live(struct shady_output *needle){struct shady_output*o;wl_list_for_each(o,&lua_server->outputs,link)if(o==needle)return true;return false;}
+static bool lua_module_registered(const struct shady_module *needle,size_t *index){for(size_t i=0;i<lua_server->modules.count;i++)if(lua_server->modules.modules[i]==needle){if(index)*index=i;return true;}return false;}
+
+static int l_window_focus(lua_State *L){struct lua_window_handle*h=luaL_checkudata(L,1,SHADY_LUA_WINDOW_MT);if(!h->ptr||!lua_window_live(h->ptr)){lua_pushboolean(L,0);return 1;}focus_toplevel(h->ptr);lua_pushboolean(L,1);return 1;}
+static int l_window_close(lua_State *L){struct lua_window_handle*h=luaL_checkudata(L,1,SHADY_LUA_WINDOW_MT);if(!h->ptr||!lua_window_live(h->ptr)||!h->ptr->xdg_toplevel){lua_pushboolean(L,0);return 1;}wlr_xdg_toplevel_send_close(h->ptr->xdg_toplevel);lua_pushboolean(L,1);return 1;}
+static int l_window_index(lua_State *L){struct lua_window_handle*h=luaL_checkudata(L,1,SHADY_LUA_WINDOW_MT);const char*k=luaL_checkstring(L,2);if(!h->ptr||!lua_window_live(h->ptr)){lua_pushnil(L);return 1;}struct shady_toplevel*t=h->ptr;if(!strcmp(k,"title")){lua_pushstring(L,t->xdg_toplevel->title?t->xdg_toplevel->title:"");return 1;}if(!strcmp(k,"app_id")){lua_pushstring(L,t->xdg_toplevel->app_id?t->xdg_toplevel->app_id:"");return 1;}if(!strcmp(k,"mapped")){lua_pushboolean(L,t->xdg_toplevel->base->surface->mapped);return 1;}if(!strcmp(k,"z")){const struct shady_toplevel_experimental_state*s=shady_spatial_toplevel_state_const(t);if(s)lua_pushnumber(L,s->z);else lua_pushnil(L);return 1;}if(!strcmp(k,"focus")){lua_pushcfunction(L,l_window_focus);return 1;}if(!strcmp(k,"close")){lua_pushcfunction(L,l_window_close);return 1;}lua_pushnil(L);return 1;}
+static int l_window_tostring(lua_State *L){struct lua_window_handle*h=luaL_checkudata(L,1,SHADY_LUA_WINDOW_MT);if(!h->ptr||!lua_window_live(h->ptr)){lua_pushliteral(L,"Window<dead>");return 1;}lua_pushfstring(L,"Window<%s>",h->ptr->xdg_toplevel->app_id?h->ptr->xdg_toplevel->app_id:"");return 1;}
+
+static int l_output_index(lua_State *L){struct lua_output_handle*h=luaL_checkudata(L,1,SHADY_LUA_OUTPUT_MT);const char*k=luaL_checkstring(L,2);if(!h->ptr||!lua_output_live(h->ptr)){lua_pushnil(L);return 1;}struct wlr_output*o=h->ptr->wlr_output;if(!strcmp(k,"name")){lua_pushstring(L,o->name?o->name:"");return 1;}if(!strcmp(k,"scale")){lua_pushnumber(L,o->scale);return 1;}if(!strcmp(k,"width")||!strcmp(k,"height")){int w=0,hg=0;wlr_output_effective_resolution(o,&w,&hg);lua_pushinteger(L,!strcmp(k,"width")?w:hg);return 1;}lua_pushnil(L);return 1;}
+static int l_output_tostring(lua_State *L){struct lua_output_handle*h=luaL_checkudata(L,1,SHADY_LUA_OUTPUT_MT);lua_pushfstring(L,"Output<%s>",h->ptr&&lua_output_live(h->ptr)&&h->ptr->wlr_output->name?h->ptr->wlr_output->name:"dead");return 1;}
+
+static int l_seat_index(lua_State *L){struct lua_seat_handle*h=luaL_checkudata(L,1,SHADY_LUA_SEAT_MT);const char*k=luaL_checkstring(L,2);if(!strcmp(k,"name")){lua_pushstring(L,h->ptr&&h->ptr->name?h->ptr->name:"");return 1;}lua_pushnil(L);return 1;}
+static int l_seat_tostring(lua_State *L){struct lua_seat_handle*h=luaL_checkudata(L,1,SHADY_LUA_SEAT_MT);lua_pushfstring(L,"Seat<%s>",h->ptr&&h->ptr->name?h->ptr->name:"");return 1;}
+
+static int l_module_index(lua_State *L){struct lua_module_handle*h=luaL_checkudata(L,1,SHADY_LUA_MODULE_MT);const char*k=luaL_checkstring(L,2);size_t i=0;if(!h->ptr||!lua_module_registered(h->ptr,&i)){lua_pushnil(L);return 1;}if(!strcmp(k,"name")){lua_pushstring(L,h->ptr->name?h->ptr->name:"");return 1;}if(!strcmp(k,"active")){lua_pushboolean(L,lua_server->modules.active[i]);return 1;}lua_pushnil(L);return 1;}
+static int l_module_tostring(lua_State *L){struct lua_module_handle*h=luaL_checkudata(L,1,SHADY_LUA_MODULE_MT);lua_pushfstring(L,"Module<%s>",h->ptr&&h->ptr->name?h->ptr->name:"");return 1;}
+
+static void register_object_types(lua_State *L){struct{const char*name;lua_CFunction index;lua_CFunction tostring;}mts[]={{SHADY_LUA_WINDOW_MT,l_window_index,l_window_tostring},{SHADY_LUA_OUTPUT_MT,l_output_index,l_output_tostring},{SHADY_LUA_SEAT_MT,l_seat_index,l_seat_tostring},{SHADY_LUA_MODULE_MT,l_module_index,l_module_tostring}};for(size_t i=0;i<sizeof(mts)/sizeof(mts[0]);i++){luaL_newmetatable(L,mts[i].name);lua_pushcfunction(L,mts[i].index);lua_setfield(L,-2,"__index");lua_pushcfunction(L,mts[i].tostring);lua_setfield(L,-2,"__tostring");lua_pop(L,1);}}
+
+static void push_window(lua_State *L,struct shady_toplevel*t){struct lua_window_handle*h=lua_newuserdatauv(L,sizeof(*h),0);h->ptr=t;luaL_setmetatable(L,SHADY_LUA_WINDOW_MT);}
+static void push_output(lua_State *L,struct shady_output*o){struct lua_output_handle*h=lua_newuserdatauv(L,sizeof(*h),0);h->ptr=o;luaL_setmetatable(L,SHADY_LUA_OUTPUT_MT);}
+static void push_seat(lua_State *L,struct wlr_seat*seat){struct lua_seat_handle*h=lua_newuserdatauv(L,sizeof(*h),0);h->ptr=seat;luaL_setmetatable(L,SHADY_LUA_SEAT_MT);}
+static void push_module(lua_State *L,const struct shady_module*m){struct lua_module_handle*h=lua_newuserdatauv(L,sizeof(*h),0);h->ptr=m;luaL_setmetatable(L,SHADY_LUA_MODULE_MT);}
+
+static int l_shady_windows(lua_State *L){lua_newtable(L);int n=1;struct shady_toplevel*t;wl_list_for_each(t,&lua_server->toplevels,link){push_window(L,t);lua_rawseti(L,-2,n++);}return 1;}
+static int l_shady_outputs(lua_State *L){lua_newtable(L);int n=1;struct shady_output*o;wl_list_for_each(o,&lua_server->outputs,link){push_output(L,o);lua_rawseti(L,-2,n++);}return 1;}
+static int l_shady_seat(lua_State *L){push_seat(L,lua_server->seat);return 1;}
+static int l_shady_modules_runtime(lua_State *L){lua_newtable(L);for(size_t i=0;i<lua_server->modules.count;i++){push_module(L,lua_server->modules.modules[i]);lua_rawseti(L,-2,(lua_Integer)i+1);}return 1;}
 static int l_shady_expand_all(lua_State *L){lua_spatial(L);struct shady_fps_state*fps=shady_fps_state_for(lua_server);struct shady_toplevel*t;wl_list_for_each(t,&lua_server->toplevels,link){shady_fps_toplevel_state(t)->expanded=true;shady_physics_stop(t);}fps->expanded_toplevel=NULL;fps->input_capture=false;shady_render_schedule_all_outputs(lua_server);return 0;}
 static int l_shady_fold_all(lua_State *L){struct shady_spatial_state *spatial=lua_spatial(L);struct shady_fps_state*fps=shady_fps_state_for(lua_server);struct shady_toplevel*t;wl_list_for_each(t,&lua_server->toplevels,link)shady_fps_toplevel_state(t)->expanded=false;fps->expanded_toplevel=NULL;fps->input_capture=spatial->runtime.camera.first_person;shady_render_schedule_all_outputs(lua_server);return 0;}
 static int l_shady_respawn_all(lua_State *L){lua_spatial(L);shady_physics_respawn_all(lua_server);return 0;}
@@ -89,6 +130,7 @@ static int l_shady_has_capability(lua_State *L){
 	return 1;
 }
 static void install_api(lua_State *L){
+	register_object_types(L);
 	lua_newtable(L);
 	lua_pushcfunction(L,l_shady_log);lua_setfield(L,-2,"log");
 	lua_pushcfunction(L,l_shady_config);lua_setfield(L,-2,"config");
@@ -96,6 +138,9 @@ static void install_api(lua_State *L){
 	lua_pushcfunction(L,l_shady_bind);lua_setfield(L,-2,"bind");
 	lua_pushcfunction(L,l_shady_quit);lua_setfield(L,-2,"quit");
 	lua_pushcfunction(L,l_shady_windows);lua_setfield(L,-2,"windows");
+	lua_pushcfunction(L,l_shady_outputs);lua_setfield(L,-2,"outputs");
+	lua_pushcfunction(L,l_shady_seat);lua_setfield(L,-2,"seat");
+	lua_pushcfunction(L,l_shady_modules_runtime);lua_setfield(L,-2,"modules");
 	lua_pushcfunction(L,l_shady_has_capability);lua_setfield(L,-2,"has_capability");
 	if(shady_module_has_capability(lua_server,"spatial")){
 		lua_pushcfunction(L,l_shady_camera);lua_setfield(L,-2,"camera");
@@ -120,7 +165,10 @@ static void default_script_path(char *buf,size_t size){
 }
 bool shady_lua_init(struct shady_server *server){
 	lua_State *L=luaL_newstate();if(!L){wlr_log(WLR_ERROR,"[SHADY LUA] failed to create Lua state");return false;}
-	shady_lua_state_for(server)->L=L;lua_server=server;luaL_openlibs(L);install_api(L);
+	shady_lua_state_for(server)->L=L;lua_server=server;luaL_openlibs(L);install_api(L);return true;
+}
+bool shady_lua_start(struct shady_server *server){
+	lua_State *L=shady_lua_state_for(server)->L;if(!L)return false;
 	char path[4096];default_script_path(path,sizeof(path));
 	if(luaL_loadfile(L,path)!=LUA_OK){
 		const char *e=lua_tostring(L,-1);
@@ -129,13 +177,7 @@ bool shady_lua_init(struct shady_server *server){
 		lua_pop(L,1);return true;
 	}
 	if(lua_pcall(L,0,0,0)!=LUA_OK){wlr_log(WLR_ERROR,"[SHADY LUA] runtime error: %s",lua_tostring(L,-1));lua_pop(L,1);return true;}
-	wlr_log(WLR_INFO,"[SHADY LUA] ✅ loaded %s (Lua %s)",path,LUA_VERSION);
-	return true;
-}
-static void push_window(lua_State *L,struct shady_toplevel *t){
-	lua_newtable(L);const char *title=t&&t->xdg_toplevel->title?t->xdg_toplevel->title:"";const char *app=t&&t->xdg_toplevel->app_id?t->xdg_toplevel->app_id:"";
-	lua_pushstring(L,title);lua_setfield(L,-2,"title");lua_pushstring(L,app);lua_setfield(L,-2,"app_id");
-	if(t){const struct shady_toplevel_experimental_state *spatial=shady_spatial_toplevel_state_const(t);if(spatial){lua_pushnumber(L,spatial->z);lua_setfield(L,-2,"z");}}
+	wlr_log(WLR_INFO,"[SHADY LUA] ✅ loaded %s (Lua %s)",path,LUA_VERSION);return true;
 }
 void shady_lua_emit(struct shady_server *server,const char *event,struct shady_toplevel *t){
 	lua_State *L=shady_lua_state_for(server)->L;if(!L)return;lua_getglobal(L,"shady");lua_getfield(L,-1,"on_" );lua_pop(L,2);
