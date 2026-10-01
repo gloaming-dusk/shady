@@ -14,12 +14,15 @@
             strictDeps = true;
             # Follow the selected wlroots package’s dependency set.
             inputsFrom = [ pkgs.wlroots ];
-            nativeBuildInputs = with pkgs; [ pkg-config meson ninja wayland-scanner ];
+            nativeBuildInputs = with pkgs; [ pkg-config meson ninja wayland-scanner wlr-protocols ];
             buildInputs = with pkgs; [
               wlroots wayland wayland-protocols libxkbcommon pixman libdrm
               mesa libglvnd libffi libxau libxdmcp lua5_4
             ];
             packages = with pkgs; [ stdenv.cc foot ];
+            shellHook = ''
+              export PKG_CONFIG_PATH=${pkgs.wlr-protocols}/share/pkgconfig:$PKG_CONFIG_PATH
+            '';
           };
         });
     };

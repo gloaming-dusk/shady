@@ -23,6 +23,9 @@ struct wlr_xcursor_manager;
 struct wlr_xdg_shell;
 struct wlr_xdg_toplevel;
 struct wlr_xdg_popup;
+struct wlr_layer_shell_v1;
+struct wlr_layer_surface_v1;
+struct wlr_scene_layer_surface_v1;
 struct wlr_keyboard;
 struct wlr_input_device;
 
@@ -84,6 +87,10 @@ struct shady_server {
 	struct wl_listener new_xdg_toplevel;
 	struct wl_listener new_xdg_popup;
 	struct wl_list toplevels;
+
+	struct wlr_layer_shell_v1 *layer_shell;
+	struct wl_listener new_layer_surface;
+	struct wl_list layer_surfaces;
 
 	struct wlr_cursor *cursor;
 	struct wlr_xcursor_manager *cursor_mgr;
@@ -149,6 +156,15 @@ struct shady_toplevel {
 	struct shady_toplevel_experimental_state experimental;
 };
 
+struct shady_layer_surface {
+	struct wl_list link;
+	struct shady_server *server;
+	struct wlr_layer_surface_v1 *layer_surface;
+	struct wlr_scene_layer_surface_v1 *scene_layer;
+	struct wl_listener commit;
+	struct wl_listener destroy;
+};
+
 struct shady_popup {
 	struct wlr_xdg_popup *xdg_popup;
 	struct wl_listener commit;
@@ -191,5 +207,8 @@ void server_new_output(struct wl_listener *listener, void *data);
 /* xdg.c */
 void server_new_xdg_toplevel(struct wl_listener *listener, void *data);
 void server_new_xdg_popup(struct wl_listener *listener, void *data);
+
+/* layer.c */
+void server_new_layer_surface(struct wl_listener *listener, void *data);
 
 #endif

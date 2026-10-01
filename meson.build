@@ -3,6 +3,15 @@ project('shady', 'c', version: '0.1.0',
 
 # wlroots has an unstable API: this source targets the inspected 0.20 series.
 wlroots = dependency('wlroots-0.20', version: ['>=0.20.2', '<0.21'])
+wlr_protocols = dependency('wlr-protocols')
+wayland_scanner = find_program('wayland-scanner')
+wlr_protocols_dir = wlr_protocols.get_variable(pkgconfig: 'pkgdatadir')
+layer_shell_protocol_header = custom_target(
+  'wlr-layer-shell-unstable-v1-protocol.h',
+  input: join_paths(wlr_protocols_dir, 'unstable/wlr-layer-shell-unstable-v1.xml'),
+  output: 'wlr-layer-shell-unstable-v1-protocol.h',
+  command: [wayland_scanner, 'client-header', '@INPUT@', '@OUTPUT@'],
+)
 egl = dependency('egl')
 glesv2 = dependency('glesv2')
 # Nixpkgs' lua5_4 package does not expose a pkg-config module in this
@@ -13,10 +22,12 @@ lua = cc.find_library('lua', required: true)
 shader_dir = join_paths(meson.project_source_root(), 'shaders')
 
 shady_sources = [
+  layer_shell_protocol_header,
   'src/main.c',
   'src/config.c',
   'src/input.c',
   'src/xdg.c',
+  'src/layer.c',
   'src/output.c',
   'src/render/render.c',
   'src/render/gl_pipeline.c',
