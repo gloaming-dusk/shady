@@ -26,6 +26,7 @@ static void output_destroy(struct wl_listener *listener, void *data) {
 
 	wl_list_remove(&output->frame.link);
 	wl_list_remove(&output->request_state.link);
+	shady_event_emit_output(output->server, SHADY_EVENT_OUTPUT_REMOVED, output);
 	wl_list_remove(&output->destroy.link);
 	wl_list_remove(&output->link);
 	shady_output_manager_publish(output->server);
@@ -72,4 +73,5 @@ void server_new_output(struct wl_listener *listener, void *data) {
 		wlr_scene_output_create(server->scene, wlr_output);
 	wlr_scene_output_layout_add_output(server->scene_layout, l_output, scene_output);
 	shady_output_manager_publish(server);
+	shady_event_emit_output(server, SHADY_EVENT_OUTPUT_ADDED, output);
 }

@@ -1,8 +1,11 @@
 #include <stdio.h>
 #include <shady/plugin.h>
+#include <shady/event.h>
 
 static const struct shady_plugin_api_v1 *host_api;
 static shady_host host_context;
+
+static void hello_event(shady_host host,const struct shady_event *event,void *user_data){(void)host;(void)user_data;char message[256];snprintf(message,sizeof(message),"event=%s serial=%llu",host_api->event_name(event->type),(unsigned long long)event->serial);host_api->log(SHADY_PLUGIN_LOG_INFO,message);}
 
 static void hello_start(struct shady_server *server) {
 	(void)server;
@@ -47,6 +50,7 @@ const struct shady_module *shady_plugin_entry_v1(
 	}
 	host_api = api;
 	host_context = host;
-	(void)host_context;
+	api->subscribe_event(host,SHADY_EVENT_OUTPUT_ADDED,hello_event,NULL);
+	api->subscribe_event(host,SHADY_EVENT_MODULE_STARTED,hello_event,NULL);
 	return &hello_module;
 }

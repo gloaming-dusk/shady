@@ -35,6 +35,7 @@ void focus_toplevel(struct shady_toplevel *toplevel) {
 	wl_list_remove(&toplevel->link);
 	wl_list_insert(&server->toplevels, &toplevel->link);
 	wlr_xdg_toplevel_set_activated(toplevel->xdg_toplevel, true);
+	shady_event_emit_window(server, SHADY_EVENT_WINDOW_FOCUSED, toplevel);
 	if (keyboard != NULL) {
 		wlr_seat_keyboard_notify_enter(seat, surface,
 			keyboard->keycodes, keyboard->num_keycodes, &keyboard->modifiers);
@@ -80,7 +81,7 @@ static void xdg_toplevel_map(struct wl_listener *listener, void *data) {
 	struct shady_toplevel *toplevel = wl_container_of(listener, toplevel, map);
 
 	wl_list_insert(&toplevel->server->toplevels, &toplevel->link);
-
+	shady_event_emit_window(toplevel->server, SHADY_EVENT_WINDOW_MAPPED, toplevel);
 	focus_toplevel(toplevel);
 	shady_modules_toplevel_map(toplevel);
 }
@@ -97,6 +98,7 @@ static void xdg_toplevel_unmap(struct wl_listener *listener, void *data) {
 	 * unmap/destroy itself (for example after typing "exit") while it is held.
 	 * Clear it before renderer/physics can observe the stale object.
 	 */
+	shady_event_emit_window(toplevel->server, SHADY_EVENT_WINDOW_UNMAPPED, toplevel);
 	shady_modules_toplevel_unmap(toplevel);
 	wl_list_remove(&toplevel->link);
 }
@@ -120,6 +122,7 @@ static void xdg_toplevel_destroy(struct wl_listener *listener, void *data) {
 	if (toplevel == toplevel->server->grabbed_toplevel) {
 		reset_cursor_mode(toplevel->server);
 	}
+	shady_event_emit_window(toplevel->server, SHADY_EVENT_WINDOW_DESTROYED, toplevel);
 	shady_modules_toplevel_destroy(toplevel);
 
 	wl_list_remove(&toplevel->map.link);
@@ -131,6 +134,7 @@ static void xdg_toplevel_destroy(struct wl_listener *listener, void *data) {
 	wl_list_remove(&toplevel->request_maximize.link);
 	wl_list_remove(&toplevel->request_fullscreen.link);
 
+	wl_list_remove(&toplevel->all_link);
 	shady_modules_toplevel_state_finish(toplevel);
 	free(toplevel);
 }
@@ -183,6 +187,7 @@ void server_new_xdg_toplevel(struct wl_listener *listener, void *data) {
 		free(toplevel);
 		return;
 	}
+	wl_list_insert(&server->all_toplevels, &toplevel->all_link);
 	toplevel->scene_tree =
 		wlr_scene_xdg_surface_create(toplevel->server->content_tree, xdg_toplevel->base);
 	toplevel->scene_tree->node.data = toplevel;
@@ -206,6 +211,7 @@ void server_new_xdg_toplevel(struct wl_listener *listener, void *data) {
 	wl_signal_add(&xdg_toplevel->events.request_maximize, &toplevel->request_maximize);
 	toplevel->request_fullscreen.notify = xdg_toplevel_request_fullscreen;
 	wl_signal_add(&xdg_toplevel->events.request_fullscreen, &toplevel->request_fullscreen);
+	shady_event_emit_window(server, SHADY_EVENT_WINDOW_CREATED, toplevel);
 }
 
 static void xdg_popup_commit(struct wl_listener *listener, void *data) {

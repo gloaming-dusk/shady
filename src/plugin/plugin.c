@@ -12,6 +12,7 @@
 #include <shady/plugin.h>
 
 #include "../module/module.h"
+#include "../event/event.h"
 #include "../render/render.h"
 #include "../shady.h"
 
@@ -47,14 +48,14 @@ static void *host_window_state(shady_window window, const char *module_name) {
 static size_t host_window_count(shady_host host) {
 	size_t count = 0;
 	struct shady_toplevel *toplevel;
-	wl_list_for_each(toplevel, &HOST(host)->toplevels, link) count++;
+	wl_list_for_each(toplevel, &HOST(host)->all_toplevels, all_link) count++;
 	return count;
 }
 
 static shady_window host_window_at(shady_host host, size_t index) {
 	size_t i = 0;
 	struct shady_toplevel *toplevel;
-	wl_list_for_each(toplevel, &HOST(host)->toplevels, link) {
+	wl_list_for_each(toplevel, &HOST(host)->all_toplevels, all_link) {
 		if (i++ == index) return (shady_window)toplevel;
 	}
 	return NULL;
@@ -75,7 +76,7 @@ static const char *host_window_app_id(shady_window window) {
 static bool host_window_valid(shady_host host, shady_window window) {
 	struct shady_toplevel *needle = WINDOW(window);
 	struct shady_toplevel *toplevel;
-	wl_list_for_each(toplevel, &HOST(host)->toplevels, link) {
+	wl_list_for_each(toplevel, &HOST(host)->all_toplevels, all_link) {
 		if (toplevel == needle) return true;
 	}
 	return false;
@@ -178,6 +179,15 @@ static bool host_module_active(shady_host host, shady_module_handle module) {
 	return false;
 }
 
+static const char *host_event_name(uint32_t event_type) {
+	return shady_event_name((enum shady_event_type)event_type);
+}
+
+static bool host_subscribe_event(shady_host host, uint32_t event_type,
+		shady_event_callback callback, void *user_data) {
+	return shady_event_subscribe(HOST(host), event_type, callback, user_data);
+}
+
 static void host_schedule_render(shady_host host) {
 	struct shady_server *server = HOST(host);
 	if (server->renderer) shady_render_schedule_all_outputs(server);
@@ -216,6 +226,8 @@ static const struct shady_plugin_api_v1 plugin_api = {
 	.module_at = host_module_at,
 	.module_name = host_module_name,
 	.module_active = host_module_active,
+	.event_name = host_event_name,
+	.subscribe_event = host_subscribe_event,
 	.schedule_render = host_schedule_render,
 	.terminate = host_terminate,
 };

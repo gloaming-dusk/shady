@@ -21,6 +21,11 @@ typedef struct shady_window_handle *shady_window;
 typedef struct shady_output_handle *shady_output;
 typedef struct shady_seat_handle *shady_seat;
 typedef struct shady_module_handle *shady_module_handle;
+struct shady_event;
+typedef void (*shady_event_callback)(
+	shady_host host,
+	const struct shady_event *event,
+	void *user_data);
 
 enum shady_plugin_log_level {
 	SHADY_PLUGIN_LOG_DEBUG = 0,
@@ -62,6 +67,9 @@ struct shady_plugin_api_v1 {
 	const char *(*module_name)(shady_module_handle module);
 	bool (*module_active)(shady_host host, shady_module_handle module);
 
+	const char *(*event_name)(uint32_t event_type);
+	bool (*subscribe_event)(shady_host host, uint32_t event_type,
+		shady_event_callback callback, void *user_data);
 	void (*schedule_render)(shady_host host);
 	void (*terminate)(shady_host host);
 };

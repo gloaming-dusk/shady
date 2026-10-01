@@ -32,14 +32,13 @@ shady.config("bind.camera_reset", "Alt+0")
 shady.log("development config loaded")
 
 -- Runtime scripting examples.
-shady_events = {
-  window_map = function(window)
-    shady.log("window mapped: " .. window.app_id .. " / " .. window.title)
-  end,
-  window_unmap = function(window)
-    shady.log("window unmapped: " .. window.app_id)
-  end,
-}
+shady.on("window.mapped", function(window)
+  shady.log("window mapped: " .. window.app_id .. " / " .. window.title)
+end)
+
+shady.on("window.unmapped", function(window)
+  shady.log("window unmapped: " .. window.app_id)
+end)
 
 shady.bind("F6", function()
   shady.toggle_gravity()

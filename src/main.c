@@ -89,6 +89,7 @@ int main(int argc, char *argv[]) {
 	}
 
 	struct shady_server server = {0};
+	shady_events_init(&server);
 	shady_config_defaults(&server.config);
 	shady_modules_init(&server.modules);
 	shady_register_builtin_modules(&server);
@@ -178,6 +179,7 @@ int main(int argc, char *argv[]) {
 		server.output_layout);
 
 	wl_list_init(&server.toplevels);
+	wl_list_init(&server.all_toplevels);
 	wl_list_init(&server.popups);
 	server.xdg_shell = wlr_xdg_shell_create(server.wl_display, 3);
 	server.new_xdg_toplevel.notify = server_new_xdg_toplevel;
@@ -292,6 +294,7 @@ int main(int argc, char *argv[]) {
 	wlr_backend_destroy(server.backend);
 	wl_display_destroy(server.wl_display);
 	shady_modules_release_states(&server);
+	shady_events_finish(&server);
 	shady_modules_close_plugins(&server);
 	return 0;
 }

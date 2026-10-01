@@ -26,6 +26,7 @@ shady_sources = [
   layer_shell_protocol_header,
   'src/main.c',
   'src/module/module.c',
+  'src/event/event.c',
   'src/module/builtin.c',
   'src/plugin/plugin.c',
   'src/config.c',
@@ -132,6 +133,7 @@ executable('shady',
 install_headers(
   'include/shady/module.h',
   'include/shady/plugin.h',
+  'include/shady/event.h',
   subdir: 'shady')
 
 shared_module('shady-plugin-hello',

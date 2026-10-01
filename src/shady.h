@@ -10,6 +10,7 @@
 
 #include "experimental/state.h"
 #include "module/module.h"
+#include "event/event.h"
 
 struct wlr_allocator;
 struct wlr_backend;
@@ -101,6 +102,7 @@ struct shady_server {
 	struct wl_listener new_xdg_toplevel;
 	struct wl_listener new_xdg_popup;
 	struct wl_list toplevels;
+	struct wl_list all_toplevels;
 	struct wl_list popups;
 
 	struct wlr_cursor *cursor;
@@ -130,6 +132,7 @@ struct shady_server {
 
 	struct shady_config config;
 	struct shady_module_manager modules;
+	struct shady_event_bus events;
 
 };
 
@@ -144,6 +147,7 @@ struct shady_output {
 
 struct shady_toplevel {
 	struct wl_list link;
+	struct wl_list all_link;
 	struct shady_server *server;
 	struct wlr_xdg_toplevel *xdg_toplevel;
 	struct wlr_scene_tree *scene_tree;

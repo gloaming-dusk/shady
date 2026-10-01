@@ -7,6 +7,7 @@
 #include <wlr/util/log.h>
 
 #include "../shady.h"
+#include "../event/event.h"
 
 static ssize_t module_index(struct shady_module_manager *manager,
 		const struct shady_module *module) {
@@ -234,6 +235,9 @@ void shady_modules_start_all(struct shady_server *server) {
 		if (manager->active[i] && module->start) {
 			module->start(server);
 		}
+		if (manager->active[i]) {
+			shady_event_emit_module(server, SHADY_EVENT_MODULE_STARTED, module);
+		}
 	}
 	manager->started = true;
 }
@@ -243,6 +247,9 @@ void shady_modules_stop_all(struct shady_server *server) {
 	if (!manager->started) return;
 	for (size_t i = manager->count; i > 0; i--) {
 		const struct shady_module *module = manager->modules[i - 1];
+		if (manager->active[i - 1]) {
+			shady_event_emit_module(server, SHADY_EVENT_MODULE_STOPPED, module);
+		}
 		if (manager->active[i - 1] && module->stop) {
 			module->stop(server);
 		}
