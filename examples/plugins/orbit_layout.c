@@ -5,6 +5,7 @@
 
 static const struct shady_plugin_api_v1 *api;
 static shady_host host;
+static shady_window focused_window;
 
 struct slot {
 	float x;
@@ -12,19 +13,47 @@ struct slot {
 	float z;
 };
 
-/* Deliberately asymmetric: it feels arranged rather than tiled. */
+/*
+ * Slot zero is the primary/focused workspace.
+ * The rest are deliberately asymmetric satellites.
+ */
 static const struct slot slots[] = {
-	{ 0.00f,  0.01f, -0.18f },
-	{-0.25f, -0.03f, -0.54f },
-	{ 0.25f,  0.04f, -0.58f },
-	{-0.34f,  0.20f, -0.66f },
-	{ 0.34f, -0.18f, -0.70f },
-	{-0.10f,  0.28f, -0.74f },
-	{ 0.12f, -0.27f, -0.78f },
-	{ 0.40f,  0.22f, -0.82f },
+	{ 0.00f,  0.01f, -0.06f },
+	{-0.27f, -0.03f, -0.56f },
+	{ 0.27f,  0.04f, -0.60f },
+	{-0.36f,  0.20f, -0.68f },
+	{ 0.36f, -0.18f, -0.72f },
+	{-0.11f,  0.29f, -0.76f },
+	{ 0.13f, -0.28f, -0.80f },
+	{ 0.41f,  0.22f, -0.84f },
 };
 
-static void place_windows(shady_window focused) {
+static shady_window first_mapped_except(shady_window excluded) {
+	for (size_t i = 0; i < api->window_count(host); i++) {
+		shady_window window = api->window_at(host, i);
+		if (window && window != excluded && api->window_mapped(window))
+			return window;
+	}
+	return NULL;
+}
+
+static bool mapped(shady_window window) {
+	return window && api->window_valid(host, window) &&
+		api->window_mapped(window);
+}
+
+static void place_one(shady_window window, const struct slot *slot,
+		int output_width, int output_height) {
+	int window_width = 600, window_height = 380;
+	api->window_size(window, &window_width, &window_height);
+
+	double x = output_width * (0.5 + slot->x) - window_width * 0.5;
+	double y = output_height * (0.5 + slot->y) - window_height * 0.5;
+
+	api->window_set_position(host, window, x, y, slot->z);
+}
+
+static void place_windows(void) {
 	if (!api->has_capability(host, "spatial.window-state"))
 		return;
 
@@ -34,8 +63,13 @@ static void place_windows(shady_window focused) {
 		if (window && api->window_mapped(window))
 			visible++;
 	}
-	if (visible == 0)
+	if (visible == 0) {
+		focused_window = NULL;
 		return;
+	}
+
+	if (!mapped(focused_window))
+		focused_window = first_mapped_except(NULL);
 
 	int width = 1280, height = 720;
 	if (api->output_count(host) > 0) {
@@ -43,35 +77,29 @@ static void place_windows(shady_window focused) {
 		api->output_size(output, &width, &height);
 	}
 
-	size_t cursor = 0;
+	/* The focused window owns the readable, central primary position. */
+	if (focused_window)
+		place_one(focused_window, &slots[0], width, height);
+
+	size_t satellite = 0;
 	for (size_t i = 0; i < api->window_count(host); i++) {
 		shady_window window = api->window_at(host, i);
-		if (!window || !api->window_mapped(window))
+		if (!window || window == focused_window || !api->window_mapped(window))
 			continue;
 
-		struct slot slot;
-		if (visible == 1) {
-			slot = slots[0];
-		} else {
-			slot = slots[1 + (cursor % (sizeof(slots) / sizeof(slots[0]) - 1))];
-			if (cursor >= sizeof(slots) / sizeof(slots[0]) - 1) {
-				float drift = 0.035f * (float)(cursor - 6);
-				slot.x += drift;
-				slot.y -= drift * 0.5f;
-				slot.z -= drift * 0.4f;
-			}
+		size_t slot_index = 1 +
+			(satellite % (sizeof(slots) / sizeof(slots[0]) - 1));
+		struct slot slot = slots[slot_index];
+
+		if (satellite >= sizeof(slots) / sizeof(slots[0]) - 1) {
+			float drift = 0.035f * (float)(satellite - 6);
+			slot.x += drift;
+			slot.y -= drift * 0.5f;
+			slot.z -= drift * 0.4f;
 		}
 
-		int window_width = 600, window_height = 380;
-		api->window_size(window, &window_width, &window_height);
-		double x = width * (0.5 + slot.x) - window_width * 0.5;
-		double y = height * (0.5 + slot.y) - window_height * 0.5;
-		float z = slot.z;
-		if (window == focused)
-			z += visible == 1 ? 0.12f : 0.18f;
-
-		api->window_set_position(host, window, x, y, z);
-		cursor++;
+		place_one(window, &slot, width, height);
+		satellite++;
 	}
 }
 
@@ -82,13 +110,26 @@ static void on_event(shady_host event_host,
 
 	switch (event->type) {
 	case SHADY_EVENT_WINDOW_MAPPED:
-		place_windows(event->object.window);
+		/*
+		 * XDG map is immediately followed by focus in the core. Treat the
+		 * new window as primary here too, so there is no one-frame jump.
+		 */
+		focused_window = event->object.window;
+		place_windows();
 		break;
 	case SHADY_EVENT_WINDOW_FOCUSED:
-		place_windows(event->object.window);
+		focused_window = event->object.window;
+		place_windows();
+		break;
+	case SHADY_EVENT_WINDOW_UNMAPPED:
+		if (focused_window == event->object.window)
+			focused_window = first_mapped_except(event->object.window);
+		place_windows();
 		break;
 	case SHADY_EVENT_WINDOW_DESTROYED:
-		place_windows(NULL);
+		if (focused_window == event->object.window)
+			focused_window = first_mapped_except(event->object.window);
+		place_windows();
 		break;
 	default:
 		break;
@@ -97,9 +138,10 @@ static void on_event(shady_host event_host,
 
 static void start(struct shady_server *server) {
 	(void)server;
+	focused_window = first_mapped_except(NULL);
 	api->log(SHADY_PLUGIN_LOG_INFO,
-		"orbit-layout: arranging windows as a loose constellation");
-	place_windows(NULL);
+		"orbit-layout: focused window is primary; others orbit as satellites");
+	place_windows();
 }
 
 static const char *const provides[] = {
@@ -134,6 +176,7 @@ const struct shady_module *shady_plugin_entry_v1(
 	host = host_handle;
 	api->subscribe_event(host, SHADY_EVENT_WINDOW_MAPPED, on_event, NULL);
 	api->subscribe_event(host, SHADY_EVENT_WINDOW_FOCUSED, on_event, NULL);
+	api->subscribe_event(host, SHADY_EVENT_WINDOW_UNMAPPED, on_event, NULL);
 	api->subscribe_event(host, SHADY_EVENT_WINDOW_DESTROYED, on_event, NULL);
 	return &module;
 }

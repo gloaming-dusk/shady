@@ -68,7 +68,7 @@ shady.set("floor_fade_end", 3.2)
 `window_effect_strength` ranges from `0.0` (clean application texture) to `1.0`
 (full chromatic edge/scanline/lighting effect). `window_brightness` accepts `0.25`
 to `3.0`. Both `#RRGGBB` and `r,g,b` (0..1) forms are accepted for colors.
-The background uses a three-stop fullscreen gradient, while the floor grid has independent base/grid colors, minor/major strengths, and radial fade distances. The old `sky.ppm` and `test-room.obj` setup is still present in `config.lua` as an opt-in example instead of being forced on every launch.
+The background uses a three-stop fullscreen gradient, while the floor grid has independent base/grid colors, minor/major strengths, and radial fade distances. The layout treats the focused window as the central primary surface and keeps all other mapped windows in satellite slots; when the primary closes, the next window is promoted and keyboard focus follows it automatically. The old `sky.ppm` and `test-room.obj` setup is still present in `config.lua` as an opt-in example instead of being forced on every launch.
 
 ## Shutdown log note
 

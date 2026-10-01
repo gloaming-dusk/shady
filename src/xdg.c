@@ -89,8 +89,12 @@ static void xdg_toplevel_map(struct wl_listener *listener, void *data) {
 static void xdg_toplevel_unmap(struct wl_listener *listener, void *data) {
 	(void)data;
 	struct shady_toplevel *toplevel = wl_container_of(listener, toplevel, unmap);
+	struct shady_server *server = toplevel->server;
+	struct wlr_surface *surface = toplevel->xdg_toplevel->base->surface;
+	bool was_focused = server->seat->keyboard_state.focused_surface == surface ||
+		server->toplevels.next == &toplevel->link;
 
-	if (toplevel == toplevel->server->grabbed_toplevel) {
+	if (toplevel == server->grabbed_toplevel) {
 		reset_cursor_mode(toplevel->server);
 	}
 	/*
@@ -98,9 +102,15 @@ static void xdg_toplevel_unmap(struct wl_listener *listener, void *data) {
 	 * unmap/destroy itself (for example after typing "exit") while it is held.
 	 * Clear it before renderer/physics can observe the stale object.
 	 */
-	shady_event_emit_window(toplevel->server, SHADY_EVENT_WINDOW_UNMAPPED, toplevel);
+	shady_event_emit_window(server, SHADY_EVENT_WINDOW_UNMAPPED, toplevel);
 	shady_modules_toplevel_unmap(toplevel);
 	wl_list_remove(&toplevel->link);
+
+	if (was_focused && !wl_list_empty(&server->toplevels)) {
+		struct shady_toplevel *next = wl_container_of(
+			server->toplevels.next, next, link);
+		focus_toplevel(next);
+	}
 }
 
 static void xdg_toplevel_commit(struct wl_listener *listener, void *data) {

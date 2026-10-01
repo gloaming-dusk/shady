@@ -5,9 +5,9 @@ shady.log("Night Observatory is awake")
 -- A slightly elevated, off-axis view gives the 3D window shells some shape
 -- without making normal pointer interaction feel like a game.
 if shady.has_capability("spatial") then
-    shady.camera("yaw", -0.20)
-    shady.camera("pitch", -0.08)
-    shady.camera("distance", 1.62)
+    shady.camera("yaw", -0.06)
+    shady.camera("pitch", -0.035)
+    shady.camera("distance", 1.55)
     shady.camera("target_x", 0.0)
     shady.camera("target_y", 0.0)
     shady.camera("target_z", -0.64)
