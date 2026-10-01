@@ -388,6 +388,57 @@ static void render_scene_overlay_buffer(struct wlr_scene_buffer *buffer,
 	wlr_scene_surface_send_frame_done(scene_surface, &ctx->now);
 }
 
+struct shady_spatial_surface_render_data {
+	struct shady_toplevel *toplevel;
+	struct wlr_surface *root_surface;
+	const float *vp;
+	float logical_w, logical_h;
+	double ox, oy;
+	float time_seconds;
+};
+
+static void render_spatial_subsurface_buffer(struct wlr_scene_buffer *buffer,
+		int sx, int sy, void *data) {
+	struct shady_spatial_surface_render_data *ctx = data;
+	struct wlr_scene_surface *scene_surface =
+		wlr_scene_surface_try_from_buffer(buffer);
+	if (!scene_surface || !scene_surface->surface->mapped ||
+			scene_surface->surface == ctx->root_surface ||
+			wlr_surface_get_root_surface(scene_surface->surface) != ctx->root_surface) {
+		return;
+	}
+	struct wlr_texture *texture = wlr_surface_get_texture(scene_surface->surface);
+	if (!texture || !wlr_texture_is_gles2(texture)) {
+		return;
+	}
+	struct wlr_gles2_texture_attribs attribs;
+	wlr_gles2_texture_get_attribs(texture, &attribs);
+
+	float width = (float)scene_surface->surface->current.width;
+	float height = (float)scene_surface->surface->current.height;
+	if (width <= 0.f || height <= 0.f) {
+		return;
+	}
+
+	float model[16], mvp[16];
+	shady_window_model(model,
+		(float)sx + (float)ctx->ox,
+		(float)sy + (float)ctx->oy,
+		width, height,
+		ctx->logical_w, ctx->logical_h,
+		ctx->toplevel->experimental.z,
+		ctx->toplevel->experimental.motion.tilt_x,
+		ctx->toplevel->experimental.motion.tilt_y);
+	shady_mat4_multiply(mvp, ctx->vp, model);
+
+	shady_gl_pipeline_draw_window(&pipeline,
+		attribs.target, attribs.tex, attribs.has_alpha,
+		mvp, model, ctx->time_seconds,
+		ctx->toplevel->experimental.motion.wobble_x,
+		ctx->toplevel->experimental.motion.wobble_y,
+		ctx->toplevel->experimental.close.progress);
+}
+
 static void render_spatial_overlays(struct shady_server *server,
 		struct wlr_render_pass *pass, struct wlr_output *output,
 		double ox, double oy, float scale) {
@@ -798,6 +849,22 @@ void shady_render_output_frame(
 			toplevel->experimental.motion.wobble_y,
 			toplevel->experimental.close.progress
 		);
+
+		/* Render wl_subsurface children from the same scene subtree instead of
+		 * silently dropping them in spatial mode. XDG popups are intentionally
+		 * excluded here and composed later as 2D overlays. */
+		struct shady_spatial_surface_render_data surface_ctx = {
+			.toplevel = toplevel,
+			.root_surface = surface,
+			.vp = vp,
+			.logical_w = logical_w,
+			.logical_h = logical_h,
+			.ox = ox,
+			.oy = oy,
+			.time_seconds = time_seconds,
+		};
+		wlr_scene_node_for_each_buffer(&toplevel->scene_tree->node,
+			render_spatial_subsurface_buffer, &surface_ctx);
 	}
 
 	struct shady_close_snapshot *snapshot;
