@@ -15,6 +15,7 @@
 #include <wlr/types/wlr_output_layout.h>
 #include <wlr/types/wlr_scene.h>
 #include <wlr/types/wlr_xdg_shell.h>
+#include <wlr/types/wlr_layer_shell_v1.h>
 
 #include <wlr/util/log.h>
 
@@ -337,6 +338,85 @@ static void ensure_depth_rbo(
 
 	depth_rbo_w = w;
 	depth_rbo_h = h;
+}
+
+struct shady_overlay_render_data {
+	struct wlr_render_pass *pass;
+	struct wlr_output *output;
+	double ox, oy;
+	float scale;
+	struct timespec now;
+};
+
+static void render_scene_overlay_buffer(struct wlr_scene_buffer *buffer,
+		int sx, int sy, void *data) {
+	struct shady_overlay_render_data *ctx = data;
+	struct wlr_scene_surface *scene_surface =
+		wlr_scene_surface_try_from_buffer(buffer);
+	if (!scene_surface || !scene_surface->surface->mapped) {
+		return;
+	}
+	struct wlr_texture *texture =
+		wlr_surface_get_texture(scene_surface->surface);
+	if (!texture) {
+		return;
+	}
+
+	int width = buffer->dst_width > 0
+		? buffer->dst_width : scene_surface->surface->current.width;
+	int height = buffer->dst_height > 0
+		? buffer->dst_height : scene_surface->surface->current.height;
+	if (width <= 0 || height <= 0) {
+		return;
+	}
+
+	float alpha = buffer->opacity;
+	struct wlr_render_texture_options options = {
+		.texture = texture,
+		.src_box = buffer->src_box,
+		.dst_box = {
+			.x = (int)lround(((double)sx - ctx->ox) * ctx->scale),
+			.y = (int)lround(((double)sy - ctx->oy) * ctx->scale),
+			.width = (int)lround((double)width * ctx->scale),
+			.height = (int)lround((double)height * ctx->scale),
+		},
+		.alpha = &alpha,
+		.transform = buffer->transform,
+		.filter_mode = buffer->filter_mode,
+	};
+	wlr_render_pass_add_texture(ctx->pass, &options);
+	wlr_scene_surface_send_frame_done(scene_surface, &ctx->now);
+}
+
+static void render_spatial_overlays(struct shady_server *server,
+		struct wlr_render_pass *pass, struct wlr_output *output,
+		double ox, double oy, float scale) {
+	struct shady_overlay_render_data ctx = {
+		.pass = pass,
+		.output = output,
+		.ox = ox,
+		.oy = oy,
+		.scale = scale,
+	};
+	clock_gettime(CLOCK_MONOTONIC, &ctx.now);
+
+	/* Layer-shell stays in normal 2D screen space in spatial mode. */
+	struct shady_layer_surface *layer;
+	wl_list_for_each(layer, &server->layer_surfaces, link) {
+		if (layer->layer_surface->output &&
+				layer->layer_surface->output != output) {
+			continue;
+		}
+		wlr_scene_node_for_each_buffer(&layer->scene_layer->tree->node,
+			render_scene_overlay_buffer, &ctx);
+	}
+
+	/* XDG popups remain readable/interactive while their parent is spatial. */
+	struct shady_popup *popup;
+	wl_list_for_each(popup, &server->popups, link) {
+		wlr_scene_node_for_each_buffer(&popup->scene_tree->node,
+			render_scene_overlay_buffer, &ctx);
+	}
 }
 
 static void send_frame_done_surface(
@@ -854,6 +934,9 @@ void shady_render_output_frame(
 	);
 
 	glDisable(GL_DEPTH_TEST);
+
+	/* Compose protocol-driven 2D surfaces after the spatial pass. */
+	render_spatial_overlays(server, pass, wlr_output, ox, oy, scale);
 
 	if (!wlr_render_pass_submit(pass)) {
 		wlr_log(

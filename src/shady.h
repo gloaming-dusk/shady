@@ -93,12 +93,15 @@ struct shady_server {
 	struct wlr_renderer *renderer;
 	struct wlr_allocator *allocator;
 	struct wlr_scene *scene;
+	struct wlr_scene_tree *content_tree;
+	struct wlr_scene_tree *overlay_tree;
 	struct wlr_scene_output_layout *scene_layout;
 
 	struct wlr_xdg_shell *xdg_shell;
 	struct wl_listener new_xdg_toplevel;
 	struct wl_listener new_xdg_popup;
 	struct wl_list toplevels;
+	struct wl_list popups;
 
 	struct wlr_layer_shell_v1 *layer_shell;
 	struct wl_listener new_layer_surface;
@@ -213,7 +216,10 @@ struct shady_layer_surface {
 };
 
 struct shady_popup {
+	struct wl_list link;
+	struct shady_server *server;
 	struct wlr_xdg_popup *xdg_popup;
+	struct wlr_scene_tree *scene_tree;
 	struct wl_listener commit;
 	struct wl_listener destroy;
 };

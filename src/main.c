@@ -157,10 +157,13 @@ int main(int argc, char *argv[]) {
 	wl_signal_add(&server.backend->events.new_output, &server.new_output);
 
 	server.scene = wlr_scene_create();
+	server.content_tree = wlr_scene_tree_create(&server.scene->tree);
+	server.overlay_tree = wlr_scene_tree_create(&server.scene->tree);
 	server.scene_layout = wlr_scene_attach_output_layout(server.scene,
 		server.output_layout);
 
 	wl_list_init(&server.toplevels);
+	wl_list_init(&server.popups);
 	server.xdg_shell = wlr_xdg_shell_create(server.wl_display, 3);
 	server.new_xdg_toplevel.notify = server_new_xdg_toplevel;
 	wl_signal_add(&server.xdg_shell->events.new_toplevel, &server.new_xdg_toplevel);

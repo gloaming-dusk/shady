@@ -68,7 +68,7 @@ void server_new_layer_surface(struct wl_listener *listener, void *data) {
 	layer->server = server;
 	layer->layer_surface = layer_surface;
 	layer->scene_layer = wlr_scene_layer_surface_v1_create(
-		&server->scene->tree, layer_surface);
+		server->overlay_tree, layer_surface);
 	if (!layer->scene_layer) {
 		free(layer);
 		wlr_layer_surface_v1_destroy(layer_surface);

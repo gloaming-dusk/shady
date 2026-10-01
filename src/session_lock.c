@@ -119,7 +119,7 @@ void server_new_session_lock(struct wl_listener *listener, void *data) {
 	if (server->session_lock_tree) {
 		wlr_scene_node_destroy(&server->session_lock_tree->node);
 	}
-	server->session_lock_tree = wlr_scene_tree_create(&server->scene->tree);
+	server->session_lock_tree = wlr_scene_tree_create(server->overlay_tree);
 	if (!server->session_lock_tree) {
 		wlr_session_lock_v1_destroy(wlr_lock);
 		return;

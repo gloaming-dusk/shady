@@ -198,7 +198,7 @@ void server_new_xdg_toplevel(struct wl_listener *listener, void *data) {
 	toplevel->server = server;
 	toplevel->xdg_toplevel = xdg_toplevel;
 	toplevel->scene_tree =
-		wlr_scene_xdg_surface_create(&toplevel->server->scene->tree, xdg_toplevel->base);
+		wlr_scene_xdg_surface_create(toplevel->server->content_tree, xdg_toplevel->base);
 	toplevel->scene_tree->node.data = toplevel;
 	xdg_toplevel->base->data = toplevel->scene_tree;
 
@@ -237,21 +237,36 @@ static void xdg_popup_destroy(struct wl_listener *listener, void *data) {
 
 	wl_list_remove(&popup->commit.link);
 	wl_list_remove(&popup->destroy.link);
+	wl_list_remove(&popup->link);
 
 	free(popup);
 }
 
 void server_new_xdg_popup(struct wl_listener *listener, void *data) {
-	(void)listener;
+	struct shady_server *server = wl_container_of(listener, server, new_xdg_popup);
 	struct wlr_xdg_popup *xdg_popup = data;
 
+	struct wlr_xdg_surface *parent = wlr_xdg_surface_try_from_wlr_surface(xdg_popup->parent);
+	if (parent == NULL) {
+		/* Layer-shell helpers own their popup scene subtree. */
+		return;
+	}
+
 	struct shady_popup *popup = calloc(1, sizeof(*popup));
+	if (!popup) {
+		return;
+	}
+	popup->server = server;
 	popup->xdg_popup = xdg_popup;
 
-	struct wlr_xdg_surface *parent = wlr_xdg_surface_try_from_wlr_surface(xdg_popup->parent);
-	assert(parent != NULL);
 	struct wlr_scene_tree *parent_tree = parent->data;
-	xdg_popup->base->data = wlr_scene_xdg_surface_create(parent_tree, xdg_popup->base);
+	popup->scene_tree = wlr_scene_xdg_surface_create(parent_tree, xdg_popup->base);
+	if (!popup->scene_tree) {
+		free(popup);
+		return;
+	}
+	xdg_popup->base->data = popup->scene_tree;
+	wl_list_insert(&server->popups, &popup->link);
 
 	popup->commit.notify = xdg_popup_commit;
 	wl_signal_add(&xdg_popup->base->surface->events.commit, &popup->commit);
