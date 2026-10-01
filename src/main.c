@@ -7,7 +7,9 @@
 #include <wayland-server-core.h>
 #include <wlr/backend.h>
 #include <wlr/render/allocator.h>
+#if SHADY_HAS_SPATIAL
 #include <wlr/render/gles2.h>
+#endif
 #include <wlr/render/wlr_renderer.h>
 #include <wlr/types/wlr_compositor.h>
 #include <wlr/types/wlr_cursor.h>
@@ -125,11 +127,13 @@ int main(int argc, char *argv[]) {
 		wlr_log(WLR_ERROR, "failed to create wlr_renderer");
 		return 1;
 	}
+#if SHADY_HAS_SPATIAL
 	if (!wlr_renderer_is_gles2(server.renderer)) {
 		wlr_log(WLR_ERROR,
-			"shady requires the GLES2 renderer (unset WLR_RENDERER=pixman)");
+			"the spatial module requires the GLES2 renderer (unset WLR_RENDERER=pixman)");
 		return 1;
 	}
+#endif
 
 	wlr_renderer_init_wl_display(server.renderer, server.wl_display);
 

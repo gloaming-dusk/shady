@@ -19,12 +19,26 @@ static void lua_toplevel_unmap(struct shady_toplevel *toplevel) {
 	shady_lua_emit(toplevel->server, "window_unmap", toplevel);
 }
 
+static bool lua_key(struct shady_server *server, const xkb_keysym_t *syms,
+		int nsyms, uint32_t state, uint32_t modifiers) {
+	if (state != WL_KEYBOARD_KEY_STATE_PRESSED) {
+		return false;
+	}
+	for (int i = 0; i < nsyms; i++) {
+		if (shady_lua_handle_key(server, syms[i], modifiers)) {
+			return true;
+		}
+	}
+	return false;
+}
+
 static const struct shady_module lua_module = {
 	.name = "lua",
 	.init = lua_init_module,
 	.destroy = lua_destroy_module,
 	.toplevel_map = lua_toplevel_map,
 	.toplevel_unmap = lua_toplevel_unmap,
+	.key = lua_key,
 };
 
 const struct shady_module *shady_lua_module(void) {

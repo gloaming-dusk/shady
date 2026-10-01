@@ -20,45 +20,12 @@
 #include <xkbcommon/xkbcommon.h>
 
 #include "shady.h"
-#include "render/math3d.h"
-#include "render/pick3d.h"
+#include "module/module.h"
 #include "render/render.h"
-#include "modules/physics/physics.h"
-#include "modules/fps/fps.h"
-#include "modules/close_animation/close_animation.h"
-#include "modules/window_motion/window_motion.h"
-#include "modules/lua/lua.h"
-
-#define CAMERA_ORBIT_SENS 0.005f
-#define CAMERA_PAN_SENS 0.0025f
-#define CAMERA_KEY_PAN 0.05f
-#define CAMERA_KEY_ORBIT 0.08f
-#define CAMERA_ZOOM_STEP 0.15f
-#define CAMERA_PITCH_MAX 1.4f
-#define CAMERA_DIST_MIN 0.4f
-#define CAMERA_DIST_MAX 12.0f
-#define WINDOW_Z_STEP 0.055f
-#define WINDOW_Z_MIN -1.5f
-#define WINDOW_Z_MAX 0.75f
 
 void reset_cursor_mode(struct shady_server *server) {
 	server->cursor_mode = SHADY_CURSOR_PASSTHROUGH;
 	server->grabbed_toplevel = NULL;
-}
-
-static void clamp_camera(struct shady_camera *cam) {
-	if (cam->pitch > CAMERA_PITCH_MAX) {
-		cam->pitch = CAMERA_PITCH_MAX;
-	}
-	if (cam->pitch < -CAMERA_PITCH_MAX) {
-		cam->pitch = -CAMERA_PITCH_MAX;
-	}
-	if (cam->distance < CAMERA_DIST_MIN) {
-		cam->distance = CAMERA_DIST_MIN;
-	}
-	if (cam->distance > CAMERA_DIST_MAX) {
-		cam->distance = CAMERA_DIST_MAX;
-	}
 }
 
 static void process_cursor_move(struct shady_server *server) {
@@ -77,13 +44,7 @@ static void process_cursor_move(struct shady_server *server) {
 		server->cursor->y -
 		server->grab_y;
 
-	/*
-	 * Window displacement since the previous pointer event.
-	 *
-	 * A fast mouse movement therefore injects a larger impulse into
-	 * the wobble spring.
-	 */
-	shady_window_motion_drag(server, toplevel, new_x, new_y);
+	shady_modules_toplevel_moved(toplevel, new_x, new_y);
 
 	wlr_scene_node_set_position(
 		&toplevel->scene_tree->node,
@@ -137,31 +98,6 @@ static void process_cursor_resize(struct shady_server *server) {
 	wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, new_width, new_height);
 }
 
-static void process_cursor_camera_orbit(struct shady_server *server) {
-	double dx = server->cursor->x - server->cam_grab_x;
-	double dy = server->cursor->y - server->cam_grab_y;
-	server->experimental.camera.yaw = server->cam_grab_yaw - (float)dx * CAMERA_ORBIT_SENS;
-	server->experimental.camera.pitch = server->cam_grab_pitch - (float)dy * CAMERA_ORBIT_SENS;
-	clamp_camera(&server->experimental.camera);
-	shady_render_schedule_all_outputs(server);
-}
-
-static void process_cursor_camera_pan(struct shady_server *server) {
-	double dx = server->cursor->x - server->cam_grab_x;
-	double dy = server->cursor->y - server->cam_grab_y;
-	struct shady_vec3 right, up;
-	shady_camera_basis(&server->experimental.camera, &right, &up, NULL);
-	/* Drag right → pan world left (camera moves with grab). */
-	float scale = server->experimental.camera.distance * CAMERA_PAN_SENS;
-	server->experimental.camera.target_x = server->cam_grab_target_x
-		- right.x * (float)dx * scale + up.x * (float)dy * scale;
-	server->experimental.camera.target_y = server->cam_grab_target_y
-		- right.y * (float)dx * scale + up.y * (float)dy * scale;
-	server->experimental.camera.target_z = server->cam_grab_target_z
-		- right.z * (float)dx * scale + up.z * (float)dy * scale;
-	shady_render_schedule_all_outputs(server);
-}
-
 static struct shady_toplevel *desktop_toplevel_at(struct shady_server *server,
 		double lx, double ly, struct wlr_surface **surface, double *sx, double *sy) {
 	*surface = NULL;
@@ -193,10 +129,12 @@ static struct shady_toplevel *desktop_toplevel_at(struct shady_server *server,
 
 static struct shady_toplevel *toplevel_at_cursor(struct shady_server *server,
 		double lx, double ly, struct wlr_surface **surface, double *sx, double *sy) {
-	if (!server->config.spatial_mode || server->session_locked) {
-		return desktop_toplevel_at(server, lx, ly, surface, sx, sy);
+	struct shady_toplevel *toplevel = NULL;
+	if (!server->session_locked && shady_modules_pick_surface(server, lx, ly,
+			surface, sx, sy, &toplevel)) {
+		return toplevel;
 	}
-	return shady_toplevel_at_3d(server, lx, ly, surface, sx, sy);
+	return desktop_toplevel_at(server, lx, ly, surface, sx, sy);
 }
 
 static void process_cursor_motion(struct shady_server *server, uint32_t time) {
@@ -205,12 +143,6 @@ static void process_cursor_motion(struct shady_server *server, uint32_t time) {
 		return;
 	} else if (server->cursor_mode == SHADY_CURSOR_RESIZE) {
 		process_cursor_resize(server);
-		return;
-	} else if (server->cursor_mode == SHADY_CURSOR_CAMERA_ORBIT) {
-		process_cursor_camera_orbit(server);
-		return;
-	} else if (server->cursor_mode == SHADY_CURSOR_CAMERA_PAN) {
-		process_cursor_camera_pan(server);
 		return;
 	}
 
@@ -240,40 +172,6 @@ static void keyboard_handle_modifiers(
 		&keyboard->wlr_keyboard->modifiers);
 }
 
-static struct shady_toplevel *focused_toplevel(
-	struct shady_server *server
-) {
-	struct wlr_surface *surface =
-		server->seat->keyboard_state.focused_surface;
-
-	if (!surface) {
-		return NULL;
-	}
-
-	struct wlr_xdg_toplevel *xdg_toplevel =
-		wlr_xdg_toplevel_try_from_wlr_surface(
-			surface
-		);
-
-	if (!xdg_toplevel) {
-		return NULL;
-	}
-
-	struct shady_toplevel *toplevel;
-
-	wl_list_for_each(
-		toplevel,
-		&server->toplevels,
-		link
-	) {
-		if (toplevel->xdg_toplevel == xdg_toplevel) {
-			return toplevel;
-		}
-	}
-
-	return NULL;
-}
-
 static bool bind_matches(const struct shady_keybind *bind,
 		xkb_keysym_t sym, uint32_t modifiers) {
 	const uint32_t mask = WLR_MODIFIER_ALT | WLR_MODIFIER_SHIFT |
@@ -284,42 +182,19 @@ static bool bind_matches(const struct shady_keybind *bind,
 static bool handle_keybinding(struct shady_server *server,
 		xkb_keysym_t sym, uint32_t modifiers) {
 	struct shady_config *c = &server->config;
-	if (shady_lua_handle_key(server, sym, modifiers)) return true;
-	if (server->config.spatial_mode && bind_matches(&c->bind_debug_ray, sym, modifiers)) {
-		server->experimental.debug_ray = !server->experimental.debug_ray;
-		shady_render_schedule_all_outputs(server);
+	if (bind_matches(&c->bind_quit, sym, modifiers)) {
+		wl_display_terminate(server->wl_display);
 		return true;
 	}
-	if (server->config.spatial_mode && bind_matches(&c->bind_gravity_toggle, sym, modifiers)) {
-		shady_physics_toggle_gravity(server);
+	if (bind_matches(&c->bind_cycle_windows, sym, modifiers)) {
+		if (wl_list_length(&server->toplevels) >= 2) {
+			struct shady_toplevel *next =
+				wl_container_of(server->toplevels.prev, next, link);
+			focus_toplevel(next);
+		}
 		return true;
 	}
-	if (server->config.spatial_mode && bind_matches(&c->bind_fps_capture, sym, modifiers))
-		return shady_fps_toggle_capture(server);
-	if (server->config.spatial_mode && bind_matches(&c->bind_fps_toggle, sym, modifiers))
-		return shady_fps_toggle(server);
-	if (bind_matches(&c->bind_quit,sym,modifiers)) { wl_display_terminate(server->wl_display); return true; }
-	if (bind_matches(&c->bind_cycle_windows,sym,modifiers)) {
-		if (wl_list_length(&server->toplevels)>=2) { struct shady_toplevel *next=wl_container_of(server->toplevels.prev,next,link); focus_toplevel(next); }
-		return true;
-	}
-	if (bind_matches(&c->bind_close_window,sym,modifiers)) { shady_close_animation_begin(server); return true; }
-	if (!server->config.spatial_mode) return false;
-	bool changed=false; struct shady_vec3 right,up,forward;
-	if (bind_matches(&c->bind_camera_left,sym,modifiers) || bind_matches(&c->bind_camera_right,sym,modifiers) ||
-		bind_matches(&c->bind_camera_up,sym,modifiers) || bind_matches(&c->bind_camera_down,sym,modifiers)) {
-		shady_camera_basis(&server->experimental.camera,&right,&up,&forward);
-		float sign = (bind_matches(&c->bind_camera_left,sym,modifiers)||bind_matches(&c->bind_camera_down,sym,modifiers)) ? -1.f : 1.f;
-		struct shady_vec3 v = (bind_matches(&c->bind_camera_left,sym,modifiers)||bind_matches(&c->bind_camera_right,sym,modifiers)) ? right : up;
-		server->experimental.camera.target_x += v.x*CAMERA_KEY_PAN*sign; server->experimental.camera.target_y += v.y*CAMERA_KEY_PAN*sign; server->experimental.camera.target_z += v.z*CAMERA_KEY_PAN*sign; changed=true;
-	} else if (bind_matches(&c->bind_camera_yaw_left,sym,modifiers)) { server->experimental.camera.yaw += CAMERA_KEY_ORBIT; changed=true;
-	} else if (bind_matches(&c->bind_camera_yaw_right,sym,modifiers)) { server->experimental.camera.yaw -= CAMERA_KEY_ORBIT; changed=true;
-	} else if (bind_matches(&c->bind_camera_zoom_in,sym,modifiers)) { server->experimental.camera.distance -= CAMERA_ZOOM_STEP; changed=true;
-	} else if (bind_matches(&c->bind_camera_zoom_out,sym,modifiers)) { server->experimental.camera.distance += CAMERA_ZOOM_STEP; changed=true;
-	} else if (bind_matches(&c->bind_camera_reset,sym,modifiers)) { shady_camera_reset(&server->experimental.camera); changed=true;
-	} else return false;
-	if (changed) { clamp_camera(&server->experimental.camera); shady_render_schedule_all_outputs(server); }
-	return true;
+	return false;
 }
 
 static void keyboard_handle_key(
@@ -341,13 +216,15 @@ static void keyboard_handle_key(
 	bool handled = false;
 	uint32_t modifiers = wlr_keyboard_get_modifiers(keyboard->wlr_keyboard);
 
-	if (!server->session_locked && event->state == WL_KEYBOARD_KEY_STATE_PRESSED) {
-		for (int j = 0; j < nsyms && !handled; j++)
-			handled = handle_keybinding(server, syms[j], modifiers);
+	if (!server->session_locked) {
+		handled = shady_modules_key(server, syms, nsyms,
+			event->state, modifiers);
+		if (!handled && event->state == WL_KEYBOARD_KEY_STATE_PRESSED) {
+			for (int j = 0; j < nsyms && !handled; j++) {
+				handled = handle_keybinding(server, syms[j], modifiers);
+			}
+		}
 	}
-
-	if (!server->session_locked && shady_fps_handle_key(server, syms, nsyms, event->state))
-		handled = true;
 	if (!handled) {
 		wlr_seat_set_keyboard(seat, keyboard->wlr_keyboard);
 		wlr_seat_keyboard_notify_key(seat,event->time_msec,event->keycode,event->state);
@@ -485,7 +362,7 @@ void server_cursor_motion(struct wl_listener *listener, void *data) {
 			event->delta_x, event->delta_y,
 			event->unaccel_dx, event->unaccel_dy);
 	}
-	if (server->config.spatial_mode && shady_fps_handle_motion(server, event->delta_x, event->delta_y))
+	if (shady_modules_pointer_motion(server, event))
 		return;
 	if (server->active_pointer_constraint &&
 			server->active_pointer_constraint->type == WLR_POINTER_CONSTRAINT_V1_LOCKED) {
@@ -504,10 +381,8 @@ void server_cursor_motion_absolute(
 	if (server->idle_notifier) {
 		wlr_idle_notifier_v1_notify_activity(server->idle_notifier, server->seat);
 	}
-	if (server->config.spatial_mode && server->experimental.camera.first_person && server->experimental.fps.input_capture) {
-		shady_fps_handle_motion(server, 0.0, 0.0);
+	if (shady_modules_pointer_motion_absolute(server, event))
 		return;
-	}
 	wlr_cursor_warp_absolute(server->cursor, &event->pointer->base, event->x,
 		event->y);
 	process_cursor_motion(server, event->time_msec);
@@ -530,44 +405,13 @@ void server_cursor_button(struct wl_listener *listener, void *data) {
 	}
 	uint32_t mods = seat_modifiers(server);
 
-	if (server->config.spatial_mode && shady_fps_handle_button(server, event->button, event->state))
+	if (shady_modules_pointer_button(server, event, mods))
 		return;
-
-	/* Right-drag orbits. Alt+middle-drag pans (plain middle goes to clients). */
-	if (server->config.spatial_mode && (event->button == BTN_RIGHT
-			|| (event->button == BTN_MIDDLE && (mods & WLR_MODIFIER_ALT)))) {
-		if (event->state == WL_POINTER_BUTTON_STATE_PRESSED) {
-			server->cursor_mode = (event->button == BTN_RIGHT)
-				? SHADY_CURSOR_CAMERA_ORBIT : SHADY_CURSOR_CAMERA_PAN;
-			server->cam_grab_x = server->cursor->x;
-			server->cam_grab_y = server->cursor->y;
-			server->cam_grab_yaw = server->experimental.camera.yaw;
-			server->cam_grab_pitch = server->experimental.camera.pitch;
-			server->cam_grab_target_x = server->experimental.camera.target_x;
-			server->cam_grab_target_y = server->experimental.camera.target_y;
-			server->cam_grab_target_z = server->experimental.camera.target_z;
-			wlr_seat_pointer_clear_focus(server->seat);
-		} else if (server->cursor_mode == SHADY_CURSOR_CAMERA_ORBIT
-				|| server->cursor_mode == SHADY_CURSOR_CAMERA_PAN) {
-			reset_cursor_mode(server);
-		}
-		return;
-	}
-
-	if (event->button == BTN_MIDDLE
-			&& event->state == WL_POINTER_BUTTON_STATE_RELEASED
-			&& server->cursor_mode == SHADY_CURSOR_CAMERA_PAN) {
-		reset_cursor_mode(server);
-		return;
-	}
 
 	wlr_seat_pointer_notify_button(server->seat,
 			event->time_msec, event->button, event->state);
 	if (event->state == WL_POINTER_BUTTON_STATE_RELEASED) {
-		if (server->cursor_mode != SHADY_CURSOR_CAMERA_ORBIT
-				&& server->cursor_mode != SHADY_CURSOR_CAMERA_PAN) {
-			reset_cursor_mode(server);
-		}
+		reset_cursor_mode(server);
 	} else {
 		double sx, sy;
 		struct wlr_surface *surface = NULL;
@@ -585,38 +429,9 @@ void server_cursor_axis(struct wl_listener *listener, void *data) {
 		wlr_idle_notifier_v1_notify_activity(server->idle_notifier, server->seat);
 	}
 
-	if (server->config.spatial_mode && shady_fps_handle_axis(server, event))
-		return;
-
 	uint32_t mods = seat_modifiers(server);
-
-	/*
-	 * Alt+Shift+scroll moves the focused window through world Z.
-	 * Scroll up pulls it toward the camera; scroll down pushes it away.
-	 * Alt+scroll remains camera zoom.
-	 */
-	if (server->config.spatial_mode && (mods & WLR_MODIFIER_ALT)
-			&& (mods & WLR_MODIFIER_SHIFT)
-			&& event->orientation == WL_POINTER_AXIS_VERTICAL_SCROLL) {
-		struct shady_toplevel *toplevel = focused_toplevel(server);
-		if (toplevel) {
-			float direction = event->delta < 0.0 ? 1.0f : -1.0f;
-			toplevel->experimental.z += direction * WINDOW_Z_STEP;
-			if (toplevel->experimental.z < WINDOW_Z_MIN) toplevel->experimental.z = WINDOW_Z_MIN;
-			if (toplevel->experimental.z > WINDOW_Z_MAX) toplevel->experimental.z = WINDOW_Z_MAX;
-			shady_render_schedule_all_outputs(server);
-		}
+	if (shady_modules_pointer_axis(server, event, mods))
 		return;
-	}
-
-	/* Alt+scroll zooms the camera; plain scroll goes to the client. */
-	if (server->config.spatial_mode && (mods & WLR_MODIFIER_ALT)
-			&& event->orientation == WL_POINTER_AXIS_VERTICAL_SCROLL) {
-		server->experimental.camera.distance += (float)(event->delta * 0.01);
-		clamp_camera(&server->experimental.camera);
-		shady_render_schedule_all_outputs(server);
-		return;
-	}
 
 	wlr_seat_pointer_notify_axis(server->seat,
 			event->time_msec, event->orientation, event->delta,

@@ -3,9 +3,16 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 struct shady_server;
 struct shady_toplevel;
+struct wlr_pointer_motion_event;
+struct wlr_pointer_motion_absolute_event;
+struct wlr_pointer_button_event;
+struct wlr_pointer_axis_event;
+struct wlr_surface;
+typedef uint32_t xkb_keysym_t;
 
 #define SHADY_MAX_MODULES 32
 
@@ -21,6 +28,22 @@ struct shady_module {
 	void (*toplevel_unmap)(struct shady_toplevel *toplevel);
 	void (*toplevel_commit)(struct shady_toplevel *toplevel);
 	void (*toplevel_destroy)(struct shady_toplevel *toplevel);
+
+	bool (*key)(struct shady_server *server, const xkb_keysym_t *syms,
+		int nsyms, uint32_t state, uint32_t modifiers);
+	bool (*pointer_motion)(struct shady_server *server,
+		struct wlr_pointer_motion_event *event);
+	bool (*pointer_motion_absolute)(struct shady_server *server,
+		struct wlr_pointer_motion_absolute_event *event);
+	bool (*pointer_button)(struct shady_server *server,
+		struct wlr_pointer_button_event *event, uint32_t modifiers);
+	bool (*pointer_axis)(struct shady_server *server,
+		struct wlr_pointer_axis_event *event, uint32_t modifiers);
+	bool (*pick_surface)(struct shady_server *server, double lx, double ly,
+		struct wlr_surface **surface, double *sx, double *sy,
+		struct shady_toplevel **toplevel);
+	void (*toplevel_moved)(struct shady_toplevel *toplevel,
+		double x, double y);
 };
 
 struct shady_module_manager {
@@ -42,6 +65,21 @@ void shady_modules_toplevel_map(struct shady_toplevel *toplevel);
 void shady_modules_toplevel_unmap(struct shady_toplevel *toplevel);
 void shady_modules_toplevel_commit(struct shady_toplevel *toplevel);
 void shady_modules_toplevel_destroy(struct shady_toplevel *toplevel);
+bool shady_modules_key(struct shady_server *server, const xkb_keysym_t *syms,
+	int nsyms, uint32_t state, uint32_t modifiers);
+bool shady_modules_pointer_motion(struct shady_server *server,
+	struct wlr_pointer_motion_event *event);
+bool shady_modules_pointer_motion_absolute(struct shady_server *server,
+	struct wlr_pointer_motion_absolute_event *event);
+bool shady_modules_pointer_button(struct shady_server *server,
+	struct wlr_pointer_button_event *event, uint32_t modifiers);
+bool shady_modules_pointer_axis(struct shady_server *server,
+	struct wlr_pointer_axis_event *event, uint32_t modifiers);
+bool shady_modules_pick_surface(struct shady_server *server, double lx, double ly,
+	struct wlr_surface **surface, double *sx, double *sy,
+	struct shady_toplevel **toplevel);
+void shady_modules_toplevel_moved(struct shady_toplevel *toplevel,
+	double x, double y);
 
 void shady_register_builtin_modules(struct shady_server *server);
 

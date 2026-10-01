@@ -1,3 +1,5 @@
+option('spatial', type: 'feature', value: 'enabled', description: 'Build the spatial desktop module')
+option('lua', type: 'feature', value: 'enabled', description: 'Build the Lua scripting module')
 option('physics', type: 'feature', value: 'enabled', description: 'Build the window physics module')
 option('fps', type: 'feature', value: 'enabled', description: 'Build the first-person interaction module')
 option('window_motion', type: 'feature', value: 'enabled', description: 'Build wobble and inertial window motion')

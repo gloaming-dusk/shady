@@ -99,6 +99,16 @@ FPS interaction and visual effects, use:
 WLR_BACKENDS=wayland ./build/shady --safe
 ```
 
+For a genuinely small build, omit the spatial and Lua modules entirely:
+
+```sh
+meson setup build-minimal -Dspatial=disabled -Dlua=disabled
+ninja -C build-minimal
+```
+
+The minimal build uses the wlroots scene renderer directly and does not require
+the GLES2 renderer, so it can run with `WLR_RENDERER=pixman` as well.
+
 Safe mode renders the wlroots scene graph directly and uses normal scene-graph
 pointer hit testing. It is the compatibility baseline for work toward a daily-driver compositor.
 

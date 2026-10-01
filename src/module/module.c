@@ -104,3 +104,77 @@ void shady_modules_toplevel_commit(struct shady_toplevel *toplevel) {
 void shady_modules_toplevel_destroy(struct shady_toplevel *toplevel) {
 	DISPATCH_TOPLEVEL(toplevel_destroy);
 }
+
+bool shady_modules_key(struct shady_server *server, const xkb_keysym_t *syms,
+		int nsyms, uint32_t state, uint32_t modifiers) {
+	for (size_t i = 0; i < server->modules.count; i++) {
+		const struct shady_module *module = server->modules.modules[i];
+		if (server->modules.active[i] && module->key &&
+				module->key(server, syms, nsyms, state, modifiers)) return true;
+	}
+	return false;
+}
+
+#define DISPATCH_INPUT(hook, event, modifiers) \
+	do { \
+		for (size_t i = 0; i < server->modules.count; i++) { \
+			const struct shady_module *module = server->modules.modules[i]; \
+			if (server->modules.active[i] && module->hook && \
+					module->hook(server, event, modifiers)) return true; \
+		} \
+		return false; \
+	} while (0)
+
+bool shady_modules_pointer_motion(struct shady_server *server,
+		struct wlr_pointer_motion_event *event) {
+	for (size_t i = 0; i < server->modules.count; i++) {
+		const struct shady_module *module = server->modules.modules[i];
+		if (server->modules.active[i] && module->pointer_motion &&
+				module->pointer_motion(server, event)) return true;
+	}
+	return false;
+}
+
+bool shady_modules_pointer_motion_absolute(struct shady_server *server,
+		struct wlr_pointer_motion_absolute_event *event) {
+	for (size_t i = 0; i < server->modules.count; i++) {
+		const struct shady_module *module = server->modules.modules[i];
+		if (server->modules.active[i] && module->pointer_motion_absolute &&
+				module->pointer_motion_absolute(server, event)) return true;
+	}
+	return false;
+}
+
+bool shady_modules_pointer_button(struct shady_server *server,
+		struct wlr_pointer_button_event *event, uint32_t modifiers) {
+	DISPATCH_INPUT(pointer_button, event, modifiers);
+}
+
+bool shady_modules_pointer_axis(struct shady_server *server,
+		struct wlr_pointer_axis_event *event, uint32_t modifiers) {
+	DISPATCH_INPUT(pointer_axis, event, modifiers);
+}
+
+bool shady_modules_pick_surface(struct shady_server *server, double lx, double ly,
+		struct wlr_surface **surface, double *sx, double *sy,
+		struct shady_toplevel **toplevel) {
+	for (size_t i = 0; i < server->modules.count; i++) {
+		const struct shady_module *module = server->modules.modules[i];
+		if (server->modules.active[i] && module->pick_surface &&
+				module->pick_surface(server, lx, ly, surface, sx, sy, toplevel)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+void shady_modules_toplevel_moved(struct shady_toplevel *toplevel,
+		double x, double y) {
+	struct shady_server *server = toplevel->server;
+	for (size_t i = 0; i < server->modules.count; i++) {
+		const struct shady_module *module = server->modules.modules[i];
+		if (server->modules.active[i] && module->toplevel_moved) {
+			module->toplevel_moved(toplevel, x, y);
+		}
+	}
+}
