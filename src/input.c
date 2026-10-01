@@ -21,6 +21,7 @@
 
 #include "shady.h"
 #include "module/module.h"
+#include "modules/desktop/state.h"
 #include "render/render.h"
 
 void reset_cursor_mode(struct shady_server *server) {
@@ -130,7 +131,7 @@ static struct shady_toplevel *desktop_toplevel_at(struct shady_server *server,
 static struct shady_toplevel *toplevel_at_cursor(struct shady_server *server,
 		double lx, double ly, struct wlr_surface **surface, double *sx, double *sy) {
 	struct shady_toplevel *toplevel = NULL;
-	if (!server->session_locked && shady_modules_pick_surface(server, lx, ly,
+	if (!shady_desktop_state(server)->session_locked && shady_modules_pick_surface(server, lx, ly,
 			surface, sx, sy, &toplevel)) {
 		return toplevel;
 	}
@@ -204,8 +205,8 @@ static void keyboard_handle_key(
 	struct shady_server *server = keyboard->server;
 	struct wlr_keyboard_key_event *event = data;
 	struct wlr_seat *seat = server->seat;
-	if (server->idle_notifier) {
-		wlr_idle_notifier_v1_notify_activity(server->idle_notifier, server->seat);
+	if (shady_desktop_state(server)->idle_notifier) {
+		wlr_idle_notifier_v1_notify_activity(shady_desktop_state(server)->idle_notifier, server->seat);
 	}
 
 	uint32_t keycode = event->keycode + 8;
@@ -216,7 +217,7 @@ static void keyboard_handle_key(
 	bool handled = false;
 	uint32_t modifiers = wlr_keyboard_get_modifiers(keyboard->wlr_keyboard);
 
-	if (!server->session_locked) {
+	if (!shady_desktop_state(server)->session_locked) {
 		handled = shady_modules_key(server, syms, nsyms,
 			event->state, modifiers);
 		if (!handled && event->state == WL_KEYBOARD_KEY_STATE_PRESSED) {
@@ -313,18 +314,18 @@ void seat_pointer_focus_change(struct wl_listener *listener, void *data) {
 			listener, server, pointer_focus_change);
 	struct wlr_seat_pointer_focus_change_event *event = data;
 
-	if (server->active_pointer_constraint) {
+	if (shady_desktop_state(server)->active_pointer_constraint) {
 		wlr_pointer_constraint_v1_send_deactivated(
-			server->active_pointer_constraint);
-		server->active_pointer_constraint = NULL;
+			shady_desktop_state(server)->active_pointer_constraint);
+		shady_desktop_state(server)->active_pointer_constraint = NULL;
 	}
 
-	if (event->new_surface && server->pointer_constraints) {
+	if (event->new_surface && shady_desktop_state(server)->pointer_constraints) {
 		struct wlr_pointer_constraint_v1 *constraint =
 			wlr_pointer_constraints_v1_constraint_for_surface(
-				server->pointer_constraints, event->new_surface, server->seat);
+				shady_desktop_state(server)->pointer_constraints, event->new_surface, server->seat);
 		if (constraint) {
-			server->active_pointer_constraint = constraint;
+			shady_desktop_state(server)->active_pointer_constraint = constraint;
 			wlr_pointer_constraint_v1_send_activated(constraint);
 		}
 	}
@@ -352,20 +353,20 @@ void server_cursor_motion(struct wl_listener *listener, void *data) {
 	struct shady_server *server =
 		wl_container_of(listener, server, cursor_motion);
 	struct wlr_pointer_motion_event *event = data;
-	if (server->idle_notifier) {
-		wlr_idle_notifier_v1_notify_activity(server->idle_notifier, server->seat);
+	if (shady_desktop_state(server)->idle_notifier) {
+		wlr_idle_notifier_v1_notify_activity(shady_desktop_state(server)->idle_notifier, server->seat);
 	}
-	if (server->relative_pointer_manager) {
+	if (shady_desktop_state(server)->relative_pointer_manager) {
 		wlr_relative_pointer_manager_v1_send_relative_motion(
-			server->relative_pointer_manager, server->seat,
+			shady_desktop_state(server)->relative_pointer_manager, server->seat,
 			(uint64_t)event->time_msec * 1000,
 			event->delta_x, event->delta_y,
 			event->unaccel_dx, event->unaccel_dy);
 	}
 	if (shady_modules_pointer_motion(server, event))
 		return;
-	if (server->active_pointer_constraint &&
-			server->active_pointer_constraint->type == WLR_POINTER_CONSTRAINT_V1_LOCKED) {
+	if (shady_desktop_state(server)->active_pointer_constraint &&
+			shady_desktop_state(server)->active_pointer_constraint->type == WLR_POINTER_CONSTRAINT_V1_LOCKED) {
 		return;
 	}
 	wlr_cursor_move(server->cursor, &event->pointer->base,
@@ -378,8 +379,8 @@ void server_cursor_motion_absolute(
 	struct shady_server *server =
 		wl_container_of(listener, server, cursor_motion_absolute);
 	struct wlr_pointer_motion_absolute_event *event = data;
-	if (server->idle_notifier) {
-		wlr_idle_notifier_v1_notify_activity(server->idle_notifier, server->seat);
+	if (shady_desktop_state(server)->idle_notifier) {
+		wlr_idle_notifier_v1_notify_activity(shady_desktop_state(server)->idle_notifier, server->seat);
 	}
 	if (shady_modules_pointer_motion_absolute(server, event))
 		return;
@@ -400,8 +401,8 @@ void server_cursor_button(struct wl_listener *listener, void *data) {
 	struct shady_server *server =
 		wl_container_of(listener, server, cursor_button);
 	struct wlr_pointer_button_event *event = data;
-	if (server->idle_notifier) {
-		wlr_idle_notifier_v1_notify_activity(server->idle_notifier, server->seat);
+	if (shady_desktop_state(server)->idle_notifier) {
+		wlr_idle_notifier_v1_notify_activity(shady_desktop_state(server)->idle_notifier, server->seat);
 	}
 	uint32_t mods = seat_modifiers(server);
 
@@ -425,8 +426,8 @@ void server_cursor_axis(struct wl_listener *listener, void *data) {
 	struct shady_server *server =
 		wl_container_of(listener, server, cursor_axis);
 	struct wlr_pointer_axis_event *event = data;
-	if (server->idle_notifier) {
-		wlr_idle_notifier_v1_notify_activity(server->idle_notifier, server->seat);
+	if (shady_desktop_state(server)->idle_notifier) {
+		wlr_idle_notifier_v1_notify_activity(shady_desktop_state(server)->idle_notifier, server->seat);
 	}
 
 	uint32_t mods = seat_modifiers(server);

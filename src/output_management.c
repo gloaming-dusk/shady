@@ -5,9 +5,10 @@
 #include <wlr/types/wlr_output_management_v1.h>
 
 #include "shady.h"
+#include "modules/desktop/state.h"
 
 void shady_output_manager_publish(struct shady_server *server) {
-	if (!server->output_manager) {
+	if (!shady_desktop_state(server)->output_manager) {
 		return;
 	}
 	struct wlr_output_configuration_v1 *config =
@@ -23,7 +24,7 @@ void shady_output_manager_publish(struct shady_server *server) {
 		head->state.x = (int32_t)lx;
 		head->state.y = (int32_t)ly;
 	}
-	wlr_output_manager_v1_set_configuration(server->output_manager, config);
+	wlr_output_manager_v1_set_configuration(shady_desktop_state(server)->output_manager, config);
 }
 
 static bool handle_configuration(struct shady_server *server,
@@ -67,13 +68,15 @@ static bool handle_configuration(struct shady_server *server,
 }
 
 void shady_output_manager_apply(struct wl_listener *listener, void *data) {
-	struct shady_server *server =
-		wl_container_of(listener, server, output_manager_apply);
+	struct shady_desktop_state *state =
+		wl_container_of(listener, state, output_manager_apply);
+	struct shady_server *server = state->server;
 	handle_configuration(server, data, true);
 }
 
 void shady_output_manager_test(struct wl_listener *listener, void *data) {
-	struct shady_server *server =
-		wl_container_of(listener, server, output_manager_test);
+	struct shady_desktop_state *state =
+		wl_container_of(listener, state, output_manager_test);
+	struct shady_server *server = state->server;
 	handle_configuration(server, data, false);
 }

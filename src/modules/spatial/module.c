@@ -14,6 +14,7 @@
 #include "../../render/render.h"
 #include "../close_animation/close_animation.h"
 #include "../environment/environment.h"
+#include "../desktop/state.h"
 #include "../fps/fps.h"
 #include "../physics/physics.h"
 #include "../window_motion/window_motion.h"
@@ -99,7 +100,7 @@ static void spatial_toplevel_moved(struct shady_toplevel *toplevel,
 static bool spatial_pick_surface(struct shady_server *server,
 		double lx, double ly, struct wlr_surface **surface,
 		double *sx, double *sy, struct shady_toplevel **toplevel) {
-	if (server->session_locked) return false;
+	if (shady_desktop_state(server)->session_locked) return false;
 	*toplevel = shady_toplevel_at_3d(server, lx, ly, surface, sx, sy);
 	return *surface != NULL;
 }

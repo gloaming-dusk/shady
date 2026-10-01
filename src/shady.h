@@ -9,7 +9,6 @@
 #include <xkbcommon/xkbcommon.h>
 
 #include "experimental/state.h"
-#include "modules/lua/state.h"
 #include "module/module.h"
 
 struct wlr_allocator;
@@ -104,28 +103,6 @@ struct shady_server {
 	struct wl_list toplevels;
 	struct wl_list popups;
 
-	struct wlr_layer_shell_v1 *layer_shell;
-	struct wl_listener new_layer_surface;
-	struct wl_list layer_surfaces;
-
-	struct wlr_relative_pointer_manager_v1 *relative_pointer_manager;
-	struct wlr_pointer_constraints_v1 *pointer_constraints;
-	struct wlr_pointer_constraint_v1 *active_pointer_constraint;
-	struct wlr_screencopy_manager_v1 *screencopy_manager;
-	struct wlr_idle_notifier_v1 *idle_notifier;
-	struct wlr_primary_selection_v1_device_manager *primary_selection_manager;
-	struct wlr_data_control_manager_v1 *data_control_manager;
-	struct wlr_xdg_decoration_manager_v1 *xdg_decoration_manager;
-	struct wlr_output_manager_v1 *output_manager;
-	struct wl_listener output_manager_apply;
-	struct wl_listener output_manager_test;
-
-	struct wlr_session_lock_manager_v1 *session_lock_manager;
-	struct wl_listener new_session_lock;
-	struct wlr_session_lock_v1 *session_lock;
-	struct wlr_scene_tree *session_lock_tree;
-	bool session_locked;
-
 	struct wlr_cursor *cursor;
 	struct wlr_xcursor_manager *cursor_mgr;
 	struct wl_listener cursor_motion;
@@ -153,7 +130,6 @@ struct shady_server {
 
 	struct shady_config config;
 	struct shady_module_manager modules;
-	struct shady_lua_state lua;
 
 	/* Experimental spatial-desktop state is intentionally kept behind one
 	 * boundary so the Wayland compositor core does not depend on individual

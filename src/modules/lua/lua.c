@@ -1,4 +1,5 @@
 #include "lua.h"
+#include "state.h"
 #include <stdbool.h>
 #include <stdlib.h>
 #include <lua.h>
@@ -95,7 +96,7 @@ static void default_script_path(char *buf,size_t size){
 }
 bool shady_lua_init(struct shady_server *server){
 	lua_State *L=luaL_newstate();if(!L){wlr_log(WLR_ERROR,"[SHADY LUA] failed to create Lua state");return false;}
-	server->lua.L=L;lua_server=server;luaL_openlibs(L);install_api(L);
+	shady_lua_state_for(server)->L=L;lua_server=server;luaL_openlibs(L);install_api(L);
 	char path[4096];default_script_path(path,sizeof(path));
 	if(luaL_loadfile(L,path)!=LUA_OK){
 		const char *e=lua_tostring(L,-1);
@@ -113,15 +114,15 @@ static void push_window(lua_State *L,struct shady_toplevel *t){
 	if(t){lua_pushnumber(L,t->experimental.z);lua_setfield(L,-2,"z");}
 }
 void shady_lua_emit(struct shady_server *server,const char *event,struct shady_toplevel *t){
-	lua_State *L=server->lua.L;if(!L)return;lua_getglobal(L,"shady");lua_getfield(L,-1,"on_" );lua_pop(L,2);
+	lua_State *L=shady_lua_state_for(server)->L;if(!L)return;lua_getglobal(L,"shady");lua_getfield(L,-1,"on_" );lua_pop(L,2);
 	lua_getglobal(L,"shady_events");if(!lua_istable(L,-1)){lua_pop(L,1);return;}lua_getfield(L,-1,event);
 	if(lua_isfunction(L,-1)){push_window(L,t);if(lua_pcall(L,1,0,0)!=LUA_OK){wlr_log(WLR_ERROR,"[SHADY LUA] event %s: %s",event,lua_tostring(L,-1));lua_pop(L,1);}}else lua_pop(L,1);lua_pop(L,1);
 }
 bool shady_lua_handle_key(struct shady_server *server,xkb_keysym_t sym,uint32_t modifiers){
-	lua_State *L=server->lua.L;uint32_t mask=WLR_MODIFIER_ALT|WLR_MODIFIER_SHIFT|WLR_MODIFIER_CTRL|WLR_MODIFIER_LOGO;
+	lua_State *L=shady_lua_state_for(server)->L;uint32_t mask=WLR_MODIFIER_ALT|WLR_MODIFIER_SHIFT|WLR_MODIFIER_CTRL|WLR_MODIFIER_LOGO;
 	for(size_t i=0;L&&i<lua_bind_count;i++)if(lua_binds[i].sym==sym&&lua_binds[i].modifiers==(modifiers&mask)){
 		lua_rawgeti(L,LUA_REGISTRYINDEX,lua_binds[i].ref);if(lua_pcall(L,0,0,0)!=LUA_OK){wlr_log(WLR_ERROR,"[SHADY LUA] keybind: %s",lua_tostring(L,-1));lua_pop(L,1);}return true;}return false;
 }
 void shady_lua_fini(struct shady_server *server){
-	if(server->lua.L){lua_close(server->lua.L);server->lua.L=NULL;}lua_bind_count=0;
+	if(shady_lua_state_for(server)->L){lua_close(shady_lua_state_for(server)->L);shady_lua_state_for(server)->L=NULL;}lua_bind_count=0;
 }

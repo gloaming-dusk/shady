@@ -8,8 +8,10 @@
 
 #include "shady.h"
 #include "render/render.h"
+#include "modules/desktop/state.h"
 
 static void add_lock_backgrounds(struct shady_server *server) {
+	struct shady_desktop_state *desktop = shady_desktop_state(server);
 	struct shady_output *output;
 	wl_list_for_each(output, &server->outputs, link) {
 		int width = 0, height = 0;
@@ -19,7 +21,7 @@ static void add_lock_backgrounds(struct shady_server *server) {
 			output->wlr_output, &lx, &ly);
 		float color[4] = {0.f, 0.f, 0.f, 1.f};
 		struct wlr_scene_rect *rect =
-			wlr_scene_rect_create(server->session_lock_tree,
+			wlr_scene_rect_create(desktop->session_lock_tree,
 				width, height, color);
 		if (rect) {
 			wlr_scene_node_set_position(&rect->node, (int)lx, (int)ly);
@@ -39,6 +41,7 @@ static void lock_new_surface(struct wl_listener *listener, void *data) {
 	struct shady_session_lock *lock =
 		wl_container_of(listener, lock, new_surface);
 	struct shady_server *server = lock->server;
+	struct shady_desktop_state *desktop = shady_desktop_state(server);
 	struct wlr_session_lock_surface_v1 *lock_surface = data;
 
 	struct shady_lock_surface *surface = calloc(1, sizeof(*surface));
@@ -47,7 +50,7 @@ static void lock_new_surface(struct wl_listener *listener, void *data) {
 	}
 	surface->lock = lock;
 	surface->lock_surface = lock_surface;
-	surface->tree = wlr_scene_tree_create(server->session_lock_tree);
+	surface->tree = wlr_scene_tree_create(desktop->session_lock_tree);
 	if (!surface->tree) {
 		free(surface);
 		return;
@@ -76,12 +79,13 @@ static void lock_unlock(struct wl_listener *listener, void *data) {
 	struct shady_session_lock *lock =
 		wl_container_of(listener, lock, unlock);
 	struct shady_server *server = lock->server;
+	struct shady_desktop_state *desktop = shady_desktop_state(server);
 	lock->unlocked = true;
-	server->session_locked = false;
-	server->session_lock = NULL;
-	if (server->session_lock_tree) {
-		wlr_scene_node_destroy(&server->session_lock_tree->node);
-		server->session_lock_tree = NULL;
+	desktop->session_locked = false;
+	desktop->session_lock = NULL;
+	if (desktop->session_lock_tree) {
+		wlr_scene_node_destroy(&desktop->session_lock_tree->node);
+		desktop->session_lock_tree = NULL;
 	}
 	shady_render_schedule_all_outputs(server);
 }
@@ -91,36 +95,34 @@ static void lock_destroy(struct wl_listener *listener, void *data) {
 	struct shady_session_lock *lock =
 		wl_container_of(listener, lock, destroy);
 	struct shady_server *server = lock->server;
+	struct shady_desktop_state *desktop = shady_desktop_state(server);
 
 	wl_list_remove(&lock->new_surface.link);
 	wl_list_remove(&lock->unlock.link);
 	wl_list_remove(&lock->destroy.link);
 
-	/*
-	 * If the client disappears without unlocking, keep the black lock tree
-	 * and locked state. This avoids exposing the previous desktop.
-	 */
 	if (lock->unlocked) {
-		server->session_lock = NULL;
+		desktop->session_lock = NULL;
 	}
 	free(lock);
 }
 
 void server_new_session_lock(struct wl_listener *listener, void *data) {
-	struct shady_server *server =
-		wl_container_of(listener, server, new_session_lock);
+	struct shady_desktop_state *desktop =
+		wl_container_of(listener, desktop, new_session_lock);
+	struct shady_server *server = desktop->server;
 	struct wlr_session_lock_v1 *wlr_lock = data;
 
-	if (server->session_locked) {
+	if (desktop->session_locked) {
 		wlr_session_lock_v1_destroy(wlr_lock);
 		return;
 	}
 
-	if (server->session_lock_tree) {
-		wlr_scene_node_destroy(&server->session_lock_tree->node);
+	if (desktop->session_lock_tree) {
+		wlr_scene_node_destroy(&desktop->session_lock_tree->node);
 	}
-	server->session_lock_tree = wlr_scene_tree_create(server->overlay_tree);
-	if (!server->session_lock_tree) {
+	desktop->session_lock_tree = wlr_scene_tree_create(server->overlay_tree);
+	if (!desktop->session_lock_tree) {
 		wlr_session_lock_v1_destroy(wlr_lock);
 		return;
 	}
@@ -128,16 +130,16 @@ void server_new_session_lock(struct wl_listener *listener, void *data) {
 
 	struct shady_session_lock *lock = calloc(1, sizeof(*lock));
 	if (!lock) {
-		wlr_scene_node_destroy(&server->session_lock_tree->node);
-		server->session_lock_tree = NULL;
+		wlr_scene_node_destroy(&desktop->session_lock_tree->node);
+		desktop->session_lock_tree = NULL;
 		wlr_session_lock_v1_destroy(wlr_lock);
 		return;
 	}
 
 	lock->server = server;
 	lock->lock = wlr_lock;
-	server->session_lock = wlr_lock;
-	server->session_locked = true;
+	desktop->session_lock = wlr_lock;
+	desktop->session_locked = true;
 
 	lock->new_surface.notify = lock_new_surface;
 	wl_signal_add(&wlr_lock->events.new_surface, &lock->new_surface);

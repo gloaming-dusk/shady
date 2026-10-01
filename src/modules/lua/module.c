@@ -2,6 +2,7 @@
 
 #include "../../shady.h"
 #include "lua.h"
+#include "state.h"
 
 static bool lua_init_module(struct shady_server *server) {
 	return shady_lua_init(server);
@@ -34,6 +35,7 @@ static bool lua_key(struct shady_server *server, const xkb_keysym_t *syms,
 
 static const struct shady_module lua_module = {
 	.name = "lua",
+	.state_size = sizeof(struct shady_lua_state),
 	.init = lua_init_module,
 	.destroy = lua_destroy_module,
 	.toplevel_map = lua_toplevel_map,

@@ -5,6 +5,7 @@
 #include <wlr/types/wlr_scene.h>
 
 #include "shady.h"
+#include "modules/desktop/state.h"
 
 static struct wlr_output *fallback_output(struct shady_server *server) {
 	if (wl_list_empty(&server->outputs)) {
@@ -51,8 +52,9 @@ static void layer_surface_destroy(struct wl_listener *listener, void *data) {
 }
 
 void server_new_layer_surface(struct wl_listener *listener, void *data) {
-	struct shady_server *server =
-		wl_container_of(listener, server, new_layer_surface);
+	struct shady_desktop_state *state =
+		wl_container_of(listener, state, new_layer_surface);
+	struct shady_server *server = state->server;
 	struct wlr_layer_surface_v1 *layer_surface = data;
 
 	if (!layer_surface->output) {
@@ -81,6 +83,6 @@ void server_new_layer_surface(struct wl_listener *listener, void *data) {
 	layer->destroy.notify = layer_surface_destroy;
 	wl_signal_add(&layer_surface->events.destroy, &layer->destroy);
 
-	wl_list_insert(&server->layer_surfaces, &layer->link);
+	wl_list_insert(&shady_desktop_state(server)->layer_surfaces, &layer->link);
 	configure_layer_surface(layer);
 }

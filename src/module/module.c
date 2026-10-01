@@ -1,5 +1,6 @@
 #include "module.h"
 
+#include <stdlib.h>
 #include <string.h>
 #include <wlr/util/log.h>
 
@@ -28,6 +29,16 @@ bool shady_modules_register(struct shady_module_manager *manager,
 	return true;
 }
 
+void *shady_module_state(struct shady_server *server, const char *name) {
+	struct shady_module_manager *manager = &server->modules;
+	for (size_t i = 0; i < manager->count; i++) {
+		if (strcmp(manager->modules[i]->name, name) == 0) {
+			return manager->state[i];
+		}
+	}
+	return NULL;
+}
+
 bool shady_modules_initialize_all(struct shady_server *server) {
 	struct shady_module_manager *manager = &server->modules;
 	for (size_t i = 0; i < manager->count; i++) {
@@ -37,6 +48,14 @@ bool shady_modules_initialize_all(struct shady_server *server) {
 			continue;
 		}
 		wlr_log(WLR_INFO, "module: init %s", module->name);
+		if (module->state_size > 0) {
+			manager->state[i] = calloc(1, module->state_size);
+			if (!manager->state[i]) {
+				wlr_log(WLR_ERROR, "module: state allocation failed: %s", module->name);
+				shady_modules_destroy_all(server);
+				return false;
+			}
+		}
 		if (module->init && !module->init(server)) {
 			wlr_log(WLR_ERROR, "module: init failed: %s", module->name);
 			shady_modules_destroy_all(server);
@@ -78,6 +97,8 @@ void shady_modules_destroy_all(struct shady_server *server) {
 			module->destroy(server);
 		}
 		manager->active[i - 1] = false;
+		free(manager->state[i - 1]);
+		manager->state[i - 1] = NULL;
 	}
 }
 

@@ -26,6 +26,7 @@
 #include "math3d.h"
 #include "pick3d.h"
 #include "../experimental/runtime.h"
+#include "../modules/desktop/state.h"
 #include "../modules/fps/fps.h"
 #include "../modules/close_animation/close_animation.h"
 #include "../modules/scene_effects/scene_effects.h"
@@ -453,7 +454,7 @@ static void render_spatial_overlays(struct shady_server *server,
 
 	/* Layer-shell stays in normal 2D screen space in spatial mode. */
 	struct shady_layer_surface *layer;
-	wl_list_for_each(layer, &server->layer_surfaces, link) {
+	wl_list_for_each(layer, &shady_desktop_state(server)->layer_surfaces, link) {
 		if (layer->layer_surface->output &&
 				layer->layer_surface->output != output) {
 			continue;
@@ -507,7 +508,7 @@ void shady_render_output_frame(
 
 	/* Safe/desktop mode uses wlroots' scene renderer directly. No custom 3D
 	 * transforms, simulation, effects, or perpetual animation frame loop. */
-	if (!server->config.spatial_mode || server->session_locked) {
+	if (!server->config.spatial_mode || shady_desktop_state(server)->session_locked) {
 		if (!wlr_scene_output_commit(scene_output, NULL)) {
 			wlr_log(WLR_ERROR, "failed to commit desktop scene output");
 		}
