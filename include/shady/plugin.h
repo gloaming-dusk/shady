@@ -97,6 +97,7 @@ struct shady_plugin_api_v1 {
 	const char *(*window_workspace)(shady_window window);
 	bool (*window_move_to_workspace)(shady_host host, shady_window window,
 		const char *name);
+	void (*output_schedule_render)(shady_host host, shady_output output);
 };
 
 typedef const struct shady_module *(*shady_plugin_entry_v1_fn)(

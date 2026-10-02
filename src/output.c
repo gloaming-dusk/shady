@@ -14,6 +14,7 @@
 static void output_frame(struct wl_listener *listener, void *data) {
 	(void)data;
 	struct shady_output *output = wl_container_of(listener, output, frame);
+	output->frame_scheduled = false;
 	shady_render_output_frame(output);
 }
 

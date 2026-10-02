@@ -327,6 +327,12 @@ static void host_schedule_render(shady_host host) {
 	if (server->renderer) shady_render_schedule_all_outputs(server);
 }
 
+static void host_output_schedule_render(shady_host host, shady_output output) {
+	if (!host_output_valid(host, output)) return;
+	struct shady_server *server = HOST(host);
+	if (server->renderer) shady_render_schedule_output(OUTPUT(output));
+}
+
 static void host_terminate(shady_host host) {
 	struct shady_server *server = HOST(host);
 	if (server->wl_display) wl_display_terminate(server->wl_display);
@@ -375,6 +381,7 @@ static const struct shady_plugin_api_v1 plugin_api = {
 	.workspace_switch = host_workspace_switch,
 	.window_workspace = host_window_workspace,
 	.window_move_to_workspace = host_window_move_to_workspace,
+	.output_schedule_render = host_output_schedule_render,
 	.event_name = host_event_name,
 	.subscribe_event = host_subscribe_event,
 	.subscribe_event_handle = host_subscribe_event_handle,

@@ -153,6 +153,7 @@ struct shady_output {
 	struct wl_list link;
 	struct shady_server *server;
 	struct wlr_output *wlr_output;
+	bool frame_scheduled;
 	struct wl_listener frame;
 	struct wl_listener request_state;
 	struct wl_listener destroy;

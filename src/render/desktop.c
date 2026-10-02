@@ -16,10 +16,21 @@ bool shady_render_init(struct wlr_renderer *renderer) {
 void shady_render_fini(void) {
 }
 
+void shady_render_schedule_output(struct shady_output *output) {
+	if (!output || !output->wlr_output) return;
+	if (!output->wlr_output->enabled) {
+		output->frame_scheduled = false;
+		return;
+	}
+	if (output->frame_scheduled) return;
+	output->frame_scheduled = true;
+	wlr_output_schedule_frame(output->wlr_output);
+}
+
 void shady_render_schedule_all_outputs(struct shady_server *server) {
 	struct shady_output *output;
 	wl_list_for_each(output, &server->outputs, link) {
-		wlr_output_schedule_frame(output->wlr_output);
+		shady_render_schedule_output(output);
 	}
 }
 

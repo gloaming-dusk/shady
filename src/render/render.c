@@ -341,6 +341,17 @@ static bool spatial_needs_continuous_frames(struct shady_server *server) {
 	return close_snapshot_needs_frame();
 }
 
+void shady_render_schedule_output(struct shady_output *output) {
+	if (!output || !output->wlr_output) return;
+	if (!output->wlr_output->enabled) {
+		output->frame_scheduled = false;
+		return;
+	}
+	if (output->frame_scheduled) return;
+	output->frame_scheduled = true;
+	wlr_output_schedule_frame(output->wlr_output);
+}
+
 void shady_render_schedule_all_outputs(
 	struct shady_server *server
 ) {
@@ -351,9 +362,7 @@ void shady_render_schedule_all_outputs(
 		&server->outputs,
 		link
 	) {
-		wlr_output_schedule_frame(
-			output->wlr_output
-		);
+		shady_render_schedule_output(output);
 	}
 }
 
@@ -1177,7 +1186,7 @@ void shady_render_output_frame(
 	 * input, config changes and module actions explicitly wake rendering. Only
 	 * time-dependent simulation/animation keeps the frame loop alive. */
 	if (spatial_needs_continuous_frames(server)) {
-		wlr_output_schedule_frame(wlr_output);
+		shady_render_schedule_output(output);
 	}
 }
 
