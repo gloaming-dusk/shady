@@ -676,19 +676,32 @@ bool shady_plugin_load(struct shady_server *server, const char *path) {
 		wlr_log(WLR_ERROR, "plugin: module limit reached");
 		return false;
 	}
+	/* Never dlopen the developer-controlled source path directly. Build tools
+	 * commonly replace or truncate a .so in place, which can corrupt mappings
+	 * belonging to the currently running plugin before reload even begins.
+	 * Load a private snapshot and retain the original path only as the reload
+	 * source. */
+	char *load_path = plugin_reload_copy(path);
+	if (!load_path) {
+		wlr_log(WLR_ERROR, "plugin: failed to stage load copy for %s", path);
+		return false;
+	}
 	void *handle = NULL, *base = NULL;
 	const struct shady_module *module = NULL;
 	uint32_t abi = 0;
 	const struct shady_plugin_v2 *v2 = NULL;
-	if (!plugin_open(server, path, &handle, &base, &module, &abi, &v2)) return false;
+	bool opened = plugin_open(server, load_path, &handle, &base, &module, &abi, &v2);
+	unlink(load_path);
+	free(load_path);
+	if (!opened) return false;
 	char *path_copy = strdup(path);
 	char *name_copy = strdup(module->name);
 	if (!path_copy || !name_copy) {
 		free(path_copy);
 		free(name_copy);
+		wlr_log(WLR_ERROR, "plugin: failed to retain metadata for %s", module->name);
 		shady_event_unsubscribe_owner(server, base);
 		dlclose(handle);
-		wlr_log(WLR_ERROR, "plugin: failed to retain metadata for %s", module->name);
 		return false;
 	}
 	if (!shady_modules_register(&server->modules, module)) {

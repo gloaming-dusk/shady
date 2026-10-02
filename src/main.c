@@ -60,6 +60,42 @@ static int reap_children(int signal_number, void *data) {
 	return 0;
 }
 
+static void cleanup_server_after_setup(struct shady_server *server,
+		struct wl_event_source *sigint, struct wl_event_source *sigterm,
+		struct wl_event_source *sigchld) {
+	shady_modules_destroy_all(server);
+
+	wl_list_remove(&server->new_xdg_toplevel.link);
+	wl_list_remove(&server->new_xdg_popup.link);
+	wl_list_remove(&server->cursor_motion.link);
+	wl_list_remove(&server->cursor_motion_absolute.link);
+	wl_list_remove(&server->cursor_button.link);
+	wl_list_remove(&server->cursor_axis.link);
+	wl_list_remove(&server->cursor_frame.link);
+	wl_list_remove(&server->new_input.link);
+	wl_list_remove(&server->request_cursor.link);
+	wl_list_remove(&server->pointer_focus_change.link);
+	wl_list_remove(&server->request_set_selection.link);
+	wl_list_remove(&server->request_set_primary_selection.link);
+	wl_list_remove(&server->new_output.link);
+
+	if (sigint) wl_event_source_remove(sigint);
+	if (sigterm) wl_event_source_remove(sigterm);
+	if (sigchld) wl_event_source_remove(sigchld);
+
+	wlr_scene_node_destroy(&server->scene->tree.node);
+	wlr_xcursor_manager_destroy(server->cursor_mgr);
+	wlr_cursor_destroy(server->cursor);
+	wlr_allocator_destroy(server->allocator);
+	wlr_renderer_destroy(server->renderer);
+	wlr_backend_destroy(server->backend);
+	wl_display_destroy(server->wl_display);
+
+	shady_modules_release_states(server);
+	shady_events_finish(server);
+	shady_modules_close_plugins(server);
+}
+
 int main(int argc, char *argv[]) {
 	wlr_log_init(WLR_DEBUG, NULL);
 	char *startup_cmd = NULL;
@@ -278,17 +314,14 @@ int main(int argc, char *argv[]) {
 
 	if (!shady_modules_initialize_all(&server)) {
 		wlr_log(WLR_ERROR, "failed to initialize modules");
-		/* Most importantly for native sessions, release DRM/libseat before exit. */
-		wlr_backend_destroy(server.backend);
-		wl_display_destroy(server.wl_display);
+		cleanup_server_after_setup(&server, sigint, sigterm, sigchld);
 		return 1;
 	}
 
 	const char *socket = wl_display_add_socket_auto(server.wl_display);
 	if (!socket) {
 		wlr_log(WLR_ERROR, "failed to allocate Wayland socket in XDG_RUNTIME_DIR");
-		wlr_backend_destroy(server.backend);
-		wl_display_destroy(server.wl_display);
+		cleanup_server_after_setup(&server, sigint, sigterm, sigchld);
 		return 1;
 	}
 
@@ -296,8 +329,7 @@ int main(int argc, char *argv[]) {
 		wlr_log(WLR_ERROR, "failed to start wlroots backend");
 		if (native_mode) fprintf(stderr,
 			"Native backend start failed after acquiring the session. Check DRM master availability, GPU driver support, and whether another compositor owns this VT/GPU.\n");
-		wlr_backend_destroy(server.backend);
-		wl_display_destroy(server.wl_display);
+		cleanup_server_after_setup(&server, sigint, sigterm, sigchld);
 		return 1;
 	}
 

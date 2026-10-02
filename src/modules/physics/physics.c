@@ -1,4 +1,5 @@
 #include "physics.h"
+#include "collision.h"
 #include "../spatial/state.h"
 #include "state.h"
 #include <math.h>
@@ -18,96 +19,6 @@
 #define WINDOW_GROUND_IMPACT_TANGENT_RETAIN .58f
 #define WINDOW_REST_FRICTION_RATE 7.0f
 #define WINDOW_REST_SPEED_EPSILON .025f
-
-static float dot3(const float a[3],const float b[3]){
-	return a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
-}
-static bool sat_axis(const float v[3][3],const float h[3],const float axis[3]){
-	float l2=dot3(axis,axis);if(l2<1e-12f)return true;
-	float p0=dot3(v[0],axis),p1=dot3(v[1],axis),p2=dot3(v[2],axis);
-	float mn=fminf(p0,fminf(p1,p2)),mx=fmaxf(p0,fmaxf(p1,p2));
-	float r=h[0]*fabsf(axis[0])+h[1]*fabsf(axis[1])+h[2]*fabsf(axis[2]);
-	return !(mn>r||mx<-r);
-}
-static bool triangle_cube_overlap(const struct shady_triangle_collider*t,const float c[3],const float h[3]){
-	/* Exact triangle-vs-AABB SAT: 3 box axes, triangle normal, and the
-	 * 9 cross products between triangle edges and box axes. */
-	float v[3][3];for(int i=0;i<3;i++)for(int a=0;a<3;a++)v[i][a]=t->v[i][a]-c[a];
-	for(int a=0;a<3;a++){
-		float mn=fminf(v[0][a],fminf(v[1][a],v[2][a]));
-		float mx=fmaxf(v[0][a],fmaxf(v[1][a],v[2][a]));
-		if(mn>h[a]||mx<-h[a])return false;
-	}
-	float e[3][3];for(int i=0;i<3;i++)for(int a=0;a<3;a++)e[i][a]=v[(i+1)%3][a]-v[i][a];
-	float n[3]={e[0][1]*e[1][2]-e[0][2]*e[1][1],
-	            e[0][2]*e[1][0]-e[0][0]*e[1][2],
-	            e[0][0]*e[1][1]-e[0][1]*e[1][0]};
-	if(!sat_axis(v,h,n))return false;
-	const float box_axis[3][3]={{1,0,0},{0,1,0},{0,0,1}};
-	for(int i=0;i<3;i++)for(int j=0;j<3;j++){
-		float axis[3]={
-			e[i][1]*box_axis[j][2]-e[i][2]*box_axis[j][1],
-			e[i][2]*box_axis[j][0]-e[i][0]*box_axis[j][2],
-			e[i][0]*box_axis[j][1]-e[i][1]*box_axis[j][0]
-		};
-		if(!sat_axis(v,h,axis))return false;
-	}
-	return true;
-}
-static bool world_has_triangle_contact(const struct shady_world*w,const float c[3],const float h[3]){
-	for(size_t i=0;i<w->triangle_count;i++){
-		const struct shady_triangle_collider*t=&w->triangles[i];
-		bool broad=true;for(int a=0;a<3;a++)if(t->max[a]<c[a]-h[a]||t->min[a]>c[a]+h[a]){broad=false;break;}
-		if(broad&&triangle_cube_overlap(t,c,h))return true;
-	}
-	return false;
-}
-
-/* Axis-separated cube movement. Built-in box colliders retain their swept
- * contact behavior. Authored OBJ group boxes are broad-phase/debug only;
- * their actual faces are tested below with triangle SAT. */
-static bool sweep_cube_axis(const struct shady_world *world,float center[3],
-		const float half[3],int axis,float delta,float *velocity,float restitution){
-	if(fabsf(delta)<1e-8f)return false;
-	int a=(axis+1)%3,b=(axis+2)%3;float start=center[axis],next=start+delta,best=next;bool hit=false;
-	/* Slot zero is Shady's built-in floor. OBJ boxes follow it and must not
-	 * become solid volumes, otherwise slopes/empty space turn into walls. */
-	size_t box_count=world->triangle_count?1:world->collider_count;
-	for(size_t i=0;i<box_count;i++){
-		const struct shady_box_collider*c=&world->colliders[i];
-		const float mn[3]={c->min_x,c->min_y,c->min_z},mx[3]={c->max_x,c->max_y,c->max_z};
-		if(center[a]+half[a]<=mn[a]||center[a]-half[a]>=mx[a]||
-		   center[b]+half[b]<=mn[b]||center[b]-half[b]>=mx[b])continue;
-		if(delta>0.f&&start+half[axis]<=mn[axis]&&next+half[axis]>=mn[axis]){
-			float q=mn[axis]-half[axis];if(!hit||q<best){best=q;hit=true;}
-		}else if(delta<0.f&&start-half[axis]>=mx[axis]&&next-half[axis]<=mx[axis]){
-			float q=mx[axis]+half[axis];if(!hit||q>best){best=q;hit=true;}
-		}
-	}
-	if(!hit&&world->triangle_count){
-		float probe[3]={center[0],center[1],center[2]};probe[axis]=next;
-		if(world_has_triangle_contact(world,probe,half)){best=start;hit=true;}
-	}
-	center[axis]=hit?best:next;
-	if(hit)*velocity=-*velocity*restitution;
-	return hit;
-}
-
-void shady_physics_move_cube(const struct shady_world*world,float center[3],
-		const float target[3],float half_size){
-	float delta[3]={target[0]-center[0],target[1]-center[1],target[2]-center[2]};
-	float max_move=fmaxf(fabsf(delta[0]),fmaxf(fabsf(delta[1]),fabsf(delta[2])));
-	float max_step=half_size*.5f;
-	int steps=(int)ceilf(max_move/max_step);if(steps<1)steps=1;if(steps>64)steps=64;
-	float step[3]={delta[0]/steps,delta[1]/steps,delta[2]/steps};
-	const float half[3]={half_size,half_size,half_size};
-	float velocity=0.f;
-	for(int i=0;i<steps;i++){
-		sweep_cube_axis(world,center,half,1,step[1],&velocity,0.f);
-		sweep_cube_axis(world,center,half,0,step[0],&velocity,0.f);
-		sweep_cube_axis(world,center,half,2,step[2],&velocity,0.f);
-	}
-}
 
 bool shady_physics_window_body(const struct shady_toplevel *t,float logical_w,float logical_h,struct shady_window_body *body){
 	if(!t||!body||logical_h<=0.f)return false;
@@ -176,11 +87,11 @@ void shady_physics_update(struct shady_server *server,float dt,float logical_w,f
 		float step_dt=dt/(float)steps;
 		bool hit_x=false,hit_y=false,hit_z=false;
 		for(int step=0;step<steps;step++){
-			hit_y|=sweep_cube_axis(&shady_spatial_state(server)->runtime.world,center,half,1,
+			hit_y|=shady_physics_sweep_cube_axis(&shady_spatial_state(server)->runtime.world,center,half,1,
 				shady_physics_toplevel_state(t)->vy*step_dt,&shady_physics_toplevel_state(t)->vy,restitution);
-			hit_x|=sweep_cube_axis(&shady_spatial_state(server)->runtime.world,center,half,0,
+			hit_x|=shady_physics_sweep_cube_axis(&shady_spatial_state(server)->runtime.world,center,half,0,
 				shady_physics_toplevel_state(t)->vx*step_dt,&shady_physics_toplevel_state(t)->vx,restitution);
-			hit_z|=sweep_cube_axis(&shady_spatial_state(server)->runtime.world,center,half,2,
+			hit_z|=shady_physics_sweep_cube_axis(&shady_spatial_state(server)->runtime.world,center,half,2,
 				shady_physics_toplevel_state(t)->vz*step_dt,&shady_physics_toplevel_state(t)->vz,restitution);
 		}
 		center_x=center[0];center_y=center[1];shady_spatial_toplevel_state(t)->z=center[2];

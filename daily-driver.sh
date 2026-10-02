@@ -37,11 +37,16 @@ configure() {
 build() {
   configure
   ninja -C "$BUILD_DIR"
+  ninja -C "$BUILD_DIR" libshady-plugin-counter.so libshady-plugin-counter-bad.so
 }
 
 test_daily() {
+  meson test -C "$BUILD_DIR" module-resolver math3d physics-collision --print-errorlogs
   SHADY_DAILY_BUILD_DIR="$BUILD_DIR" ./tests/daily-driver-smoke.sh
   SHADY_DAILY_BUILD_DIR="$BUILD_DIR" ./tests/render-idle.sh
+  SHADY_DAILY_BUILD_DIR="$BUILD_DIR" bash ./tests/startup-cleanup.sh
+  SHADY_DAILY_BUILD_DIR="$BUILD_DIR" bash ./tests/plugin-reload.sh
+  SHADY_DAILY_BUILD_DIR="$BUILD_DIR" bash ./tests/plugin-rollback.sh
 }
 
 case "${1:-all}" in

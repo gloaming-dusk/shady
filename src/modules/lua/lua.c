@@ -183,7 +183,8 @@ static int l_shady_camera(lua_State *L){
 	else return luaL_error(L, "unknown camera property: %s", key);
 	return 0;
 }
-static int l_shady_quit(lua_State *L){(void)L;if(lua_server->wl_display)wl_display_terminate(lua_server->wl_display);return 0;}
+static void lua_quit_idle(void *data){wl_display_terminate(data);}
+static int l_shady_quit(lua_State *L){(void)L;if(lua_server->wl_display){struct wl_event_loop*loop=wl_display_get_event_loop(lua_server->wl_display);if(!loop||!wl_event_loop_add_idle(loop,lua_quit_idle,lua_server->wl_display))wl_display_terminate(lua_server->wl_display);}return 0;}
 static int l_shady_toggle_launcher(lua_State *L){(void)L;shady_shell_protocol_toggle_launcher(lua_server);return 0;}
 static int l_shady_spawn(lua_State *L){
 	const char *command=luaL_checkstring(L,1);
@@ -216,7 +217,7 @@ static int l_seat_index(lua_State *L){struct lua_seat_handle*h=luaL_checkudata(L
 static int l_seat_tostring(lua_State *L){struct lua_seat_handle*h=luaL_checkudata(L,1,SHADY_LUA_SEAT_MT);lua_pushfstring(L,"Seat<%s>",h->ptr&&h->ptr->name?h->ptr->name:"");return 1;}
 
 static int l_module_index(lua_State *L){struct lua_module_handle*h=luaL_checkudata(L,1,SHADY_LUA_MODULE_MT);const char*k=luaL_checkstring(L,2);size_t i=0;if(!h->ptr||!lua_module_registered(h->ptr,&i)){lua_pushnil(L);return 1;}if(!strcmp(k,"name")){lua_pushstring(L,h->ptr->name?h->ptr->name:"");return 1;}if(!strcmp(k,"active")){lua_pushboolean(L,lua_server->modules.active[i]);return 1;}lua_pushnil(L);return 1;}
-static int l_module_tostring(lua_State *L){struct lua_module_handle*h=luaL_checkudata(L,1,SHADY_LUA_MODULE_MT);lua_pushfstring(L,"Module<%s>",h->ptr&&h->ptr->name?h->ptr->name:"");return 1;}
+static int l_module_tostring(lua_State *L){struct lua_module_handle*h=luaL_checkudata(L,1,SHADY_LUA_MODULE_MT);if(!h->ptr||!lua_module_registered(h->ptr,NULL)){lua_pushliteral(L,"Module<dead>");return 1;}lua_pushfstring(L,"Module<%s>",h->ptr->name?h->ptr->name:"");return 1;}
 
 static void register_object_types(lua_State *L){struct{const char*name;lua_CFunction index;lua_CFunction tostring;}mts[]={{SHADY_LUA_WINDOW_MT,l_window_index,l_window_tostring},{SHADY_LUA_OUTPUT_MT,l_output_index,l_output_tostring},{SHADY_LUA_SEAT_MT,l_seat_index,l_seat_tostring},{SHADY_LUA_MODULE_MT,l_module_index,l_module_tostring}};for(size_t i=0;i<sizeof(mts)/sizeof(mts[0]);i++){luaL_newmetatable(L,mts[i].name);lua_pushcfunction(L,mts[i].index);lua_setfield(L,-2,"__index");lua_pushcfunction(L,mts[i].tostring);lua_setfield(L,-2,"__tostring");lua_pop(L,1);}}
 

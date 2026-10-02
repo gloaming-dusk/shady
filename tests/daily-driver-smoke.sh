@@ -15,8 +15,12 @@ tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 status="$tmp/status"
 log="$tmp/compositor.log"
+runtime="$tmp/runtime"
+mkdir -p "$runtime"
+chmod 700 "$runtime"
 : >"$status"
 
+export XDG_RUNTIME_DIR="$runtime"
 export SHADY_TEST_STATUS="$status"
 export SHADY_LUA_INIT="$ROOT/tests/daily-driver-init.lua"
 export WLR_BACKENDS=headless
@@ -76,6 +80,12 @@ if ! grep -q '^WINDOW_CHURN=PASS$' "$status"; then
   cat "$status" >&2
   exit 1
 fi
+if ! grep -q '^LUA_STALE_WINDOW=PASS$' "$status"; then
+  echo "daily-driver: FAIL: stale Lua window handle was not verified" >&2
+  cat "$status" >&2
+  exit 1
+fi
+
 if ! grep -q 'daily-driver-test: mapped' "$log" || \
    ! grep -q 'daily-driver-test: unmapped' "$log" || \
    ! grep -q 'daily-driver-test: destroyed' "$log"; then

@@ -273,12 +273,19 @@ static void keyboard_handle_destroy(struct wl_listener *listener, void *data) {
 	(void)data;
 	struct shady_keyboard *keyboard =
 		wl_container_of(listener, keyboard, destroy);
+	struct shady_server *server = keyboard->server;
 	wl_list_remove(&keyboard->modifiers.link);
 	wl_list_remove(&keyboard->key.link);
 	wl_list_remove(&keyboard->destroy.link);
 	wl_list_remove(&keyboard->link);
 	if (keyboard->binding_state) xkb_state_unref(keyboard->binding_state);
 	free(keyboard);
+
+	uint32_t caps = WL_SEAT_CAPABILITY_POINTER;
+	if (!wl_list_empty(&server->keyboards)) {
+		caps |= WL_SEAT_CAPABILITY_KEYBOARD;
+	}
+	wlr_seat_set_capabilities(server->seat, caps);
 }
 
 static void server_new_keyboard(struct shady_server *server,

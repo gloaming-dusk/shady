@@ -189,6 +189,7 @@ struct shady_toplevel {
 	struct wl_listener request_fullscreen;
 	int last_surface_width;
 	int last_surface_height;
+	bool mapped;
 	bool maximized;
 	bool fullscreen;
 	bool fullscreen_restore_maximized;

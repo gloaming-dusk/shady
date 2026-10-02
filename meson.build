@@ -105,6 +105,7 @@ scene_effects_enabled = spatial_enabled and get_option('scene_effects').enabled(
 if physics_enabled
   shady_sources += [
     'src/modules/physics/physics.c',
+    'src/modules/physics/collision.c',
     'src/modules/physics/module.c',
   ]
 endif
@@ -213,8 +214,65 @@ shared_module('shady-plugin-counter',
   build_by_default: false,
   install: false)
 
+shared_module('shady-plugin-counter-bad',
+  'tests/plugin-counter-bad.c',
+  include_directories: include_directories('include'),
+  build_by_default: false,
+  install: false)
+
 shared_module('shady-plugin-orbit-layout',
   'examples/plugins/orbit_layout.c',
   include_directories: include_directories('include'),
   build_by_default: false,
   install: false)
+
+module_resolver_test = executable('module-resolver-test',
+  [
+    'tests/module-resolver.c',
+    'src/module/module.c',
+    'src/event/event.c',
+  ],
+  c_args: [
+    '-DWLR_USE_UNSTABLE',
+    '-D_POSIX_C_SOURCE=200809L',
+    '-DSHADY_HAS_SPATIAL=0',
+    '-DSHADY_HAS_LUA=0',
+    '-DSHADY_HAS_PHYSICS=0',
+    '-DSHADY_HAS_FPS=0',
+    '-DSHADY_HAS_WINDOW_MOTION=0',
+    '-DSHADY_HAS_CLOSE_ANIMATION=0',
+    '-DSHADY_HAS_SCENE_EFFECTS=0',
+  ],
+  include_directories: include_directories('src', 'include'),
+  dependencies: [wlroots, dependency('wayland-server'), dependency('xkbcommon'), dl],
+  install: false)
+
+test('module-resolver', module_resolver_test)
+
+math3d_test = executable('math3d-test',
+  [
+    'tests/math3d.c',
+    'src/render/math3d.c',
+  ],
+  c_args: [
+    '-D_POSIX_C_SOURCE=200809L',
+  ],
+  include_directories: include_directories('src'),
+  dependencies: [cc.find_library('m', required: true)],
+  install: false)
+
+test('math3d', math3d_test)
+
+physics_collision_test = executable('physics-collision-test',
+  [
+    'tests/physics-collision.c',
+    'src/modules/physics/collision.c',
+  ],
+  c_args: [
+    '-D_POSIX_C_SOURCE=200809L',
+  ],
+  include_directories: include_directories('src'),
+  dependencies: [cc.find_library('m', required: true)],
+  install: false)
+
+test('physics-collision', physics_collision_test)

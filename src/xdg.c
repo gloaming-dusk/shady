@@ -244,6 +244,7 @@ static void xdg_toplevel_map(struct wl_listener *listener, void *data) {
 	struct shady_toplevel *toplevel = wl_container_of(listener, toplevel, map);
 
 	wl_list_insert(&toplevel->server->toplevels, &toplevel->link);
+	toplevel->mapped = true;
 	if (toplevel->xdg_toplevel->requested.maximized ||
 			toplevel->xdg_toplevel->requested.fullscreen) {
 		apply_requested_toplevel_state(toplevel);
@@ -272,6 +273,7 @@ static void xdg_toplevel_unmap(struct wl_listener *listener, void *data) {
 	shady_event_emit_window(server, SHADY_EVENT_WINDOW_UNMAPPED, toplevel);
 	shady_modules_toplevel_unmap(toplevel);
 	wl_list_remove(&toplevel->link);
+	toplevel->mapped = false;
 
 	if (was_focused && !wl_list_empty(&server->toplevels)) {
 		struct shady_toplevel *next;
@@ -330,6 +332,14 @@ static void xdg_toplevel_destroy(struct wl_listener *listener, void *data) {
 	}
 	shady_event_emit_window(toplevel->server, SHADY_EVENT_WINDOW_DESTROYED, toplevel);
 	shady_modules_toplevel_destroy(toplevel);
+
+	/* Normally xdg-surface unmap runs before destroy and removes this node from
+	 * server->toplevels. Keep the destroy path safe even if that ordering is
+	 * skipped. */
+	if (toplevel->mapped) {
+		wl_list_remove(&toplevel->link);
+		toplevel->mapped = false;
+	}
 
 	wl_list_remove(&toplevel->map.link);
 	wl_list_remove(&toplevel->unmap.link);
