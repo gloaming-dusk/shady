@@ -8,6 +8,7 @@
 #include <wlr/types/wlr_output.h>
 #include <wlr/types/wlr_output_layout.h>
 #include <wlr/types/wlr_pointer.h>
+#include <wlr/types/wlr_keyboard.h>
 #include <wlr/types/wlr_scene.h>
 #include <wlr/types/wlr_seat.h>
 #include <wlr/types/wlr_xdg_shell.h>
@@ -102,6 +103,24 @@ bool shady_fps_handle_motion(struct shady_server*s,double dx,double dy){if(!shad
 bool shady_fps_handle_button(struct shady_server*s,uint32_t button,uint32_t state){if(!shady_spatial_state(s)->runtime.camera.first_person||!shady_fps_state_for(s)->input_capture)return false;if(button==BTN_RIGHT&&state==WL_POINTER_BUTTON_STATE_PRESSED&&shady_fps_state_for(s)->held_toplevel){struct shady_vec3 f;shady_camera_basis(&shady_spatial_state(s)->runtime.camera,NULL,NULL,&f);struct shady_toplevel*t=shady_fps_state_for(s)->held_toplevel;float v=2.6f;shady_physics_set_velocity(t,f.x*v,f.y*v+shady_spatial_state(s)->runtime.camera.vel_y,f.z*v);shady_window_motion_add_impulse(s,t,f.x*.035f,f.y*.035f,-f.y*1.1f,f.x*.7f);shady_fps_state_for(s)->held_toplevel=NULL;shady_render_schedule_all_outputs(s);return true;}if(button==BTN_LEFT&&state==WL_POINTER_BUTTON_STATE_PRESSED){if(shady_fps_state_for(s)->held_toplevel)shady_fps_state_for(s)->held_toplevel=NULL;else{float d=0,hx=0,hy=0,hz=0;struct shady_toplevel*t=shady_toplevel_at_camera_center_hit(s,&d,&hx,&hy,&hz);if(t&&d<=HOLD_MAX){struct wlr_surface*sf=t->xdg_toplevel->base->surface;struct wlr_output*o=NULL;if(!wl_list_empty(&s->outputs)){struct shady_output*out=wl_container_of(s->outputs.next,out,link);o=out->wlr_output;}if(o&&sf->current.height>0){double ox=0,oy=0;wlr_output_layout_output_coords(s->output_layout,o,&ox,&oy);float lw=(float)o->width/o->scale,lh=(float)o->height/o->scale,tw=(float)sf->current.width,th=(float)sf->current.height;float cx=((float)(t->scene_tree->node.x+ox)+tw*.5f-lw*.5f)/lh;float cy=(lh*.5f-((float)(t->scene_tree->node.y+oy)+th*.5f))/lh;shady_fps_state_for(s)->grab_offset_x=hx-cx;shady_fps_state_for(s)->grab_offset_y=hy-cy;shady_fps_state_for(s)->grab_offset_z=hz-shady_spatial_toplevel_state(t)->z;
 float tilt_x=0.f,tilt_y=0.f;shady_window_motion_get_tilt(t,&tilt_x,&tilt_y);float model[16],inv[16];shady_window_model(model,(float)(t->scene_tree->node.x+ox),(float)(t->scene_tree->node.y+oy),tw,th,lw,lh,shady_spatial_toplevel_state(t)->z,tilt_x,tilt_y);if(shady_mat4_invert(inv,model)){shady_fps_state_for(s)->grab_local_x=inv[0]*hx+inv[4]*hy+inv[8]*hz+inv[12]-.5f;shady_fps_state_for(s)->grab_local_y=inv[1]*hx+inv[5]*hy+inv[9]*hz+inv[13]-.5f;shady_fps_state_for(s)->grab_local_z=inv[2]*hx+inv[6]*hy+inv[10]*hz+inv[14];}else{shady_fps_state_for(s)->grab_local_x=shady_fps_state_for(s)->grab_local_y=shady_fps_state_for(s)->grab_local_z=0;}}else{shady_fps_state_for(s)->grab_offset_x=shady_fps_state_for(s)->grab_offset_y=shady_fps_state_for(s)->grab_offset_z=0;shady_fps_state_for(s)->grab_local_x=shady_fps_state_for(s)->grab_local_y=shady_fps_state_for(s)->grab_local_z=0;}shady_fps_state_for(s)->held_toplevel=t;shady_fps_state_for(s)->hold_distance=d;if(shady_fps_state_for(s)->hold_distance<HOLD_MIN)shady_fps_state_for(s)->hold_distance=HOLD_MIN;focus_toplevel(t);}}shady_render_schedule_all_outputs(s);}return true;}
 bool shady_fps_handle_axis(struct shady_server*s,struct wlr_pointer_axis_event*e){if(!shady_spatial_state(s)->runtime.camera.first_person||!shady_fps_state_for(s)->input_capture||!shady_fps_state_for(s)->held_toplevel||e->orientation!=WL_POINTER_AXIS_VERTICAL_SCROLL)return false;shady_fps_state_for(s)->hold_distance+=(float)e->delta*.0025f;if(shady_fps_state_for(s)->hold_distance<HOLD_MIN)shady_fps_state_for(s)->hold_distance=HOLD_MIN;if(shady_fps_state_for(s)->hold_distance>HOLD_MAX)shady_fps_state_for(s)->hold_distance=HOLD_MAX;shady_render_schedule_all_outputs(s);return true;}
+static void sync_movement_keys(struct shady_server *s) {
+	struct shady_fps_state *f = shady_fps_state_for(s);
+	if (!shady_spatial_state(s)->runtime.camera.first_person || !f->input_capture) return;
+	struct wlr_keyboard *keyboard = wlr_seat_get_keyboard(s->seat);
+	if (!keyboard) return;
+	bool forward=false,back=false,left=false,right=false;
+	for (size_t i=0;i<keyboard->num_keycodes;i++) {
+		switch (keyboard->keycodes[i]) {
+		case KEY_W: forward=true; break;
+		case KEY_S: back=true; break;
+		case KEY_A: left=true; break;
+		case KEY_D: right=true; break;
+		default: break;
+		}
+	}
+	f->forward=forward;f->back=back;f->left=left;f->right=right;
+}
+
 static bool player_hits_solid(const struct shady_world*w,float x,float eye_y,float z){
 	float feet=eye_y-EYE_HEIGHT, head=eye_y+.05f;
 	struct shady_box_collider body={x-PLAYER_RADIUS,x+PLAYER_RADIUS,feet+.01f,head,z-PLAYER_RADIUS,z+PLAYER_RADIUS};
@@ -124,6 +143,7 @@ static bool player_step_y(const struct shady_world*w,float x,float feet_y,float 
 }
 void shady_fps_update(struct shady_server*s,float dt){
 	struct shady_camera*c=&shady_spatial_state(s)->runtime.camera;if(!c->first_person)return;
+	sync_movement_keys(s);
 	const struct shady_world *world = &shady_spatial_state(s)->runtime.world;
 	float sy=sinf(c->yaw),cy=cosf(c->yaw),fx=-sy,fz=-cy,rx=cy,rz=-sy,mx=0,mz=0;
 	if(shady_fps_state_for(s)->forward){mx+=fx;mz+=fz;}if(shady_fps_state_for(s)->back){mx-=fx;mz-=fz;}if(shady_fps_state_for(s)->right){mx+=rx;mz+=rz;}if(shady_fps_state_for(s)->left){mx-=rx;mz-=rz;}
