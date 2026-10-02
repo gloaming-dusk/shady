@@ -31,7 +31,8 @@ static const struct slot slots[] = {
 static shady_window first_mapped_except(shady_window excluded) {
 	for (size_t i = 0; i < api->window_count(host); i++) {
 		shady_window window = api->window_at(host, i);
-		if (window && window != excluded && api->window_mapped(window))
+		if (window && window != excluded && api->window_mapped(window) &&
+				api->window_visible(window))
 			return window;
 	}
 	return NULL;
@@ -40,6 +41,11 @@ static shady_window first_mapped_except(shady_window excluded) {
 static bool mapped(shady_window window) {
 	return window && api->window_valid(host, window) &&
 		api->window_mapped(window);
+}
+
+static bool layout_managed(shady_window window) {
+	return mapped(window) && api->window_visible(window) &&
+		!api->window_maximized(window) && !api->window_fullscreen(window);
 }
 
 static void place_one(shady_window window, const struct slot *slot,
@@ -60,7 +66,7 @@ static void place_windows(void) {
 	size_t visible = 0;
 	for (size_t i = 0; i < api->window_count(host); i++) {
 		shady_window window = api->window_at(host, i);
-		if (window && api->window_mapped(window))
+		if (layout_managed(window))
 			visible++;
 	}
 	if (visible == 0) {
@@ -80,13 +86,13 @@ static void place_windows(void) {
 	if (height <= 0) height = 720;
 
 	/* The focused window owns the readable, central primary position. */
-	if (focused_window)
+	if (layout_managed(focused_window))
 		place_one(focused_window, &slots[0], width, height);
 
 	size_t satellite = 0;
 	for (size_t i = 0; i < api->window_count(host); i++) {
 		shady_window window = api->window_at(host, i);
-		if (!window || window == focused_window || !api->window_mapped(window))
+		if (!window || window == focused_window || !layout_managed(window))
 			continue;
 
 		size_t slot_index = 1 +
@@ -124,6 +130,7 @@ static void on_event(shady_host event_host,
 		place_windows();
 		break;
 	case SHADY_EVENT_WINDOW_RESIZED:
+	case SHADY_EVENT_WINDOW_STATE_CHANGED:
 		place_windows();
 		break;
 	case SHADY_EVENT_WINDOW_UNMAPPED:
@@ -182,6 +189,7 @@ const struct shady_module *shady_plugin_entry_v1(
 	api->subscribe_event(host, SHADY_EVENT_WINDOW_MAPPED, on_event, NULL);
 	api->subscribe_event(host, SHADY_EVENT_WINDOW_FOCUSED, on_event, NULL);
 	api->subscribe_event(host, SHADY_EVENT_WINDOW_RESIZED, on_event, NULL);
+	api->subscribe_event(host, SHADY_EVENT_WINDOW_STATE_CHANGED, on_event, NULL);
 	api->subscribe_event(host, SHADY_EVENT_WINDOW_UNMAPPED, on_event, NULL);
 	api->subscribe_event(host, SHADY_EVENT_WINDOW_DESTROYED, on_event, NULL);
 	return &module;

@@ -4,6 +4,8 @@
 #include <wayland-server-core.h>
 #include <wlr/types/wlr_cursor.h>
 #include <wlr/types/wlr_keyboard.h>
+#include <wlr/types/wlr_output.h>
+#include <wlr/types/wlr_output_layout.h>
 #include <wlr/types/wlr_scene.h>
 #include <wlr/types/wlr_seat.h>
 #include <wlr/types/wlr_xdg_shell.h>
@@ -11,9 +13,109 @@
 
 #include "shady.h"
 #include "module/module.h"
+#include "render/render.h"
+
+static struct wlr_output *toplevel_output(struct shady_toplevel *toplevel) {
+	struct shady_server *server = toplevel->server;
+	if (toplevel->fullscreen && toplevel->xdg_toplevel->requested.fullscreen_output) {
+		return toplevel->xdg_toplevel->requested.fullscreen_output;
+	}
+	struct wlr_box *geo = &toplevel->xdg_toplevel->base->geometry;
+	double cx = toplevel->scene_tree->node.x + geo->x + geo->width * 0.5;
+	double cy = toplevel->scene_tree->node.y + geo->y + geo->height * 0.5;
+	struct wlr_output *output = wlr_output_layout_output_at(server->output_layout, cx, cy);
+	if (output) return output;
+	if (wl_list_empty(&server->outputs)) return NULL;
+	struct shady_output *fallback = wl_container_of(server->outputs.next, fallback, link);
+	return fallback->wlr_output;
+}
+
+static void save_restore_geometry(struct shady_toplevel *toplevel) {
+	if (toplevel->restore_geometry_valid) return;
+	struct wlr_surface *surface = toplevel->xdg_toplevel->base->surface;
+	int width = surface->current.width;
+	int height = surface->current.height;
+	if (width <= 0 || height <= 0) {
+		struct wlr_box *geo = &toplevel->xdg_toplevel->base->geometry;
+		width = geo->width;
+		height = geo->height;
+	}
+	toplevel->restore_geometry = (struct wlr_box){
+		.x = toplevel->scene_tree->node.x,
+		.y = toplevel->scene_tree->node.y,
+		.width = width,
+		.height = height,
+	};
+	toplevel->restore_geometry_valid = width > 0 && height > 0;
+}
+
+static void apply_toplevel_state_values(struct shady_toplevel *toplevel,
+		bool want_maximized, bool want_fullscreen) {
+	struct wlr_xdg_toplevel *xdg = toplevel->xdg_toplevel;
+	struct shady_server *server = toplevel->server;
+	bool old_maximized = toplevel->maximized;
+	bool old_fullscreen = toplevel->fullscreen;
+	if (want_fullscreen) want_maximized = false;
+
+	if ((want_fullscreen || want_maximized) && !toplevel->fullscreen && !toplevel->maximized) {
+		save_restore_geometry(toplevel);
+	}
+
+	toplevel->fullscreen = want_fullscreen;
+	toplevel->maximized = want_maximized;
+	wlr_xdg_toplevel_set_fullscreen(xdg, want_fullscreen);
+	wlr_xdg_toplevel_set_maximized(xdg, want_maximized);
+
+	if (want_fullscreen || want_maximized) {
+		struct wlr_output *output = toplevel_output(toplevel);
+		if (output) {
+			struct wlr_box box = {0};
+			wlr_output_layout_get_box(server->output_layout, output, &box);
+			wlr_scene_node_set_position(&toplevel->scene_tree->node, box.x, box.y);
+			wlr_xdg_toplevel_set_size(xdg, box.width, box.height);
+			/* xdg_toplevel.configure_bounds was added in xdg-shell v4. */
+			if (xdg->base->client->shell->version >= 4) {
+				wlr_xdg_toplevel_set_bounds(xdg, box.width, box.height);
+			}
+		}
+	} else if (toplevel->restore_geometry_valid) {
+		struct wlr_box box = toplevel->restore_geometry;
+		wlr_scene_node_set_position(&toplevel->scene_tree->node, box.x, box.y);
+		wlr_xdg_toplevel_set_size(xdg, box.width, box.height);
+		toplevel->restore_geometry_valid = false;
+	}
+	if (old_maximized != toplevel->maximized ||
+			old_fullscreen != toplevel->fullscreen) {
+		shady_event_emit_window(server, SHADY_EVENT_WINDOW_STATE_CHANGED, toplevel);
+	}
+	shady_render_schedule_all_outputs(server);
+}
+
+static void apply_requested_toplevel_state(struct shady_toplevel *toplevel) {
+	apply_toplevel_state_values(toplevel,
+		toplevel->xdg_toplevel->requested.maximized,
+		toplevel->xdg_toplevel->requested.fullscreen);
+}
+
+void shady_toplevel_set_maximized(struct shady_toplevel *toplevel, bool enabled) {
+	if (!toplevel) return;
+	toplevel->fullscreen_restore_maximized = false;
+	apply_toplevel_state_values(toplevel, enabled, false);
+}
+
+void shady_toplevel_set_fullscreen(struct shady_toplevel *toplevel, bool enabled) {
+	if (!toplevel) return;
+	if (enabled && !toplevel->fullscreen) {
+		toplevel->fullscreen_restore_maximized = toplevel->maximized;
+	}
+	bool restore_maximized = !enabled && toplevel->fullscreen_restore_maximized;
+	if (!enabled) toplevel->fullscreen_restore_maximized = false;
+	apply_toplevel_state_values(toplevel, restore_maximized, enabled);
+}
 
 void focus_toplevel(struct shady_toplevel *toplevel) {
-	if (toplevel == NULL) {
+	if (toplevel == NULL || !toplevel->scene_tree ||
+			!toplevel->scene_tree->node.enabled) {
 		return;
 	}
 	struct shady_server *server = toplevel->server;
@@ -44,6 +146,7 @@ void focus_toplevel(struct shady_toplevel *toplevel) {
 
 static void begin_interactive(struct shady_toplevel *toplevel,
 		enum shady_cursor_mode mode, uint32_t edges) {
+	if (toplevel->maximized || toplevel->fullscreen) return;
 	struct shady_server *server = toplevel->server;
 
 	server->grabbed_toplevel = toplevel;
@@ -81,6 +184,10 @@ static void xdg_toplevel_map(struct wl_listener *listener, void *data) {
 	struct shady_toplevel *toplevel = wl_container_of(listener, toplevel, map);
 
 	wl_list_insert(&toplevel->server->toplevels, &toplevel->link);
+	if (toplevel->xdg_toplevel->requested.maximized ||
+			toplevel->xdg_toplevel->requested.fullscreen) {
+		apply_requested_toplevel_state(toplevel);
+	}
 	shady_modules_toplevel_map(toplevel);
 	shady_event_emit_window(toplevel->server, SHADY_EVENT_WINDOW_MAPPED, toplevel);
 	focus_toplevel(toplevel);
@@ -107,9 +214,13 @@ static void xdg_toplevel_unmap(struct wl_listener *listener, void *data) {
 	wl_list_remove(&toplevel->link);
 
 	if (was_focused && !wl_list_empty(&server->toplevels)) {
-		struct shady_toplevel *next = wl_container_of(
-			server->toplevels.next, next, link);
-		focus_toplevel(next);
+		struct shady_toplevel *next;
+		wl_list_for_each(next, &server->toplevels, link) {
+			if (next->scene_tree && next->scene_tree->node.enabled) {
+				focus_toplevel(next);
+				break;
+			}
+		}
 	}
 }
 
@@ -120,6 +231,12 @@ static void xdg_toplevel_commit(struct wl_listener *listener, void *data) {
 
 	if (toplevel->xdg_toplevel->base->initial_commit) {
 		wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, 0, 0);
+		/* xdg_toplevel.wm_capabilities was added in xdg-shell v5. */
+		if (toplevel->xdg_toplevel->base->client->shell->version >= 5) {
+			wlr_xdg_toplevel_set_wm_capabilities(toplevel->xdg_toplevel,
+				WLR_XDG_TOPLEVEL_WM_CAPABILITIES_MAXIMIZE |
+				WLR_XDG_TOPLEVEL_WM_CAPABILITIES_FULLSCREEN);
+		}
 	}
 
 	shady_modules_toplevel_commit(toplevel);
@@ -180,9 +297,7 @@ static void xdg_toplevel_request_maximize(
 	(void)data;
 	struct shady_toplevel *toplevel =
 		wl_container_of(listener, toplevel, request_maximize);
-	if (toplevel->xdg_toplevel->base->initialized) {
-		wlr_xdg_surface_schedule_configure(toplevel->xdg_toplevel->base);
-	}
+	apply_requested_toplevel_state(toplevel);
 }
 
 static void xdg_toplevel_request_fullscreen(
@@ -190,9 +305,7 @@ static void xdg_toplevel_request_fullscreen(
 	(void)data;
 	struct shady_toplevel *toplevel =
 		wl_container_of(listener, toplevel, request_fullscreen);
-	if (toplevel->xdg_toplevel->base->initialized) {
-		wlr_xdg_surface_schedule_configure(toplevel->xdg_toplevel->base);
-	}
+	apply_requested_toplevel_state(toplevel);
 }
 
 void server_new_xdg_toplevel(struct wl_listener *listener, void *data) {

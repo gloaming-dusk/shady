@@ -205,7 +205,7 @@ shady.bind("Ctrl+Alt+q", function()
 end)
 ```
 
-Supported modifier names are `Alt`, `Shift`, `Ctrl`/`Control`, and `Super`/`Logo`.
+Supported modifier names are `Alt`, `Shift`, `Ctrl`/`Control`, and `Super`/`Logo`. Compositor bindings are matched against the keymap's unmodified base keysym plus a separate modifier mask, so combinations such as `Super+Shift+1` and `Super+Shift+Q` do not depend on the shifted printable symbol (`!`, `Q`, etc.).
 
 ### Event API
 
@@ -228,9 +228,9 @@ end)
 shady.off(token)
 ```
 
-Current event names are `window.created`, `window.mapped`, `window.unmapped`, `window.focused`, `window.resized`, `window.destroyed`, `output.added`, `output.removed`, `module.started`, and `module.stopped`. Window lifecycle ordering is `created -> mapped -> focused` and shutdown normally follows `unmapped -> destroyed`.
+Current event names are `window.created`, `window.mapped`, `window.unmapped`, `window.focused`, `window.resized`, `window.state_changed`, `window.destroyed`, `output.added`, `output.removed`, `workspace.changed`, `module.started`, and `module.stopped`. Window lifecycle ordering is `created -> mapped -> focused` and shutdown normally follows `unmapped -> destroyed`.
 
-Window callbacks receive `Window` userdata rather than plain tables. Existing property syntax such as `window.title`, `window.app_id`, and `window.z` is preserved; windows also expose `window.mapped`, `window:focus()`, and `window:close()`. Handles validate liveness before dereferencing so stale Lua references degrade to `nil`/`false` instead of touching freed compositor state.
+Window callbacks receive `Window` userdata rather than plain tables. Properties include `title`, `app_id`, `mapped`, `visible`, `workspace`, `maximized`, `fullscreen`, and spatial `z`. Methods include `window:focus()`, `window:close()`, `window:maximize([enabled])`, `window:set_fullscreen([enabled])`, and `window:move_to_workspace(name)`. Handles validate liveness before dereferencing so stale Lua references degrade to `nil`/`false` instead of touching freed compositor state.
 
 ### Runtime API
 
@@ -244,6 +244,10 @@ shady.toggle_fps()
 shady.quit()
 
 local windows = shady.windows()
+local focused = shady.focused_window()
+local current = shady.current_workspace()
+local workspaces = shady.workspaces()
+shady.workspace("code")
 shady.expand_all()
 shady.fold_all()
 shady.respawn_all()
@@ -258,7 +262,7 @@ shady.camera("target_z", -1.0)
 
 `shady.spawn(command)` launches a command asynchronously through `sh -lc` and returns whether the child process was created successfully. Shady reaps exited children through the Wayland event loop.
 
-`shady.windows()` returns live `Window` objects. The same object model also exposes `shady.outputs()` (`Output` objects with `name`, `width`, `height`, `scale`), `shady.seat()` (`Seat.name`), and `shady.modules()` (`Module.name`, `Module.active`). This mirrors the opaque Window/Output/Seat/Module handles in the C plugin API.
+`shady.windows()` returns live mapped `Window` objects, including windows on inactive workspaces; inspect `window.visible` to distinguish the current workspace. `shady.focused_window()` returns the keyboard-focused window or `nil`. `shady.workspace(name)` lazily creates/switches named workspaces, while `shady.current_workspace()` and `shady.workspaces()` expose the current workspace and known names. The same object model also exposes `shady.outputs()` (`Output` objects with `name`, `width`, `height`, `scale`), `shady.seat()` (`Seat.name`), and `shady.modules()` (`Module.name`, `Module.active`). This mirrors the opaque Window/Output/Seat/Module handles in the C plugin API.
 
 ## 3D environments
 
@@ -346,7 +350,7 @@ Shady now has a built-in module host. Modules own their runtime state and option
 
 State ownership follows the same boundary. The `spatial` foundation owns only shared camera/world/timing state plus each window's Z coordinate. Physics owns gravity and per-window velocity, FPS owns capture/grab/expanded state, window-motion owns wobble/tilt state, and close-animation owns its per-window state machine. Render and picking code consume those features through public module APIs/read-only accessors rather than embedding their state inside spatial window objects.
 
-Current built-in modules are `desktop-protocols`, `spatial`, `window-motion`, `physics`, `fps`, `close-animation`, `scene-effects`, and `lua`. `spatial` provides the shared 3D renderer/window-state capability; the other spatial features are independent submodules that require or optionally consume those capabilities. Lua follows whichever optional capabilities are present and scripts can feature-detect them with `shady.has_capability(...)`.
+Current built-in modules are `desktop-protocols`, `workspace`, `spatial`, `window-motion`, `physics`, `fps`, `close-animation`, `scene-effects`, and `lua`. `workspace` provides `desktop.workspace` and owns named workspace membership/visibility per window. `spatial` provides the shared 3D renderer/window-state capability; the other spatial features are independent submodules that require or optionally consume those capabilities. Lua follows whichever optional capabilities are present and scripts can feature-detect them with `shady.has_capability(...)`.
 
 For example, all of these are valid build shapes:
 
@@ -403,7 +407,7 @@ const struct shady_module *shady_plugin_entry_v1(
 }
 ```
 
-The host API is object-oriented around opaque `shady_host`, `shady_window`, `shady_output`, `shady_seat`, and `shady_module_handle` values. It exposes object enumeration and queries, window validity/focus/close operations, module/window state access for module-owned data, logging, capability checks, config mutation, render scheduling, compositor termination, and event subscriptions for the same event stream used by Lua. `subscribe_event_handle()` returns a `shady_subscription_id` that can be removed with `unsubscribe_event()`. The older boolean `subscribe_event()` remains available as a convenience wrapper.
+The host API is object-oriented around opaque `shady_host`, `shady_window`, `shady_output`, `shady_seat`, and `shady_module_handle` values. It exposes object enumeration and queries, focused/visible/maximized/fullscreen window state and actions, named workspace enumeration/switching/window movement, module/window state access for module-owned data, logging, capability checks, config mutation, render scheduling, compositor termination, and event subscriptions for the same event stream used by Lua. `subscribe_event_handle()` returns a `shady_subscription_id` that can be removed with `unsubscribe_event()`. The older boolean `subscribe_event()` remains available as a convenience wrapper.
 
 Plugins never need the private layout of Shady's server/window/output structs. Plugins are loaded from bootstrap Lua with `shady.plugin(path)` and then participate in normal capability resolution, initialization, hooks, events, and reverse-order teardown. `examples/plugins/hello.c` exercises the V1 host/seat/output/module/event APIs. `examples/plugins/counter.c` is a V2 stateful plugin showing module and per-window migration.
 

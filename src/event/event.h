@@ -42,5 +42,7 @@ void shady_event_emit_output(struct shady_server *server,
 	enum shady_event_type type, void *output);
 void shady_event_emit_module(struct shady_server *server,
 	enum shady_event_type type, const void *module);
+void shady_event_emit_workspace(struct shady_server *server,
+	enum shady_event_type type, const char *workspace);
 
 #endif

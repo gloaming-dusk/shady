@@ -14,6 +14,7 @@ if shady.has_capability("spatial") then
 end
 
 local expanded = false
+local workspace_names = { "main", "code", "web" }
 local terminal = os.getenv("TERMINAL") or "foot"
 local launcher = os.getenv("SHADY_LAUNCHER") or
     "if command -v fuzzel >/dev/null 2>&1; then exec fuzzel; " ..
@@ -44,6 +45,31 @@ end)
 shady.bind("Super+d", function()
     local ok = shady.spawn(launcher)
     shady.log("launcher spawn: " .. tostring(ok))
+end)
+
+for i, name in ipairs(workspace_names) do
+    shady.bind("Super+" .. i, function()
+        shady.workspace(name)
+        shady.log("workspace: " .. name)
+    end)
+
+    shady.bind("Super+Shift+" .. i, function()
+        local window = shady.focused_window()
+        if window then
+            window:move_to_workspace(name)
+            shady.log("moved focus to workspace: " .. name)
+        end
+    end)
+end
+
+shady.bind("Super+m", function()
+    local window = shady.focused_window()
+    if window then window:maximize() end
+end)
+
+shady.bind("Super+Shift+m", function()
+    local window = shady.focused_window()
+    if window then window:set_fullscreen() end
 end)
 
 -- "Overview": unfold every cube so the whole constellation becomes readable.
@@ -90,6 +116,10 @@ end)
 shady.on("window.focused", function(window)
     shady.log("focus: " ..
         (window.app_id ~= "" and window.app_id or window.title))
+end)
+
+shady.on("workspace.changed", function(name)
+    shady.log("workspace changed: " .. name)
 end)
 
 shady.on("output.added", function(output)

@@ -82,6 +82,21 @@ struct shady_plugin_api_v1 {
 	bool (*unsubscribe_event)(shady_host host, shady_subscription_id subscription);
 	void (*schedule_render)(shady_host host);
 	void (*terminate)(shady_host host);
+
+	/* ABI v1 append-only extension fields. Never reorder earlier entries. */
+	shady_window (*focused_window)(shady_host host);
+	bool (*window_visible)(shady_window window);
+	bool (*window_maximized)(shady_window window);
+	bool (*window_fullscreen)(shady_window window);
+	bool (*window_set_maximized)(shady_host host, shady_window window, bool enabled);
+	bool (*window_set_fullscreen)(shady_host host, shady_window window, bool enabled);
+	size_t (*workspace_count)(shady_host host);
+	const char *(*workspace_at)(shady_host host, size_t index);
+	const char *(*current_workspace)(shady_host host);
+	bool (*workspace_switch)(shady_host host, const char *name);
+	const char *(*window_workspace)(shady_window window);
+	bool (*window_move_to_workspace)(shady_host host, shady_window window,
+		const char *name);
 };
 
 typedef const struct shady_module *(*shady_plugin_entry_v1_fn)(

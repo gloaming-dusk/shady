@@ -12,11 +12,14 @@ const char *shady_event_name(enum shady_event_type type) {
 	case SHADY_EVENT_WINDOW_UNMAPPED: return "window.unmapped";
 	case SHADY_EVENT_WINDOW_FOCUSED: return "window.focused";
 	case SHADY_EVENT_WINDOW_RESIZED: return "window.resized";
+	case SHADY_EVENT_WINDOW_STATE_CHANGED: return "window.state_changed";
 	case SHADY_EVENT_WINDOW_DESTROYED: return "window.destroyed";
 	case SHADY_EVENT_OUTPUT_ADDED: return "output.added";
 	case SHADY_EVENT_OUTPUT_REMOVED: return "output.removed";
+	case SHADY_EVENT_WORKSPACE_CHANGED: return "workspace.changed";
 	case SHADY_EVENT_MODULE_STARTED: return "module.started";
 	case SHADY_EVENT_MODULE_STOPPED: return "module.stopped";
+	case SHADY_EVENT_COUNT: break;
 	}
 	return "unknown";
 }
@@ -39,7 +42,7 @@ void shady_events_finish(struct shady_server *server) {
 shady_subscription_id shady_event_subscribe_owned(struct shady_server *server,
 		uint32_t event_type, shady_event_callback callback, void *user_data,
 		void *owner) {
-	if (!callback || event_type > SHADY_EVENT_MODULE_STOPPED) return 0;
+	if (!callback || event_type >= SHADY_EVENT_COUNT) return 0;
 	struct shady_event_subscription *sub = calloc(1, sizeof(*sub));
 	if (!sub) return 0;
 	sub->id = server->events.next_subscription_id++;
@@ -124,5 +127,12 @@ void shady_event_emit_module(struct shady_server *server,
 		enum shady_event_type type, const void *module) {
 	struct shady_event event = {.type = type};
 	event.object.module = (shady_module_handle)module;
+	emit(server, &event);
+}
+
+void shady_event_emit_workspace(struct shady_server *server,
+		enum shady_event_type type, const char *workspace) {
+	struct shady_event event = {.type = type};
+	event.object.workspace = workspace;
 	emit(server, &event);
 }

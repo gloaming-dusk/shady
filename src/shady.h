@@ -174,6 +174,11 @@ struct shady_toplevel {
 	struct wl_listener request_fullscreen;
 	int last_surface_width;
 	int last_surface_height;
+	bool maximized;
+	bool fullscreen;
+	bool fullscreen_restore_maximized;
+	bool restore_geometry_valid;
+	struct wlr_box restore_geometry;
 	/* Opaque per-module extension state. The core toplevel does not know
 	 * which optional modules attach data here. */
 	void *module_state[SHADY_MAX_MODULES];
@@ -217,6 +222,7 @@ struct shady_keyboard {
 	struct wl_list link;
 	struct shady_server *server;
 	struct wlr_keyboard *wlr_keyboard;
+	struct xkb_state *binding_state;
 
 	struct wl_listener modifiers;
 	struct wl_listener key;
@@ -230,6 +236,8 @@ bool shady_config_set(struct shady_config *config,const char *key,const char *va
 
 /* Shared helpers used across compositor modules */
 void focus_toplevel(struct shady_toplevel *toplevel);
+void shady_toplevel_set_maximized(struct shady_toplevel *toplevel, bool enabled);
+void shady_toplevel_set_fullscreen(struct shady_toplevel *toplevel, bool enabled);
 void reset_cursor_mode(struct shady_server *server);
 
 /* input.c */

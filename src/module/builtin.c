@@ -24,12 +24,14 @@ const struct shady_module *shady_scene_effects_module(void);
 const struct shady_module *shady_lua_module(void);
 #endif
 const struct shady_module *shady_desktop_protocols_module(void);
+const struct shady_module *shady_workspace_module(void);
 
 void shady_register_builtin_modules(struct shady_server *server) {
 #if SHADY_HAS_LUA
 	shady_modules_register(&server->modules, shady_lua_module());
 #endif
 	shady_modules_register(&server->modules, shady_desktop_protocols_module());
+	shady_modules_register(&server->modules, shady_workspace_module());
 #if SHADY_HAS_SPATIAL
 	shady_modules_register(&server->modules, shady_spatial_module());
 #endif

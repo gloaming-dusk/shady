@@ -141,7 +141,7 @@ void shady_physics_update(struct shady_server *server,float dt,float logical_w,f
 	wl_list_for_each(t,&server->toplevels,link) {
 		if(shady_fps_is_holding(server,t)||shady_fps_is_expanded(server,t)){shady_physics_stop(t);continue;}
 		struct wlr_surface *surface=t->xdg_toplevel->base->surface;
-		if(!surface->mapped)continue;
+		if(!surface->mapped || !t->scene_tree->node.enabled)continue;
 		float tw=(float)surface->current.width,th=(float)surface->current.height;
 		if(tw<=0.f||th<=0.f)continue;
 		/* Folded FPS windows are authoritative cubes. Collision deliberately

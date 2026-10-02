@@ -168,6 +168,10 @@ static void keyboard_handle_modifiers(
 	(void)data;
 	struct shady_keyboard *keyboard =
 		wl_container_of(listener, keyboard, modifiers);
+	if (keyboard->binding_state) {
+		xkb_state_update_mask(keyboard->binding_state,
+			0, 0, 0, 0, 0, keyboard->wlr_keyboard->modifiers.group);
+	}
 	wlr_seat_set_keyboard(keyboard->server->seat, keyboard->wlr_keyboard);
 	wlr_seat_keyboard_notify_modifiers(keyboard->server->seat,
 		&keyboard->wlr_keyboard->modifiers);
@@ -189,10 +193,12 @@ static bool handle_keybinding(struct shady_server *server,
 		return true;
 	}
 	if (bind_matches(&c->bind_cycle_windows, sym, modifiers)) {
-		if (wl_list_length(&server->toplevels) >= 2) {
-			struct shady_toplevel *next =
-				wl_container_of(server->toplevels.prev, next, link);
-			focus_toplevel(next);
+		struct shady_toplevel *candidate;
+		wl_list_for_each_reverse(candidate, &server->toplevels, link) {
+			if (candidate->scene_tree && candidate->scene_tree->node.enabled) {
+				focus_toplevel(candidate);
+				break;
+			}
 		}
 		return true;
 	}
@@ -212,8 +218,9 @@ static void keyboard_handle_key(
 
 	uint32_t keycode = event->keycode + 8;
 	const xkb_keysym_t *syms;
-	int nsyms = xkb_state_key_get_syms(
-			keyboard->wlr_keyboard->xkb_state, keycode, &syms);
+	struct xkb_state *binding_state = keyboard->binding_state
+		? keyboard->binding_state : keyboard->wlr_keyboard->xkb_state;
+	int nsyms = xkb_state_key_get_syms(binding_state, keycode, &syms);
 
 	bool handled = false;
 	uint32_t modifiers = wlr_keyboard_get_modifiers(keyboard->wlr_keyboard);
@@ -241,6 +248,7 @@ static void keyboard_handle_destroy(struct wl_listener *listener, void *data) {
 	wl_list_remove(&keyboard->key.link);
 	wl_list_remove(&keyboard->destroy.link);
 	wl_list_remove(&keyboard->link);
+	if (keyboard->binding_state) xkb_state_unref(keyboard->binding_state);
 	free(keyboard);
 }
 
@@ -256,6 +264,7 @@ static void server_new_keyboard(struct shady_server *server,
 	struct xkb_keymap *keymap = xkb_keymap_new_from_names(context, NULL,
 		XKB_KEYMAP_COMPILE_NO_FLAGS);
 
+	keyboard->binding_state = xkb_state_new(keymap);
 	wlr_keyboard_set_keymap(wlr_keyboard, keymap);
 	xkb_keymap_unref(keymap);
 	xkb_context_unref(context);

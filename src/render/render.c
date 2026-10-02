@@ -717,7 +717,7 @@ void shady_render_output_frame(
 				->base
 				->surface;
 
-		if (!surface->mapped) {
+		if (!surface->mapped || !toplevel->scene_tree->node.enabled) {
 			continue;
 		}
 
@@ -978,7 +978,7 @@ void shady_render_output_frame(
 		struct shady_toplevel *debug_t;
 		wl_list_for_each(debug_t,&server->toplevels,link){
 			struct wlr_surface *ds=debug_t->xdg_toplevel->base->surface;
-			if(!ds->mapped)continue;
+			if(!ds->mapped||!debug_t->scene_tree->node.enabled)continue;
 			float dw=(float)ds->current.width,dh=(float)ds->current.height;
 			if(dw<=0.f||dh<=0.f)continue;
 			if(shady_spatial_state(server)->runtime.camera.first_person&&!shady_fps_toplevel_state_const(debug_t)->expanded){
@@ -1066,7 +1066,7 @@ void shady_render_output_frame(
 				->base
 				->surface;
 
-		if (!surface->mapped) {
+		if (!surface->mapped || !toplevel->scene_tree->node.enabled) {
 			continue;
 		}
 

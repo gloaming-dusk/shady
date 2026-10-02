@@ -19,6 +19,7 @@
 #include "../event/event.h"
 #include "../render/render.h"
 #include "../modules/spatial/state.h"
+#include "../modules/workspace/workspace.h"
 #include "../shady.h"
 
 #define HOST(h) ((struct shady_server *)(h))
@@ -66,6 +67,20 @@ static shady_window host_window_at(shady_host host, size_t index) {
 	return NULL;
 }
 
+static shady_window host_focused_window(shady_host host) {
+	struct shady_server *server = HOST(host);
+	struct wlr_surface *surface = server->seat->keyboard_state.focused_surface;
+	if (!surface) return NULL;
+	struct wlr_surface *root = wlr_surface_get_root_surface(surface);
+	struct wlr_xdg_toplevel *xdg = wlr_xdg_toplevel_try_from_wlr_surface(root);
+	if (!xdg) return NULL;
+	struct shady_toplevel *toplevel;
+	wl_list_for_each(toplevel, &server->all_toplevels, all_link) {
+		if (toplevel->xdg_toplevel == xdg) return (shady_window)toplevel;
+	}
+	return NULL;
+}
+
 static const char *host_window_title(shady_window window) {
 	struct shady_toplevel *toplevel = WINDOW(window);
 	return toplevel && toplevel->xdg_toplevel && toplevel->xdg_toplevel->title
@@ -95,9 +110,26 @@ static bool host_window_mapped(shady_window window) {
 		toplevel->xdg_toplevel->base->surface->mapped;
 }
 
+static bool host_window_visible(shady_window window) {
+	struct shady_toplevel *toplevel = WINDOW(window);
+	return toplevel && toplevel->scene_tree && toplevel->scene_tree->node.enabled;
+}
+
+static bool host_window_maximized(shady_window window) {
+	struct shady_toplevel *toplevel = WINDOW(window);
+	return toplevel && toplevel->maximized;
+}
+
+static bool host_window_fullscreen(shady_window window) {
+	struct shady_toplevel *toplevel = WINDOW(window);
+	return toplevel && toplevel->fullscreen;
+}
+
 static bool host_window_focus(shady_host host, shady_window window) {
 	if (!host_window_valid(host, window)) return false;
-	focus_toplevel(WINDOW(window));
+	struct shady_toplevel *toplevel = WINDOW(window);
+	if (!toplevel->scene_tree || !toplevel->scene_tree->node.enabled) return false;
+	focus_toplevel(toplevel);
 	return true;
 }
 
@@ -106,6 +138,20 @@ static bool host_window_close(shady_host host, shady_window window) {
 	struct shady_toplevel *toplevel = WINDOW(window);
 	if (!toplevel->xdg_toplevel) return false;
 	wlr_xdg_toplevel_send_close(toplevel->xdg_toplevel);
+	return true;
+}
+
+static bool host_window_set_maximized(shady_host host, shady_window window,
+		bool enabled) {
+	if (!host_window_valid(host, window)) return false;
+	shady_toplevel_set_maximized(WINDOW(window), enabled);
+	return true;
+}
+
+static bool host_window_set_fullscreen(shady_host host, shady_window window,
+		bool enabled) {
+	if (!host_window_valid(host, window)) return false;
+	shady_toplevel_set_fullscreen(WINDOW(window), enabled);
 	return true;
 }
 
@@ -224,6 +270,32 @@ static bool host_module_active(shady_host host, shady_module_handle module) {
 	return false;
 }
 
+static size_t host_workspace_count(shady_host host) {
+	return shady_workspace_count(HOST(host));
+}
+
+static const char *host_workspace_at(shady_host host, size_t index) {
+	return shady_workspace_name_at(HOST(host), index);
+}
+
+static const char *host_current_workspace(shady_host host) {
+	return shady_workspace_current_name(HOST(host));
+}
+
+static bool host_workspace_switch(shady_host host, const char *name) {
+	return shady_workspace_switch(HOST(host), name);
+}
+
+static const char *host_window_workspace(shady_window window) {
+	return shady_workspace_toplevel_name(WINDOW(window));
+}
+
+static bool host_window_move_to_workspace(shady_host host, shady_window window,
+		const char *name) {
+	if (!host_window_valid(host, window)) return false;
+	return shady_workspace_move_toplevel(WINDOW(window), name);
+}
+
 static const char *host_event_name(uint32_t event_type) {
 	return shady_event_name((enum shady_event_type)event_type);
 }
@@ -270,12 +342,18 @@ static const struct shady_plugin_api_v1 plugin_api = {
 	.window_state = host_window_state,
 	.window_count = host_window_count,
 	.window_at = host_window_at,
+	.focused_window = host_focused_window,
 	.window_title = host_window_title,
 	.window_app_id = host_window_app_id,
 	.window_valid = host_window_valid,
 	.window_mapped = host_window_mapped,
+	.window_visible = host_window_visible,
+	.window_maximized = host_window_maximized,
+	.window_fullscreen = host_window_fullscreen,
 	.window_focus = host_window_focus,
 	.window_close = host_window_close,
+	.window_set_maximized = host_window_set_maximized,
+	.window_set_fullscreen = host_window_set_fullscreen,
 	.window_size = host_window_size,
 	.window_position = host_window_position,
 	.window_set_position = host_window_set_position,
@@ -291,6 +369,12 @@ static const struct shady_plugin_api_v1 plugin_api = {
 	.module_at = host_module_at,
 	.module_name = host_module_name,
 	.module_active = host_module_active,
+	.workspace_count = host_workspace_count,
+	.workspace_at = host_workspace_at,
+	.current_workspace = host_current_workspace,
+	.workspace_switch = host_workspace_switch,
+	.window_workspace = host_window_workspace,
+	.window_move_to_workspace = host_window_move_to_workspace,
 	.event_name = host_event_name,
 	.subscribe_event = host_subscribe_event,
 	.subscribe_event_handle = host_subscribe_event_handle,

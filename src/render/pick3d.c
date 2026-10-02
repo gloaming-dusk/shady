@@ -60,7 +60,7 @@ struct shady_toplevel *shady_toplevel_at_3d(struct shady_server *server,
 	struct shady_toplevel *toplevel;
 	wl_list_for_each(toplevel, &server->toplevels, link) {
 		struct wlr_surface *surf = toplevel->xdg_toplevel->base->surface;
-		if (!surf->mapped) {
+		if (!surf->mapped || !toplevel->scene_tree->node.enabled) {
 			continue;
 		}
 
@@ -145,7 +145,7 @@ struct shady_toplevel *shady_toplevel_at_camera_center_hit(
 	struct shady_toplevel *toplevel;
 	wl_list_for_each(toplevel, &server->toplevels, link) {
 		struct wlr_surface *surf = toplevel->xdg_toplevel->base->surface;
-		if (!surf->mapped) continue;
+		if (!surf->mapped || !toplevel->scene_tree->node.enabled) continue;
 		float tw = (float)surf->current.width;
 		float th = (float)surf->current.height;
 		if (tw <= 0.f || th <= 0.f) continue;

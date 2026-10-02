@@ -38,6 +38,8 @@ shady_sources = [
   'src/output_management.c',
   'src/session_lock.c',
   'src/modules/desktop/module.c',
+  'src/modules/workspace/workspace.c',
+  'src/modules/workspace/module.c',
 ]
 
 if spatial_enabled

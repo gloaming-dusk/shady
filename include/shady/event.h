@@ -15,6 +15,10 @@ enum shady_event_type {
 	SHADY_EVENT_OUTPUT_REMOVED,
 	SHADY_EVENT_MODULE_STARTED,
 	SHADY_EVENT_MODULE_STOPPED,
+	/* Append-only: preserve numeric values for already-built plugins. */
+	SHADY_EVENT_WINDOW_STATE_CHANGED,
+	SHADY_EVENT_WORKSPACE_CHANGED,
+	SHADY_EVENT_COUNT,
 };
 
 struct shady_event {
@@ -24,6 +28,7 @@ struct shady_event {
 		shady_window window;
 		shady_output output;
 		shady_module_handle module;
+		const char *workspace;
 	} object;
 };
 
