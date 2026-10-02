@@ -852,7 +852,7 @@ void shady_render_output_frame(
 			}
 		}
 
-		bool screen_space = toplevel->fullscreen;
+		bool screen_space = toplevel->fullscreen || toplevel->maximized;
 		float wobble_x = shady_window_motion_state_for_const(toplevel)->wobble_x;
 		float wobble_y = shady_window_motion_state_for_const(toplevel)->wobble_y;
 		if (screen_space) {

@@ -70,7 +70,11 @@ static void apply_toplevel_state_values(struct shady_toplevel *toplevel,
 		struct wlr_output *output = toplevel_output(toplevel);
 		if (output) {
 			struct wlr_box box = {0};
-			wlr_output_layout_get_box(server->output_layout, output, &box);
+			if (want_fullscreen) {
+				wlr_output_layout_get_box(server->output_layout, output, &box);
+			} else {
+				shady_output_work_area(server, output, &box);
+			}
 			wlr_scene_node_set_position(&toplevel->scene_tree->node, box.x, box.y);
 			wlr_xdg_toplevel_set_size(xdg, box.width, box.height);
 			/* xdg_toplevel.configure_bounds was added in xdg-shell v4. */
@@ -101,6 +105,11 @@ void shady_toplevel_set_maximized(struct shady_toplevel *toplevel, bool enabled)
 	if (!toplevel) return;
 	toplevel->fullscreen_restore_maximized = false;
 	apply_toplevel_state_values(toplevel, enabled, false);
+}
+
+void shady_toplevel_refresh_state(struct shady_toplevel *toplevel) {
+	if (!toplevel || (!toplevel->maximized && !toplevel->fullscreen)) return;
+	apply_toplevel_state_values(toplevel, toplevel->maximized, toplevel->fullscreen);
 }
 
 void shady_toplevel_set_fullscreen(struct shady_toplevel *toplevel, bool enabled) {

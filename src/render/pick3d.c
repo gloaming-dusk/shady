@@ -47,7 +47,7 @@ struct shady_toplevel *shady_toplevel_at_3d(struct shady_server *server,
 	 * them before constructing the 3D ray so pointer coordinates stay exact. */
 	struct shady_toplevel *screen_toplevel;
 	wl_list_for_each(screen_toplevel, &server->toplevels, link) {
-		if (!screen_toplevel->fullscreen || !screen_toplevel->scene_tree ||
+		if ((!screen_toplevel->fullscreen && !screen_toplevel->maximized) || !screen_toplevel->scene_tree ||
 				!screen_toplevel->scene_tree->node.enabled) continue;
 		struct wlr_surface *root = screen_toplevel->xdg_toplevel->base->surface;
 		if (!root || !root->mapped) continue;

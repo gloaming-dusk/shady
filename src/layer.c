@@ -16,6 +16,73 @@ static struct wlr_output *fallback_output(struct shady_server *server) {
 	return output->wlr_output;
 }
 
+static uint32_t layer_exclusive_edge(const struct wlr_layer_surface_v1 *surface) {
+	if (surface->current.exclusive_edge) return surface->current.exclusive_edge;
+	uint32_t anchor = surface->current.anchor;
+	bool top = anchor & ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP;
+	bool bottom = anchor & ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM;
+	bool left = anchor & ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT;
+	bool right = anchor & ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT;
+	if (top && !bottom) return ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP;
+	if (bottom && !top) return ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM;
+	if (left && !right) return ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT;
+	if (right && !left) return ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT;
+	return 0;
+}
+
+void shady_output_work_area(struct shady_server *server,
+		struct wlr_output *output, struct wlr_box *box) {
+	if (!box) return;
+	*box = (struct wlr_box){0};
+	if (!output) return;
+	wlr_output_layout_get_box(server->output_layout, output, box);
+
+	struct shady_desktop_state *state = shady_desktop_state(server);
+	if (!state) return;
+	struct shady_layer_surface *layer;
+	wl_list_for_each(layer, &state->layer_surfaces, link) {
+		struct wlr_layer_surface_v1 *surface = layer->layer_surface;
+		if (!surface || surface->output != output || !surface->surface->mapped ||
+				surface->current.exclusive_zone <= 0) continue;
+		int zone = surface->current.exclusive_zone;
+		switch (layer_exclusive_edge(surface)) {
+		case ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP:
+			zone += surface->current.margin.top;
+			box->y += zone;
+			box->height -= zone;
+			break;
+		case ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM:
+			zone += surface->current.margin.bottom;
+			box->height -= zone;
+			break;
+		case ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT:
+			zone += surface->current.margin.left;
+			box->x += zone;
+			box->width -= zone;
+			break;
+		case ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT:
+			zone += surface->current.margin.right;
+			box->width -= zone;
+			break;
+		default:
+			break;
+		}
+	}
+	if (box->width < 1) box->width = 1;
+	if (box->height < 1) box->height = 1;
+}
+
+static void refresh_maximized_for_output(struct shady_server *server,
+		struct wlr_output *output) {
+	struct shady_toplevel *toplevel;
+	wl_list_for_each(toplevel, &server->toplevels, link) {
+		if (!toplevel->maximized || toplevel->fullscreen) continue;
+		struct wlr_output *current = wlr_output_layout_output_at(server->output_layout,
+			toplevel->scene_tree->node.x, toplevel->scene_tree->node.y);
+		if (!current || current == output) shady_toplevel_refresh_state(toplevel);
+	}
+}
+
 static void configure_layer_surface(struct shady_layer_surface *layer) {
 	struct wlr_layer_surface_v1 *surface = layer->layer_surface;
 	struct shady_server *server = layer->server;
@@ -31,6 +98,7 @@ static void configure_layer_surface(struct shady_layer_surface *layer) {
 	wlr_output_layout_get_box(server->output_layout, surface->output, &full);
 	struct wlr_box usable = full;
 	wlr_scene_layer_surface_v1_configure(layer->scene_layer, &full, &usable);
+	refresh_maximized_for_output(server, surface->output);
 }
 
 static void layer_surface_commit(struct wl_listener *listener, void *data) {
@@ -44,11 +112,14 @@ static void layer_surface_destroy(struct wl_listener *listener, void *data) {
 	(void)data;
 	struct shady_layer_surface *layer =
 		wl_container_of(listener, layer, destroy);
+	struct shady_server *server = layer->server;
+	struct wlr_output *output = layer->layer_surface->output;
 
 	wl_list_remove(&layer->commit.link);
 	wl_list_remove(&layer->destroy.link);
 	wl_list_remove(&layer->link);
 	free(layer);
+	if (output) refresh_maximized_for_output(server, output);
 }
 
 void server_new_layer_surface(struct wl_listener *listener, void *data) {

@@ -33,8 +33,8 @@ For a self-contained headless smoke test, replace `WLR_BACKENDS=wayland` with
 | Super + Tab | Cycle focus on the current workspace |
 | Super + 1 / 2 / 3 | Switch to `main` / `code` / `web` workspace |
 | Super + Shift + 1 / 2 / 3 | Move focused window to `main` / `code` / `web` |
-| Super + Ctrl + M | Toggle maximize on focused window |
-| Super + Shift + M | Toggle fullscreen on focused window |
+| Super + Ctrl + M | Toggle maximize on focused window (screen-space work area) |
+| Super + Shift + M | Toggle fullscreen on focused window (entire output) |
 | Super + Q | Close focused window |
 | Super + Space | Expand/fold the constellation |
 | Super + F | Enter/leave first-person mode |

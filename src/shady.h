@@ -238,6 +238,7 @@ bool shady_config_set(struct shady_config *config,const char *key,const char *va
 void focus_toplevel(struct shady_toplevel *toplevel);
 void shady_toplevel_set_maximized(struct shady_toplevel *toplevel, bool enabled);
 void shady_toplevel_set_fullscreen(struct shady_toplevel *toplevel, bool enabled);
+void shady_toplevel_refresh_state(struct shady_toplevel *toplevel);
 void reset_cursor_mode(struct shady_server *server);
 
 /* input.c */
@@ -267,5 +268,7 @@ void server_new_xdg_popup(struct wl_listener *listener, void *data);
 
 /* layer.c */
 void server_new_layer_surface(struct wl_listener *listener, void *data);
+void shady_output_work_area(struct shady_server *server,
+	struct wlr_output *output, struct wlr_box *box);
 
 #endif
