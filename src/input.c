@@ -1,8 +1,10 @@
 /* Adapted from wlroots 0.20.2 TinyWL (CC0). See LICENSES/tinywl-CC0.txt. */
 #include <linux/input-event-codes.h>
+#include <libinput.h>
 #include <math.h>
 #include <stdlib.h>
 #include <wayland-server-core.h>
+#include <wlr/backend/libinput.h>
 #include <wlr/types/wlr_cursor.h>
 #include <wlr/types/wlr_relative_pointer_v1.h>
 #include <wlr/types/wlr_pointer_constraints_v1.h>
@@ -17,6 +19,7 @@
 #include <wlr/types/wlr_xcursor_manager.h>
 #include <wlr/types/wlr_xdg_shell.h>
 #include <wlr/util/edges.h>
+#include <wlr/util/log.h>
 #include <xkbcommon/xkbcommon.h>
 
 #include "shady.h"
@@ -299,8 +302,30 @@ static void server_new_keyboard(struct shady_server *server,
 	wl_list_insert(&server->keyboards, &keyboard->link);
 }
 
+static void configure_libinput_pointer(struct wlr_input_device *device) {
+	if (!wlr_input_device_is_libinput(device)) return;
+	struct libinput_device *libinput_device =
+		wlr_libinput_get_device_handle(device);
+	if (!libinput_device ||
+			!libinput_device_config_dwt_is_available(libinput_device)) return;
+
+	enum libinput_config_status status =
+		libinput_device_config_dwt_set_enabled(libinput_device,
+			LIBINPUT_CONFIG_DWT_DISABLED);
+	if (status == LIBINPUT_CONFIG_STATUS_SUCCESS) {
+		wlr_log(WLR_INFO,
+			"input: disabled touchpad disable-while-typing for %s",
+			device->name ? device->name : "pointer");
+	} else {
+		wlr_log(WLR_ERROR,
+			"input: failed to disable touchpad disable-while-typing for %s",
+			device->name ? device->name : "pointer");
+	}
+}
+
 static void server_new_pointer(struct shady_server *server,
 		struct wlr_input_device *device) {
+	configure_libinput_pointer(device);
 	wlr_cursor_attach_input_device(server->cursor, device);
 }
 

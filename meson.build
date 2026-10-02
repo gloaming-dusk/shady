@@ -136,6 +136,7 @@ shady_deps = [
   wlroots,
   dependency('wayland-server'),
   dependency('xkbcommon'),
+  dependency('libinput'),
   cc.find_library('m', required: true),
   lua,
   dl,
