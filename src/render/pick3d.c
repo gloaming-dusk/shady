@@ -135,61 +135,96 @@ struct shady_toplevel *shady_toplevel_at_3d(struct shady_server *server,
 }
 
 
-struct shady_toplevel *shady_toplevel_at_camera_center_hit(
+struct shady_toplevel *shady_toplevel_at_camera_center_hit_output(
 		struct shady_server *server, float *distance_out,
-		float *hit_x, float *hit_y, float *hit_z) {
+		float *hit_x, float *hit_y, float *hit_z,
+		struct wlr_output **output_out) {
 	if (distance_out) *distance_out = 0.f;
+	if (output_out) *output_out = NULL;
+
 	struct shady_vec3 eye, forward;
 	shady_camera_eye(&shady_spatial_state(server)->runtime.camera, &eye);
 	shady_camera_basis(&shady_spatial_state(server)->runtime.camera, NULL, NULL, &forward);
 	struct shady_ray ray = { .origin = eye, .dir = forward };
 
-	struct wlr_output *wlr_output = NULL;
+	struct shady_toplevel *best = NULL;
+	struct wlr_output *best_output = NULL;
+	float best_t = 1e30f;
+
+	/* Each output currently renders the shared scene through its own local
+	 * viewport transform. Mirror that projection here instead of assuming the
+	 * first output in the list is authoritative. */
 	struct shady_output *output;
 	wl_list_for_each(output, &server->outputs, link) {
-		wlr_output = output->wlr_output;
-		break;
-	}
-	if (!wlr_output) return NULL;
+		struct wlr_output *wlr_output = output->wlr_output;
+		if (!wlr_output || !wlr_output->enabled || wlr_output->scale <= 0.f)
+			continue;
 
-	float scale = wlr_output->scale;
-	float logical_w = (float)wlr_output->width / scale;
-	float logical_h = (float)wlr_output->height / scale;
-	if (logical_w <= 0.f || logical_h <= 0.f) return NULL;
+		float logical_w = (float)wlr_output->width / wlr_output->scale;
+		float logical_h = (float)wlr_output->height / wlr_output->scale;
+		if (logical_w <= 0.f || logical_h <= 0.f) continue;
 
-	double ox = 0, oy = 0;
-	wlr_output_layout_output_coords(server->output_layout, wlr_output, &ox, &oy);
+		double ox = 0, oy = 0;
+		wlr_output_layout_output_coords(server->output_layout, wlr_output, &ox, &oy);
 
-	struct shady_toplevel *best = NULL;
-	float best_t = 1e30f;
-	struct shady_toplevel *toplevel;
-	wl_list_for_each(toplevel, &server->toplevels, link) {
-		struct wlr_surface *surf = toplevel->xdg_toplevel->base->surface;
-		if (!surf->mapped || !toplevel->scene_tree->node.enabled) continue;
-		float tw = (float)surf->current.width;
-		float th = (float)surf->current.height;
-		if (tw <= 0.f || th <= 0.f) continue;
-		float model[16];
-		if(shady_spatial_state(server)->runtime.camera.first_person&&!shady_fps_toplevel_state_const(toplevel)->expanded){
-			float lx=(float)(toplevel->scene_tree->node.x+ox),ly=(float)(toplevel->scene_tree->node.y+oy);
-			float cx=(lx+tw*.5f-logical_w*.5f)/logical_h,cy=.5f-(ly+th*.5f)/logical_h;
-			shady_window_cube_model(model,cx,cy,shady_spatial_toplevel_state(toplevel)->z,SHADY_FPS_CUBE_SIZE,shady_window_motion_state_for_const(toplevel)->tilt_x,shady_window_motion_state_for_const(toplevel)->tilt_y);
-		}else shady_window_model(model,(float)(toplevel->scene_tree->node.x+ox),(float)(toplevel->scene_tree->node.y+oy),tw,th,logical_w,logical_h,shady_spatial_toplevel_state(toplevel)->z,shady_window_motion_state_for_const(toplevel)->tilt_x,shady_window_motion_state_for_const(toplevel)->tilt_y);
-		float t, u, v;
-		bool front_hit = false;
-		if (shady_ray_window_shell_hit(&ray, model, shady_window_motion_state_for_const(toplevel)->wobble_x,
-				shady_window_motion_state_for_const(toplevel)->wobble_y, &t, &u, &v, &front_hit) && t < best_t) {
-			best_t = t;
-			best = toplevel;
+		struct shady_toplevel *toplevel;
+		wl_list_for_each(toplevel, &server->toplevels, link) {
+			struct wlr_surface *surf = toplevel->xdg_toplevel->base->surface;
+			if (!surf->mapped || !toplevel->scene_tree->node.enabled) continue;
+			float tw = (float)surf->current.width;
+			float th = (float)surf->current.height;
+			if (tw <= 0.f || th <= 0.f) continue;
+
+			float model[16];
+			if (shady_spatial_state(server)->runtime.camera.first_person &&
+					!shady_fps_toplevel_state_const(toplevel)->expanded) {
+				float lx = (float)(toplevel->scene_tree->node.x + ox);
+				float ly = (float)(toplevel->scene_tree->node.y + oy);
+				float cx = (lx + tw * .5f - logical_w * .5f) / logical_h;
+				float cy = .5f - (ly + th * .5f) / logical_h;
+				shady_window_cube_model(model, cx, cy,
+					shady_spatial_toplevel_state(toplevel)->z,
+					SHADY_FPS_CUBE_SIZE,
+					shady_window_motion_state_for_const(toplevel)->tilt_x,
+					shady_window_motion_state_for_const(toplevel)->tilt_y);
+			} else {
+				shady_window_model(model,
+					(float)(toplevel->scene_tree->node.x + ox),
+					(float)(toplevel->scene_tree->node.y + oy),
+					tw, th, logical_w, logical_h,
+					shady_spatial_toplevel_state(toplevel)->z,
+					shady_window_motion_state_for_const(toplevel)->tilt_x,
+					shady_window_motion_state_for_const(toplevel)->tilt_y);
+			}
+
+			float t, u, v;
+			bool front_hit = false;
+			if (shady_ray_window_shell_hit(&ray, model,
+					shady_window_motion_state_for_const(toplevel)->wobble_x,
+					shady_window_motion_state_for_const(toplevel)->wobble_y,
+					&t, &u, &v, &front_hit) && t < best_t) {
+				best_t = t;
+				best = toplevel;
+				best_output = wlr_output;
+			}
 		}
 	}
+
 	if (best) {
 		if (distance_out) *distance_out = best_t;
 		if (hit_x) *hit_x = eye.x + forward.x * best_t;
 		if (hit_y) *hit_y = eye.y + forward.y * best_t;
 		if (hit_z) *hit_z = eye.z + forward.z * best_t;
+		if (output_out) *output_out = best_output;
 	}
 	return best;
+}
+
+struct shady_toplevel *shady_toplevel_at_camera_center_hit(
+		struct shady_server *server, float *distance_out,
+		float *hit_x, float *hit_y, float *hit_z) {
+	return shady_toplevel_at_camera_center_hit_output(server, distance_out,
+		hit_x, hit_y, hit_z, NULL);
 }
 
 struct shady_toplevel *shady_toplevel_at_camera_center(
