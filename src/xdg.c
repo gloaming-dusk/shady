@@ -246,6 +246,13 @@ static void xdg_toplevel_commit(struct wl_listener *listener, void *data) {
 				WLR_XDG_TOPLEVEL_WM_CAPABILITIES_MAXIMIZE |
 				WLR_XDG_TOPLEVEL_WM_CAPABILITIES_FULLSCREEN);
 		}
+		/* Some clients (notably Electron) send state requests before their
+		 * initial surface commit. Applying them earlier schedules an xdg
+		 * configure before wlroots marks the surface initialized. */
+		if (toplevel->xdg_toplevel->requested.maximized ||
+				toplevel->xdg_toplevel->requested.fullscreen) {
+			apply_requested_toplevel_state(toplevel);
+		}
 	}
 
 	shady_modules_toplevel_commit(toplevel);
@@ -306,6 +313,7 @@ static void xdg_toplevel_request_maximize(
 	(void)data;
 	struct shady_toplevel *toplevel =
 		wl_container_of(listener, toplevel, request_maximize);
+	if (!toplevel->xdg_toplevel->base->initialized) return;
 	apply_requested_toplevel_state(toplevel);
 }
 
@@ -314,6 +322,7 @@ static void xdg_toplevel_request_fullscreen(
 	(void)data;
 	struct shady_toplevel *toplevel =
 		wl_container_of(listener, toplevel, request_fullscreen);
+	if (!toplevel->xdg_toplevel->base->initialized) return;
 	apply_requested_toplevel_state(toplevel);
 }
 
