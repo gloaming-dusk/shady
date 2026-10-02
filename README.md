@@ -143,7 +143,9 @@ For native testing, Shady can start the shell and a terminal together:
 ./run-native.sh -s './build/shady-shell & exec foot'
 ```
 
-The current bar intentionally has placeholder workspace labels (`main`, `code`, `web`) plus a minute-resolution clock. Workspace/window state will move to a small Shady-specific Wayland shell protocol next; keeping the shell out-of-process means it can crash or restart without taking the compositor down.
+The bar consumes Shady's small `shady-shell-v1` Wayland protocol. On bind it receives the known workspace list, active workspace, and focused window metadata; later workspace/focus changes are pushed incrementally. Workspace labels are clickable and send `activate_workspace(name)` back to the compositor. The clock remains minute-resolution so an otherwise idle desktop is not woken every second.
+
+The protocol source lives in `protocols/shady-shell-v1.xml`. Its v1 surface is intentionally tiny: workspace discovery/activation plus focused `app_id`/title. Richer window lists, launcher state, notifications, and quick settings remain shell responsibilities and can be added without moving UI policy into the compositor core.
 
 Safe mode renders the wlroots scene graph directly and uses normal scene-graph
 pointer hit testing. It is the compatibility baseline for work toward a daily-driver compositor.

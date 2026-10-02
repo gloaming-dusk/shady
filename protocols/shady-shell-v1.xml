@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<protocol name="shady_shell_v1">
+  <copyright>
+    Copyright 2026 Shady contributors
+    SPDX-License-Identifier: MIT
+  </copyright>
+
+  <interface name="shady_shell_v1" version="1">
+    <description summary="small Shady desktop shell control protocol">
+      Exposes a read-mostly desktop snapshot for trusted shell clients and a
+      request to activate a named workspace.
+    </description>
+
+    <request name="activate_workspace">
+      <arg name="name" type="string" summary="workspace name"/>
+    </request>
+
+    <event name="workspace">
+      <arg name="name" type="string" summary="known workspace name"/>
+    </event>
+
+    <event name="active_workspace">
+      <arg name="name" type="string" summary="currently active workspace"/>
+    </event>
+
+    <event name="focused_window">
+      <arg name="app_id" type="string" summary="focused app id, empty if none"/>
+      <arg name="title" type="string" summary="focused title, empty if none"/>
+    </event>
+
+    <event name="done">
+      <description summary="initial snapshot complete"/>
+    </event>
+  </interface>
+</protocol>

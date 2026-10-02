@@ -13,6 +13,7 @@
 #include <wlr/types/wlr_xdg_decoration_v1.h>
 
 #include "../../shady.h"
+#include "../../shell_protocol.h"
 #include "state.h"
 
 static bool desktop_protocols_init(struct shady_server *server) {
@@ -24,6 +25,7 @@ static bool desktop_protocols_init(struct shady_server *server) {
 	state->new_layer_surface.notify = server_new_layer_surface;
 	wl_signal_add(&state->layer_shell->events.new_surface,
 		&state->new_layer_surface);
+	if (!shady_shell_protocol_init(server)) return false;
 
 	state->relative_pointer_manager =
 		wlr_relative_pointer_manager_v1_create(server->wl_display);
@@ -68,6 +70,7 @@ static bool desktop_protocols_init(struct shady_server *server) {
 
 static void desktop_protocols_destroy(struct shady_server *server) {
 	struct shady_desktop_state *state = shady_desktop_state(server);
+	shady_shell_protocol_finish(server);
 	if (state->new_layer_surface.link.prev)
 		wl_list_remove(&state->new_layer_surface.link);
 	if (state->output_manager_apply.link.prev)

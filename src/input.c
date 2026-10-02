@@ -128,8 +128,26 @@ static struct shady_toplevel *desktop_toplevel_at(struct shady_server *server,
 	return NULL;
 }
 
+static bool overlay_surface_at(struct shady_server *server,
+		double lx, double ly, struct wlr_surface **surface, double *sx, double *sy) {
+	if (!server->overlay_tree) return false;
+	struct wlr_scene_node *node = wlr_scene_node_at(&server->overlay_tree->node,
+		lx, ly, sx, sy);
+	if (!node || node->type != WLR_SCENE_NODE_BUFFER) return false;
+	struct wlr_scene_buffer *buffer = wlr_scene_buffer_from_node(node);
+	struct wlr_scene_surface *scene_surface = wlr_scene_surface_try_from_buffer(buffer);
+	if (!scene_surface) return false;
+	*surface = scene_surface->surface;
+	return true;
+}
+
 static struct shady_toplevel *toplevel_at_cursor(struct shady_server *server,
 		double lx, double ly, struct wlr_surface **surface, double *sx, double *sy) {
+	*surface = NULL;
+	*sx = *sy = 0.0;
+	/* Critical 2D shell/session-lock UI always wins over spatial picking. */
+	if (overlay_surface_at(server, lx, ly, surface, sx, sy)) return NULL;
+
 	struct shady_toplevel *toplevel = NULL;
 	if (!shady_desktop_state(server)->session_locked && shady_modules_pick_surface(server, lx, ly,
 			surface, sx, sy, &toplevel)) {

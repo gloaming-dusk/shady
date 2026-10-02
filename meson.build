@@ -19,6 +19,26 @@ layer_shell_protocol_code = custom_target(
   command: [wayland_scanner, 'private-code', '@INPUT@', '@OUTPUT@'],
 )
 
+shady_shell_protocol_xml = files('protocols/shady-shell-v1.xml')
+shady_shell_server_header = custom_target(
+  'shady-shell-v1-server-protocol.h',
+  input: shady_shell_protocol_xml,
+  output: 'shady-shell-v1-server-protocol.h',
+  command: [wayland_scanner, 'server-header', '@INPUT@', '@OUTPUT@'],
+)
+shady_shell_client_header = custom_target(
+  'shady-shell-v1-client-protocol.h',
+  input: shady_shell_protocol_xml,
+  output: 'shady-shell-v1-client-protocol.h',
+  command: [wayland_scanner, 'client-header', '@INPUT@', '@OUTPUT@'],
+)
+shady_shell_protocol_code = custom_target(
+  'shady-shell-v1-protocol.c',
+  input: shady_shell_protocol_xml,
+  output: 'shady-shell-v1-protocol.c',
+  command: [wayland_scanner, 'private-code', '@INPUT@', '@OUTPUT@'],
+)
+
 cc = meson.get_compiler('c')
 spatial_enabled = get_option('spatial').enabled()
 lua_enabled = get_option('lua').enabled()
@@ -44,6 +64,9 @@ shady_sources = [
   'src/output.c',
   'src/output_management.c',
   'src/session_lock.c',
+  'src/shell_protocol.c',
+  shady_shell_server_header,
+  shady_shell_protocol_code,
   'src/modules/desktop/module.c',
   'src/modules/workspace/workspace.c',
   'src/modules/workspace/module.c',
@@ -142,6 +165,8 @@ if shell_enabled
       layer_shell_protocol_header,
       layer_shell_protocol_code,
       xdg_shell_protocol_code,
+      shady_shell_client_header,
+      shady_shell_protocol_code,
       'src/shell/main.c',
     ],
     include_directories: include_directories('.'),
