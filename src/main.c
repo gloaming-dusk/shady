@@ -7,6 +7,7 @@
 #include <sys/wait.h>
 #include <wayland-server-core.h>
 #include <wlr/backend.h>
+#include <wlr/backend/session.h>
 #include <wlr/render/allocator.h>
 #if SHADY_HAS_SPATIAL
 #include <wlr/render/gles2.h>
@@ -65,14 +66,16 @@ int main(int argc, char *argv[]) {
 	char *config_path = NULL;
 	char *legacy_config_path = NULL;
 	bool safe_mode = false;
+	bool native_mode = false;
 
 	int c;
 	static const struct option long_options[] = {
 		{ "safe", no_argument, NULL, 'S' },
+		{ "native", no_argument, NULL, 'N' },
 		{ "legacy-config", required_argument, NULL, 'L' },
 		{ 0, 0, 0, 0 },
 	};
-	while ((c = getopt_long(argc, argv, "s:c:hSL:", long_options, NULL)) != -1) {
+	while ((c = getopt_long(argc, argv, "s:c:hSNL:", long_options, NULL)) != -1) {
 		switch (c) {
 		case 's':
 			startup_cmd = optarg;
@@ -83,17 +86,33 @@ int main(int argc, char *argv[]) {
 		case 'S':
 			safe_mode = true;
 			break;
+		case 'N':
+			native_mode = true;
+			break;
 		case 'L':
 			legacy_config_path = optarg;
 			break;
 		default:
-			printf("Usage: %s [-s startup command] [-c config.lua] [--legacy-config path] [--safe]\n", argv[0]);
+			printf("Usage: %s [-s startup command] [-c config.lua] [--legacy-config path] [--safe] [--native]\n", argv[0]);
 			return 0;
 		}
 	}
 	if (optind < argc) {
-		printf("Usage: %s [-s startup command] [-c config.lua] [--legacy-config path] [--safe]\n", argv[0]);
+		printf("Usage: %s [-s startup command] [-c config.lua] [--legacy-config path] [--safe] [--native]\n", argv[0]);
 		return 0;
+	}
+
+	if (native_mode) {
+		unsetenv("WAYLAND_DISPLAY");
+		unsetenv("WAYLAND_SOCKET");
+		unsetenv("DISPLAY");
+		setenv("WLR_BACKENDS", "drm,libinput", 1);
+		if (!getenv("XDG_RUNTIME_DIR") || !*getenv("XDG_RUNTIME_DIR")) {
+			fprintf(stderr,
+				"Shady native mode requires XDG_RUNTIME_DIR (normally provided by a login session).\n");
+			return 1;
+		}
+		wlr_log(WLR_INFO, "native mode requested: WLR_BACKENDS=drm,libinput");
 	}
 
 	struct shady_server server = {0};
@@ -143,22 +162,45 @@ int main(int argc, char *argv[]) {
 	struct wl_event_source *sigchld = wl_event_loop_add_signal(loop,
 		SIGCHLD, reap_children, NULL);
 
+	struct wlr_session *session = NULL;
 	server.backend = wlr_backend_autocreate(
-		wl_display_get_event_loop(server.wl_display), NULL);
+		wl_display_get_event_loop(server.wl_display), &session);
 	if (server.backend == NULL) {
 		wlr_log(WLR_ERROR, "failed to create wlr_backend");
+		if (native_mode) {
+			fprintf(stderr,
+				"Native backend setup failed. Run Shady from a real VT/TTY login session and ensure libseat can acquire the seat.\n"
+				"On seatd systems, start/enable seatd or try: seatd-launch ./build/shady --native\n"
+				"On logind systems, make sure this process belongs to an active local login session.\n");
+		}
+		return 1;
+	}
+	if (session) {
+		wlr_log(WLR_INFO, "session acquired: seat=%s active=%s",
+			session->seat, session->active ? "yes" : "no");
+	} else if (native_mode) {
+		wlr_log(WLR_ERROR, "native mode did not acquire a wlroots session");
+		wlr_backend_destroy(server.backend);
+		wl_display_destroy(server.wl_display);
 		return 1;
 	}
 
 	server.renderer = wlr_renderer_autocreate(server.backend);
 	if (server.renderer == NULL) {
 		wlr_log(WLR_ERROR, "failed to create wlr_renderer");
+		if (native_mode) fprintf(stderr,
+			"Native renderer setup failed. Check DRM/GBM driver availability and WLR_DRM_DEVICES/WLR_RENDERER overrides.\n");
+		wlr_backend_destroy(server.backend);
+		wl_display_destroy(server.wl_display);
 		return 1;
 	}
 #if SHADY_HAS_SPATIAL
 	if (server.config.spatial_mode && !wlr_renderer_is_gles2(server.renderer)) {
 		wlr_log(WLR_ERROR,
 			"the spatial module requires the GLES2 renderer (unset WLR_RENDERER=pixman)");
+		wlr_renderer_destroy(server.renderer);
+		wlr_backend_destroy(server.backend);
+		wl_display_destroy(server.wl_display);
 		return 1;
 	}
 #endif
@@ -169,6 +211,9 @@ int main(int argc, char *argv[]) {
 		server.renderer);
 	if (server.allocator == NULL) {
 		wlr_log(WLR_ERROR, "failed to create wlr_allocator");
+		wlr_renderer_destroy(server.renderer);
+		wlr_backend_destroy(server.backend);
+		wl_display_destroy(server.wl_display);
 		return 1;
 	}
 
@@ -233,24 +278,36 @@ int main(int argc, char *argv[]) {
 
 	if (!shady_modules_initialize_all(&server)) {
 		wlr_log(WLR_ERROR, "failed to initialize modules");
-		return 1;
-	}
-
-	const char *socket = wl_display_add_socket_auto(server.wl_display);
-	if (!socket) {
-		wlr_backend_destroy(server.backend);
-		return 1;
-	}
-
-	if (!wlr_backend_start(server.backend)) {
+		/* Most importantly for native sessions, release DRM/libseat before exit. */
 		wlr_backend_destroy(server.backend);
 		wl_display_destroy(server.wl_display);
 		return 1;
 	}
 
-	printf("Shady is listening on WAYLAND_DISPLAY=%s\n"
-		"Launch a client from another dev-shell terminal:\n"
-		"  WAYLAND_DISPLAY=%s foot\n", socket, socket);
+	const char *socket = wl_display_add_socket_auto(server.wl_display);
+	if (!socket) {
+		wlr_log(WLR_ERROR, "failed to allocate Wayland socket in XDG_RUNTIME_DIR");
+		wlr_backend_destroy(server.backend);
+		wl_display_destroy(server.wl_display);
+		return 1;
+	}
+
+	if (!wlr_backend_start(server.backend)) {
+		wlr_log(WLR_ERROR, "failed to start wlroots backend");
+		if (native_mode) fprintf(stderr,
+			"Native backend start failed after acquiring the session. Check DRM master availability, GPU driver support, and whether another compositor owns this VT/GPU.\n");
+		wlr_backend_destroy(server.backend);
+		wl_display_destroy(server.wl_display);
+		return 1;
+	}
+
+	if (native_mode) {
+		printf("Shady native session is running on WAYLAND_DISPLAY=%s\n", socket);
+	} else {
+		printf("Shady is listening on WAYLAND_DISPLAY=%s\n"
+			"Launch a client from another dev-shell terminal:\n"
+			"  WAYLAND_DISPLAY=%s foot\n", socket, socket);
+	}
 	fflush(stdout);
 	if (startup_cmd) {
 		pid_t pid = fork();

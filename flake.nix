@@ -19,7 +19,7 @@
               wlroots wayland wayland-protocols libxkbcommon pixman libdrm
               mesa libglvnd libffi libxau libxdmcp lua5_4
             ];
-            packages = with pkgs; [ stdenv.cc foot ];
+            packages = with pkgs; [ stdenv.cc foot seatd ];
             shellHook = ''
               export PKG_CONFIG_PATH=${pkgs.wlr-protocols}/share/pkgconfig:$PKG_CONFIG_PATH
             '';

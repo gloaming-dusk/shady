@@ -4,6 +4,7 @@
 #include <wlr/types/wlr_output.h>
 #include <wlr/types/wlr_output_layout.h>
 #include <wlr/types/wlr_scene.h>
+#include <wlr/util/log.h>
 
 #include "shady.h"
 #include "render/render.h"
@@ -38,7 +39,11 @@ void server_new_output(struct wl_listener *listener, void *data) {
 		wl_container_of(listener, server, new_output);
 	struct wlr_output *wlr_output = data;
 
-	wlr_output_init_render(wlr_output, server->allocator, server->renderer);
+	if (!wlr_output_init_render(wlr_output, server->allocator, server->renderer)) {
+		wlr_log(WLR_ERROR, "output %s: failed to initialize rendering",
+			wlr_output->name ? wlr_output->name : "<unnamed>");
+		return;
+	}
 
 	struct wlr_output_state state;
 	wlr_output_state_init(&state);
@@ -49,8 +54,18 @@ void server_new_output(struct wl_listener *listener, void *data) {
 		wlr_output_state_set_mode(&state, mode);
 	}
 
-	wlr_output_commit_state(wlr_output, &state);
+	if (!wlr_output_commit_state(wlr_output, &state)) {
+		wlr_log(WLR_ERROR, "output %s: failed to enable/commit preferred mode",
+			wlr_output->name ? wlr_output->name : "<unnamed>");
+		wlr_output_state_finish(&state);
+		return;
+	}
 	wlr_output_state_finish(&state);
+	wlr_log(WLR_INFO, "output %s enabled: %dx%d@%.3fHz scale=%.2f",
+		wlr_output->name ? wlr_output->name : "<unnamed>",
+		wlr_output->width, wlr_output->height,
+		wlr_output->refresh > 0 ? wlr_output->refresh / 1000.0 : 0.0,
+		wlr_output->scale);
 
 	struct shady_output *output = calloc(1, sizeof(*output));
 	output->wlr_output = wlr_output;

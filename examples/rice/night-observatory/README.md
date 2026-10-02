@@ -14,12 +14,22 @@ nix develop -c ninja -C build libshady-plugin-orbit-layout.so
 
 ## Run
 
+Nested in an existing Wayland session:
+
 ```sh
 SHADY_ROOT=$PWD \
 SHADY_LUA_INIT=$PWD/examples/rice/night-observatory/init.lua \
 WLR_BACKENDS=wayland \
 ./build/shady -c ./examples/rice/night-observatory/config.lua
 ```
+
+Directly on a Linux VT/TTY with DRM + libinput:
+
+```sh
+./examples/rice/night-observatory/run-native.sh
+```
+
+The native launcher reuses the same rice/config/startup terminal but enters Shady through the repository `run-native.sh` seat/session checks.
 
 For a self-contained headless smoke test, replace `WLR_BACKENDS=wayland` with
 `WLR_BACKENDS=headless`.

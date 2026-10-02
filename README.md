@@ -92,6 +92,26 @@ Run Shady nested inside an existing Wayland session:
 WLR_BACKENDS=wayland ./build/shady
 ```
 
+Run Shady directly on a Linux VT/TTY with DRM + libinput:
+
+```sh
+./run-native.sh
+```
+
+For the first DRM/TTY smoke test, use the compatibility renderer path first:
+
+```sh
+./run-native.sh --safe -s foot
+```
+
+Once DRM modesetting, keyboard/mouse input, VT ownership and shutdown all work, try the full spatial compositor and then Night Observatory.
+
+`--native` forces wlroots to use `drm,libinput`, clears nested Wayland/X11 display variables, and requires a normal login-provided `XDG_RUNTIME_DIR`. The wlroots build used by the Nix shell links `libdrm`, `libudev`, and `libseat`, so it can acquire the GPU/input seat through logind or seatd. Run it from a real Linux VT login, not from a terminal emulator inside another compositor. If libseat cannot acquire the active seat, try from a real VT login (for example Ctrl+Alt+F3) or, on a seatd setup, run through `seatd-launch`.
+
+```sh
+seatd-launch ./build/shady --native
+```
+
 For a plain desktop/safe path that bypasses the spatial renderer, physics,
 FPS interaction and visual effects, use:
 
@@ -129,6 +149,13 @@ For a more opinionated ricing demo, the repository includes **Night Observatory*
 ```sh
 nix develop
 ./examples/rice/night-observatory/run.sh
+```
+
+For a direct TTY/DRM Night Observatory session:
+
+```sh
+nix develop
+./examples/rice/night-observatory/run-native.sh
 ```
 
 It combines a Lua bootstrap config, runtime Lua events/keybindings, the spatial stack, and the hot-reloadable `orbit-layout` native plugin to arrange windows as a loose 3D constellation. The demo starts a terminal automatically when launched without extra arguments; `Super+Return` opens another terminal and `Super+D` opens an available launcher. See `examples/rice/night-observatory/README.md` for controls and details.
