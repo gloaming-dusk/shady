@@ -16,6 +16,9 @@ struct shady_fps_state {
 	float grab_local_x, grab_local_y, grab_local_z;
 	bool input_capture;
 	struct shady_toplevel *expanded_toplevel;
+	bool orbit_saved;
+	float orbit_yaw, orbit_pitch, orbit_distance;
+	float orbit_target_x, orbit_target_y, orbit_target_z;
 };
 
 struct shady_fps_toplevel_state {

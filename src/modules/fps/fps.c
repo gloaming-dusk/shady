@@ -36,7 +36,36 @@ static void center_cursor(struct shady_server*s){
 	float sc=o->scale>0?o->scale:1.f;
 	wlr_cursor_warp(s->cursor,NULL,ox+(double)o->width/sc*.5,oy+(double)o->height/sc*.5);
 }
-bool shady_fps_toggle(struct shady_server*s){if(!s->config.fps_mode)return true;shady_spatial_state(s)->runtime.camera.first_person=!shady_spatial_state(s)->runtime.camera.first_person;shady_fps_state_for(s)->forward=shady_fps_state_for(s)->back=shady_fps_state_for(s)->left=shady_fps_state_for(s)->right=false;shady_fps_state_for(s)->jump_queued=false;shady_fps_state_for(s)->held_toplevel=NULL;shady_fps_state_for(s)->input_capture=shady_spatial_state(s)->runtime.camera.first_person;if(shady_spatial_state(s)->runtime.camera.first_person){struct shady_vec3 eye;shady_camera_eye(&shady_spatial_state(s)->runtime.camera,&eye);shady_spatial_state(s)->runtime.camera.pos_x=eye.x;shady_spatial_state(s)->runtime.camera.pos_y=eye.y;shady_spatial_state(s)->runtime.camera.pos_z=eye.z;shady_spatial_state(s)->runtime.camera.vel_y=0;shady_spatial_state(s)->runtime.camera.grounded=false;wlr_seat_pointer_clear_focus(s->seat);center_cursor(s);}shady_render_schedule_all_outputs(s);return true;}
+bool shady_fps_toggle(struct shady_server*s){
+	if(!s->config.fps_mode)return true;
+	struct shady_camera*c=&shady_spatial_state(s)->runtime.camera;
+	struct shady_fps_state*f=shady_fps_state_for(s);
+	bool entering=!c->first_person;
+	f->forward=f->back=f->left=f->right=false;
+	f->jump_queued=false;
+	f->held_toplevel=NULL;
+	if(entering){
+		struct shady_vec3 eye;shady_camera_eye(c,&eye);
+		f->orbit_yaw=c->yaw;f->orbit_pitch=c->pitch;f->orbit_distance=c->distance;
+		f->orbit_target_x=c->target_x;f->orbit_target_y=c->target_y;f->orbit_target_z=c->target_z;
+		f->orbit_saved=true;
+		c->pos_x=eye.x;c->pos_y=eye.y;c->pos_z=eye.z;c->vel_y=0;c->grounded=false;
+		c->first_person=true;f->input_capture=true;
+		wlr_seat_pointer_clear_focus(s->seat);center_cursor(s);
+	}else{
+		if(f->expanded_toplevel){
+			shady_fps_toplevel_state(f->expanded_toplevel)->expanded=false;
+			f->expanded_toplevel=NULL;
+		}
+		c->first_person=false;f->input_capture=false;c->vel_y=0;c->grounded=false;
+		if(f->orbit_saved){
+			c->yaw=f->orbit_yaw;c->pitch=f->orbit_pitch;c->distance=f->orbit_distance;
+			c->target_x=f->orbit_target_x;c->target_y=f->orbit_target_y;c->target_z=f->orbit_target_z;
+			f->orbit_saved=false;
+		}
+	}
+	shady_render_schedule_all_outputs(s);return true;
+}
 bool shady_fps_toggle_capture(struct shady_server*s){
 	if(!shady_spatial_state(s)->runtime.camera.first_person)return false;
 	if(shady_fps_state_for(s)->expanded_toplevel){
@@ -55,7 +84,7 @@ bool shady_fps_toggle_capture(struct shady_server*s){
 	shady_render_schedule_all_outputs(s);return true;
 }
 bool shady_fps_handle_key(struct shady_server*s,const xkb_keysym_t*syms,int n,uint32_t state){if(!shady_spatial_state(s)->runtime.camera.first_person||!shady_fps_state_for(s)->input_capture)return false;bool p=state==WL_KEYBOARD_KEY_STATE_PRESSED,handled=false;for(int j=0;j<n;j++)switch(syms[j]){case XKB_KEY_w:case XKB_KEY_W:shady_fps_state_for(s)->forward=p;handled=true;break;case XKB_KEY_s:case XKB_KEY_S:shady_fps_state_for(s)->back=p;handled=true;break;case XKB_KEY_a:case XKB_KEY_A:shady_fps_state_for(s)->left=p;handled=true;break;case XKB_KEY_d:case XKB_KEY_D:shady_fps_state_for(s)->right=p;handled=true;break;case XKB_KEY_space:if(p)shady_fps_state_for(s)->jump_queued=true;handled=true;break;default:break;}if(handled)shady_render_schedule_all_outputs(s);return handled;}
-bool shady_fps_handle_motion(struct shady_server*s,double dx,double dy){if(!shady_spatial_state(s)->runtime.camera.first_person||!shady_fps_state_for(s)->input_capture)return false;shady_spatial_state(s)->runtime.camera.yaw-=(float)dx*LOOK_SENS;shady_spatial_state(s)->runtime.camera.pitch-=(float)dy*LOOK_SENS;clamp_pitch(&shady_spatial_state(s)->runtime.camera);struct wlr_output*o=wlr_output_layout_output_at(s->output_layout,s->cursor->x,s->cursor->y);if(o){double ox=0,oy=0;wlr_output_layout_output_coords(s->output_layout,o,&ox,&oy);float sc=o->scale>0?o->scale:1;wlr_cursor_warp(s->cursor,NULL,-ox+(double)o->width/sc*.5,-oy+(double)o->height/sc*.5);}wlr_seat_pointer_clear_focus(s->seat);shady_render_schedule_all_outputs(s);return true;}
+bool shady_fps_handle_motion(struct shady_server*s,double dx,double dy){if(!shady_spatial_state(s)->runtime.camera.first_person||!shady_fps_state_for(s)->input_capture)return false;shady_spatial_state(s)->runtime.camera.yaw-=(float)dx*LOOK_SENS;shady_spatial_state(s)->runtime.camera.pitch-=(float)dy*LOOK_SENS;clamp_pitch(&shady_spatial_state(s)->runtime.camera);wlr_seat_pointer_clear_focus(s->seat);shady_render_schedule_all_outputs(s);return true;}
 bool shady_fps_handle_button(struct shady_server*s,uint32_t button,uint32_t state){if(!shady_spatial_state(s)->runtime.camera.first_person||!shady_fps_state_for(s)->input_capture)return false;if(button==BTN_RIGHT&&state==WL_POINTER_BUTTON_STATE_PRESSED&&shady_fps_state_for(s)->held_toplevel){struct shady_vec3 f;shady_camera_basis(&shady_spatial_state(s)->runtime.camera,NULL,NULL,&f);struct shady_toplevel*t=shady_fps_state_for(s)->held_toplevel;float v=2.6f;shady_physics_set_velocity(t,f.x*v,f.y*v+shady_spatial_state(s)->runtime.camera.vel_y,f.z*v);shady_window_motion_add_impulse(s,t,f.x*.035f,f.y*.035f,-f.y*1.1f,f.x*.7f);shady_fps_state_for(s)->held_toplevel=NULL;shady_render_schedule_all_outputs(s);return true;}if(button==BTN_LEFT&&state==WL_POINTER_BUTTON_STATE_PRESSED){if(shady_fps_state_for(s)->held_toplevel)shady_fps_state_for(s)->held_toplevel=NULL;else{float d=0,hx=0,hy=0,hz=0;struct shady_toplevel*t=shady_toplevel_at_camera_center_hit(s,&d,&hx,&hy,&hz);if(t&&d<=HOLD_MAX){struct wlr_surface*sf=t->xdg_toplevel->base->surface;struct wlr_output*o=NULL;if(!wl_list_empty(&s->outputs)){struct shady_output*out=wl_container_of(s->outputs.next,out,link);o=out->wlr_output;}if(o&&sf->current.height>0){double ox=0,oy=0;wlr_output_layout_output_coords(s->output_layout,o,&ox,&oy);float lw=(float)o->width/o->scale,lh=(float)o->height/o->scale,tw=(float)sf->current.width,th=(float)sf->current.height;float cx=((float)(t->scene_tree->node.x+ox)+tw*.5f-lw*.5f)/lh;float cy=(lh*.5f-((float)(t->scene_tree->node.y+oy)+th*.5f))/lh;shady_fps_state_for(s)->grab_offset_x=hx-cx;shady_fps_state_for(s)->grab_offset_y=hy-cy;shady_fps_state_for(s)->grab_offset_z=hz-shady_spatial_toplevel_state(t)->z;
 float tilt_x=0.f,tilt_y=0.f;shady_window_motion_get_tilt(t,&tilt_x,&tilt_y);float model[16],inv[16];shady_window_model(model,(float)(t->scene_tree->node.x+ox),(float)(t->scene_tree->node.y+oy),tw,th,lw,lh,shady_spatial_toplevel_state(t)->z,tilt_x,tilt_y);if(shady_mat4_invert(inv,model)){shady_fps_state_for(s)->grab_local_x=inv[0]*hx+inv[4]*hy+inv[8]*hz+inv[12]-.5f;shady_fps_state_for(s)->grab_local_y=inv[1]*hx+inv[5]*hy+inv[9]*hz+inv[13]-.5f;shady_fps_state_for(s)->grab_local_z=inv[2]*hx+inv[6]*hy+inv[10]*hz+inv[14];}else{shady_fps_state_for(s)->grab_local_x=shady_fps_state_for(s)->grab_local_y=shady_fps_state_for(s)->grab_local_z=0;}}else{shady_fps_state_for(s)->grab_offset_x=shady_fps_state_for(s)->grab_offset_y=shady_fps_state_for(s)->grab_offset_z=0;shady_fps_state_for(s)->grab_local_x=shady_fps_state_for(s)->grab_local_y=shady_fps_state_for(s)->grab_local_z=0;}shady_fps_state_for(s)->held_toplevel=t;shady_fps_state_for(s)->hold_distance=d;if(shady_fps_state_for(s)->hold_distance<HOLD_MIN)shady_fps_state_for(s)->hold_distance=HOLD_MIN;focus_toplevel(t);}}shady_render_schedule_all_outputs(s);}return true;}
 bool shady_fps_handle_axis(struct shady_server*s,struct wlr_pointer_axis_event*e){if(!shady_spatial_state(s)->runtime.camera.first_person||!shady_fps_state_for(s)->input_capture||!shady_fps_state_for(s)->held_toplevel||e->orientation!=WL_POINTER_AXIS_VERTICAL_SCROLL)return false;shady_fps_state_for(s)->hold_distance+=(float)e->delta*.0025f;if(shady_fps_state_for(s)->hold_distance<HOLD_MIN)shady_fps_state_for(s)->hold_distance=HOLD_MIN;if(shady_fps_state_for(s)->hold_distance>HOLD_MAX)shady_fps_state_for(s)->hold_distance=HOLD_MAX;shady_render_schedule_all_outputs(s);return true;}
