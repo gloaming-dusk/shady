@@ -146,11 +146,11 @@ void focus_toplevel(struct shady_toplevel *toplevel) {
 	wl_list_remove(&toplevel->link);
 	wl_list_insert(&server->toplevels, &toplevel->link);
 	wlr_xdg_toplevel_set_activated(toplevel->xdg_toplevel, true);
-	shady_event_emit_window(server, SHADY_EVENT_WINDOW_FOCUSED, toplevel);
 	if (keyboard != NULL) {
 		wlr_seat_keyboard_notify_enter(seat, surface,
 			keyboard->keycodes, keyboard->num_keycodes, &keyboard->modifiers);
 	}
+	shady_event_emit_window(server, SHADY_EVENT_WINDOW_FOCUSED, toplevel);
 }
 
 static void begin_interactive(struct shady_toplevel *toplevel,

@@ -81,6 +81,20 @@ and `Hangup` while their compositor socket disappears. That is expected during
 shutdown. If the same messages appear while Shady is still running, that is a
 separate compositor/client failure worth investigating.
 
+## Window rules
+
+Night Observatory also demonstrates app rules. Rules match `app_id` and/or an exact `title`, then apply workspace and window state before the new window is focused:
+
+```lua
+shady.rule({
+    app_id = "firefox",
+    workspace = "web",
+    maximized = true,
+})
+```
+
+Workspaces remember their last focused window, so returning with `Super+1/2/3` restores the window you were using rather than choosing an arbitrary mapped window.
+
 The point of the demo is not the exact aesthetic. It is to show that a rice can
 be assembled from a Lua bootstrap, a Lua runtime layer, built-in modules, and a
 small hot-reloadable native plugin without changing compositor core code.

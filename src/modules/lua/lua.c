@@ -16,6 +16,7 @@
 #include "../fps/state.h"
 #include "../spatial/state.h"
 #include "../workspace/workspace.h"
+#include "../workspace/state.h"
 #include <string.h>
 #include <wlr/types/wlr_keyboard.h>
 #include <wlr/types/wlr_xdg_shell.h>
@@ -40,8 +41,25 @@ static void push_output(lua_State *L,struct shady_output *o);
 static void push_seat(lua_State *L,struct wlr_seat *seat);
 static void push_module(lua_State *L,const struct shady_module *module);
 #define SHADY_LUA_MAX_BINDS 32
+#define SHADY_LUA_MAX_RULES 64
+#define SHADY_LUA_RULE_TEXT_MAX 128
 struct lua_bind { xkb_keysym_t sym; uint32_t modifiers; int ref; };
 static struct lua_bind lua_binds[SHADY_LUA_MAX_BINDS]; static size_t lua_bind_count;
+
+struct lua_window_rule {
+	char app_id[SHADY_LUA_RULE_TEXT_MAX];
+	char title[SHADY_LUA_RULE_TEXT_MAX];
+	char workspace[SHADY_WORKSPACE_NAME_MAX];
+	bool has_app_id;
+	bool has_title;
+	bool has_workspace;
+	bool has_maximized;
+	bool maximized;
+	bool has_fullscreen;
+	bool fullscreen;
+};
+static struct lua_window_rule lua_rules[SHADY_LUA_MAX_RULES];
+static size_t lua_rule_count;
 
 static uint32_t parse_mod(const char *s) {
 	if (!strcmp(s, "Alt")) return WLR_MODIFIER_ALT;
@@ -63,6 +81,91 @@ static int l_shady_bind(lua_State *L){
 	struct lua_bind *b=&lua_binds[lua_bind_count];if(!parse_lua_bind(spec,&b->sym,&b->modifiers))return luaL_error(L,"invalid key binding: %s",spec);
 	lua_pushvalue(L,2);b->ref=luaL_ref(L,LUA_REGISTRYINDEX);lua_bind_count++;return 0;
 }
+
+static bool rule_string_field(lua_State *L, int table_index, const char *key,
+		char *dst, size_t dst_size, bool *present) {
+	lua_getfield(L, table_index, key);
+	if (lua_isnil(L, -1)) {
+		lua_pop(L, 1);
+		*present = false;
+		return true;
+	}
+	if (!lua_isstring(L, -1)) {
+		lua_pop(L, 1);
+		return false;
+	}
+	const char *value = lua_tostring(L, -1);
+	if (!value || !*value || strlen(value) >= dst_size) {
+		lua_pop(L, 1);
+		return false;
+	}
+	snprintf(dst, dst_size, "%s", value);
+	*present = true;
+	lua_pop(L, 1);
+	return true;
+}
+
+static bool rule_bool_field(lua_State *L, int table_index, const char *key,
+		bool *value, bool *present) {
+	lua_getfield(L, table_index, key);
+	if (lua_isnil(L, -1)) {
+		lua_pop(L, 1);
+		*present = false;
+		return true;
+	}
+	if (!lua_isboolean(L, -1)) {
+		lua_pop(L, 1);
+		return false;
+	}
+	*value = lua_toboolean(L, -1);
+	*present = true;
+	lua_pop(L, 1);
+	return true;
+}
+
+static int l_shady_rule(lua_State *L) {
+	luaL_checktype(L, 1, LUA_TTABLE);
+	if (lua_rule_count >= SHADY_LUA_MAX_RULES)
+		return luaL_error(L, "too many Shady window rules");
+	struct lua_window_rule rule = {0};
+	if (!rule_string_field(L, 1, "app_id", rule.app_id, sizeof(rule.app_id), &rule.has_app_id))
+		return luaL_error(L, "rule.app_id must be a non-empty string");
+	if (!rule_string_field(L, 1, "title", rule.title, sizeof(rule.title), &rule.has_title))
+		return luaL_error(L, "rule.title must be a non-empty string");
+	if (!rule_string_field(L, 1, "workspace", rule.workspace, sizeof(rule.workspace), &rule.has_workspace))
+		return luaL_error(L, "rule.workspace must be a non-empty string");
+	if (!rule_bool_field(L, 1, "maximized", &rule.maximized, &rule.has_maximized))
+		return luaL_error(L, "rule.maximized must be boolean");
+	if (!rule_bool_field(L, 1, "fullscreen", &rule.fullscreen, &rule.has_fullscreen))
+		return luaL_error(L, "rule.fullscreen must be boolean");
+	if (!rule.has_app_id && !rule.has_title)
+		return luaL_error(L, "rule requires app_id and/or title match");
+	if (!rule.has_workspace && !rule.has_maximized && !rule.has_fullscreen)
+		return luaL_error(L, "rule requires workspace, maximized, or fullscreen action");
+	lua_rules[lua_rule_count++] = rule;
+	lua_pushinteger(L, (lua_Integer)lua_rule_count);
+	return 1;
+}
+void shady_lua_apply_window_rules(struct shady_toplevel *toplevel) {
+	if (!toplevel || !toplevel->xdg_toplevel) return;
+	const char *app_id = toplevel->xdg_toplevel->app_id ? toplevel->xdg_toplevel->app_id : "";
+	const char *title = toplevel->xdg_toplevel->title ? toplevel->xdg_toplevel->title : "";
+	for (size_t i = 0; i < lua_rule_count; i++) {
+		const struct lua_window_rule *rule = &lua_rules[i];
+		if (rule->has_app_id && strcmp(rule->app_id, app_id) != 0) continue;
+		if (rule->has_title && strcmp(rule->title, title) != 0) continue;
+		if (rule->has_workspace)
+			(void)shady_workspace_move_toplevel(toplevel, rule->workspace);
+		if (rule->has_fullscreen)
+			shady_toplevel_set_fullscreen(toplevel, rule->fullscreen);
+		else if (rule->has_maximized)
+			shady_toplevel_set_maximized(toplevel, rule->maximized);
+		wlr_log(WLR_INFO, "[SHADY LUA] rule %zu matched %s / %s",
+			i + 1, app_id, title);
+		return;
+	}
+}
+
 static struct shady_spatial_state *lua_spatial(lua_State *L) {
 	struct shady_spatial_state *state = shady_spatial_state(lua_server);
 	if (!state) {
@@ -165,6 +268,7 @@ static void install_api(lua_State *L){
 	lua_pushcfunction(L,l_shady_config);lua_setfield(L,-2,"config");
 	lua_pushcfunction(L,l_shady_config);lua_setfield(L,-2,"set");
 	lua_pushcfunction(L,l_shady_bind);lua_setfield(L,-2,"bind");
+	lua_pushcfunction(L,l_shady_rule);lua_setfield(L,-2,"rule");
 	lua_pushcfunction(L,l_shady_quit);lua_setfield(L,-2,"quit");
 	lua_pushcfunction(L,l_shady_spawn);lua_setfield(L,-2,"spawn");
 	lua_pushcfunction(L,l_shady_windows);lua_setfield(L,-2,"windows");
@@ -225,5 +329,5 @@ bool shady_lua_handle_key(struct shady_server *server,xkb_keysym_t sym,uint32_t 
 		lua_rawgeti(L,LUA_REGISTRYINDEX,lua_binds[i].ref);if(lua_pcall(L,0,0,0)!=LUA_OK){wlr_log(WLR_ERROR,"[SHADY LUA] keybind: %s",lua_tostring(L,-1));lua_pop(L,1);}return true;}return false;
 }
 void shady_lua_fini(struct shady_server *server){
-	if(shady_lua_state_for(server)->L){lua_close(shady_lua_state_for(server)->L);shady_lua_state_for(server)->L=NULL;}lua_bind_count=0;lua_next_handler_id=1;
+	if(shady_lua_state_for(server)->L){lua_close(shady_lua_state_for(server)->L);shady_lua_state_for(server)->L=NULL;}lua_bind_count=0;lua_rule_count=0;lua_next_handler_id=1;
 }

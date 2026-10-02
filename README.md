@@ -239,6 +239,7 @@ Current scripting calls include:
 ```lua
 shady.log("hello")
 shady.spawn("foot")
+shady.rule({ app_id = "firefox", workspace = "web", maximized = true })
 shady.toggle_gravity()
 shady.toggle_fps()
 shady.quit()
@@ -261,6 +262,8 @@ shady.camera("target_z", -1.0)
 ```
 
 `shady.spawn(command)` launches a command asynchronously through `sh -lc` and returns whether the child process was created successfully. Shady reaps exited children through the Wayland event loop.
+
+`shady.rule({...})` installs an ordered window rule. A rule matches exact `app_id` and/or `title` fields and can set `workspace`, `maximized`, and `fullscreen`. The first matching rule wins and is applied during the map lifecycle before focus. Workspaces also retain a per-workspace last-focused window and restore it when switching back.
 
 `shady.windows()` returns live mapped `Window` objects, including windows on inactive workspaces; inspect `window.visible` to distinguish the current workspace. `shady.focused_window()` returns the keyboard-focused window or `nil`. `shady.workspace(name)` lazily creates/switches named workspaces, while `shady.current_workspace()` and `shady.workspaces()` expose the current workspace and known names. The same object model also exposes `shady.outputs()` (`Output` objects with `name`, `width`, `height`, `scale`), `shady.seat()` (`Seat.name`), and `shady.modules()` (`Module.name`, `Module.active`). This mirrors the opaque Window/Output/Seat/Module handles in the C plugin API.
 

@@ -14,6 +14,7 @@ struct shady_workspace_state {
 	char names[SHADY_MAX_WORKSPACES][SHADY_WORKSPACE_NAME_MAX];
 	size_t count;
 	size_t current;
+	struct shady_toplevel *last_focused[SHADY_MAX_WORKSPACES];
 };
 
 struct shady_workspace_toplevel_state {

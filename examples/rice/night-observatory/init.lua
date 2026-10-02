@@ -2,6 +2,11 @@
 
 shady.log("Night Observatory is awake")
 
+-- Window rules are evaluated before the new window is focused. Keep these
+-- deliberately light so the rice remains useful even without these apps.
+shady.rule({ app_id = "firefox", workspace = "web", maximized = true })
+shady.rule({ app_id = "org.mozilla.firefox", workspace = "web", maximized = true })
+
 -- A slightly elevated, off-axis view gives the 3D window shells some shape
 -- without making normal pointer interaction feel like a game.
 if shady.has_capability("spatial") then
