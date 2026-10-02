@@ -119,15 +119,31 @@ FPS interaction and visual effects, use:
 WLR_BACKENDS=wayland ./build/shady --safe
 ```
 
-For a genuinely small build, omit the spatial stack and runtime Lua scripting module. The tiny bootstrap Lua config engine remains available so `config.lua` still works:
+For a genuinely small build, omit the spatial stack, runtime Lua scripting module, and standalone shell. The tiny bootstrap Lua config engine remains available so `config.lua` still works:
 
 ```sh
-meson setup build-minimal -Dspatial=disabled -Dlua=disabled
+meson setup build-minimal -Dspatial=disabled -Dlua=disabled -Dshell=disabled
 ninja -C build-minimal
 ```
 
 The minimal build uses the wlroots scene renderer directly and does not require
 the GLES2 renderer, so it can run with `WLR_RENDERER=pixman` as well.
+
+### Standalone shell
+
+The default build also produces `build/shady-shell`, a separate Wayland client rather than compositor-internal UI. Its first version is a 32px top `wlr-layer-shell` bar rendered with wl_shm + Cairo/Pango. It reserves a 32px exclusive zone so maximized windows use the remaining work area, while fullscreen windows still occupy the entire output.
+
+```sh
+./build/shady-shell
+```
+
+For native testing, Shady can start the shell and a terminal together:
+
+```sh
+./run-native.sh -s './build/shady-shell & exec foot'
+```
+
+The current bar intentionally has placeholder workspace labels (`main`, `code`, `web`) plus a minute-resolution clock. Workspace/window state will move to a small Shady-specific Wayland shell protocol next; keeping the shell out-of-process means it can crash or restart without taking the compositor down.
 
 Safe mode renders the wlroots scene graph directly and uses normal scene-graph
 pointer hit testing. It is the compatibility baseline for work toward a daily-driver compositor.
@@ -359,6 +375,7 @@ src/
     scene_effects/    floor and shadow effects
     environment/      visual environment loading
   render/             GLES2 pipeline, math, picking and debug rendering
+  shell/              standalone layer-shell desktop UI client
   world/              shared world and collider representation
 assets/               development OBJ environments
 shaders/              editable GLSL

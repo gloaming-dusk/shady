@@ -5,3 +5,4 @@ option('fps', type: 'feature', value: 'enabled', description: 'Build the first-p
 option('window_motion', type: 'feature', value: 'enabled', description: 'Build wobble and inertial window motion')
 option('close_animation', type: 'feature', value: 'enabled', description: 'Build animated window close state machine')
 option('scene_effects', type: 'feature', value: 'enabled', description: 'Build floor, shadows and window shell effects')
+option('shell', type: 'feature', value: 'enabled', description: 'Build the standalone shady-shell layer-shell client')

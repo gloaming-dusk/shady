@@ -205,6 +205,7 @@ struct shady_layer_surface {
 	struct shady_server *server;
 	struct wlr_layer_surface_v1 *layer_surface;
 	struct wlr_scene_layer_surface_v1 *scene_layer;
+	bool mapped;
 	struct wl_listener commit;
 	struct wl_listener destroy;
 };

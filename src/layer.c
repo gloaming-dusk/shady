@@ -98,14 +98,35 @@ static void configure_layer_surface(struct shady_layer_surface *layer) {
 	wlr_output_layout_get_box(server->output_layout, surface->output, &full);
 	struct wlr_box usable = full;
 	wlr_scene_layer_surface_v1_configure(layer->scene_layer, &full, &usable);
-	refresh_maximized_for_output(server, surface->output);
 }
 
 static void layer_surface_commit(struct wl_listener *listener, void *data) {
 	(void)data;
 	struct shady_layer_surface *layer =
 		wl_container_of(listener, layer, commit);
-	configure_layer_surface(layer);
+	struct wlr_layer_surface_v1 *surface = layer->layer_surface;
+	const uint32_t layout_fields =
+		WLR_LAYER_SURFACE_V1_STATE_DESIRED_SIZE |
+		WLR_LAYER_SURFACE_V1_STATE_ANCHOR |
+		WLR_LAYER_SURFACE_V1_STATE_EXCLUSIVE_ZONE |
+		WLR_LAYER_SURFACE_V1_STATE_MARGIN |
+		WLR_LAYER_SURFACE_V1_STATE_LAYER |
+		WLR_LAYER_SURFACE_V1_STATE_EXCLUSIVE_EDGE;
+
+	bool layout_changed = surface->initial_commit ||
+		(surface->current.committed & layout_fields) != 0;
+	if (layout_changed) {
+		configure_layer_surface(layer);
+		if (surface->surface->mapped && surface->output)
+			refresh_maximized_for_output(layer->server, surface->output);
+	}
+
+	bool mapped = surface->surface->mapped;
+	if (mapped != layer->mapped) {
+		layer->mapped = mapped;
+		if (surface->output)
+			refresh_maximized_for_output(layer->server, surface->output);
+	}
 }
 
 static void layer_surface_destroy(struct wl_listener *listener, void *data) {
@@ -155,5 +176,8 @@ void server_new_layer_surface(struct wl_listener *listener, void *data) {
 	wl_signal_add(&layer_surface->events.destroy, &layer->destroy);
 
 	wl_list_insert(&shady_desktop_state(server)->layer_surfaces, &layer->link);
-	configure_layer_surface(layer);
+	/* The xdg/layer-shell initial commit initializes the protocol object.
+	 * Configure from the surface commit listener after wlroots has processed
+	 * that initial commit; configuring here would hit wlroots' initialized
+	 * assertion for real layer-shell clients. */
 }

@@ -5,11 +5,18 @@ wlroots = dependency('wlroots-0.20', version: ['>=0.20.2', '<0.21'])
 wlr_protocols = dependency('wlr-protocols')
 wayland_scanner = find_program('wayland-scanner')
 wlr_protocols_dir = wlr_protocols.get_variable(pkgconfig: 'pkgdatadir')
+layer_shell_xml = join_paths(wlr_protocols_dir, 'unstable/wlr-layer-shell-unstable-v1.xml')
 layer_shell_protocol_header = custom_target(
   'wlr-layer-shell-unstable-v1-protocol.h',
-  input: join_paths(wlr_protocols_dir, 'unstable/wlr-layer-shell-unstable-v1.xml'),
+  input: layer_shell_xml,
   output: 'wlr-layer-shell-unstable-v1-protocol.h',
   command: [wayland_scanner, 'client-header', '@INPUT@', '@OUTPUT@'],
+)
+layer_shell_protocol_code = custom_target(
+  'wlr-layer-shell-unstable-v1-protocol.c',
+  input: layer_shell_xml,
+  output: 'wlr-layer-shell-unstable-v1-protocol.c',
+  command: [wayland_scanner, 'private-code', '@INPUT@', '@OUTPUT@'],
 )
 
 cc = meson.get_compiler('c')
@@ -112,6 +119,34 @@ shady_deps = [
 ]
 if spatial_enabled
   shady_deps += [egl, glesv2]
+endif
+
+shell_option = get_option('shell')
+wayland_client = dependency('wayland-client', required: shell_option)
+cairo = dependency('cairo', required: shell_option)
+pangocairo = dependency('pangocairo', required: shell_option)
+wayland_protocols = dependency('wayland-protocols', required: shell_option)
+shell_enabled = wayland_client.found() and cairo.found() and pangocairo.found() and wayland_protocols.found()
+
+if shell_enabled
+  wayland_protocols_dir = wayland_protocols.get_variable(pkgconfig: 'pkgdatadir')
+  xdg_shell_xml = join_paths(wayland_protocols_dir, 'stable/xdg-shell/xdg-shell.xml')
+  xdg_shell_protocol_code = custom_target(
+    'xdg-shell-protocol.c',
+    input: xdg_shell_xml,
+    output: 'xdg-shell-protocol.c',
+    command: [wayland_scanner, 'private-code', '@INPUT@', '@OUTPUT@'],
+  )
+  executable('shady-shell',
+    [
+      layer_shell_protocol_header,
+      layer_shell_protocol_code,
+      xdg_shell_protocol_code,
+      'src/shell/main.c',
+    ],
+    include_directories: include_directories('.'),
+    dependencies: [wayland_client, cairo, pangocairo],
+    install: true)
 endif
 
 executable('shady',

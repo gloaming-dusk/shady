@@ -18,10 +18,11 @@
             buildInputs = with pkgs; [
               wlroots wayland wayland-protocols libxkbcommon pixman libdrm
               mesa libglvnd libffi libxau libxdmcp lua5_4
+              cairo cairo.dev pango pango.dev
             ];
             packages = with pkgs; [ stdenv.cc foot seatd ];
             shellHook = ''
-              export PKG_CONFIG_PATH=${pkgs.wlr-protocols}/share/pkgconfig:$PKG_CONFIG_PATH
+              export PKG_CONFIG_PATH=${pkgs.cairo.dev}/lib/pkgconfig:${pkgs.pango.dev}/lib/pkgconfig:${pkgs.wlr-protocols}/share/pkgconfig:$PKG_CONFIG_PATH
             '';
           };
         });
