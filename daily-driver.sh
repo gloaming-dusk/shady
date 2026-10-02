@@ -41,6 +41,7 @@ build() {
 
 test_daily() {
   SHADY_DAILY_BUILD_DIR="$BUILD_DIR" ./tests/daily-driver-smoke.sh
+  SHADY_DAILY_BUILD_DIR="$BUILD_DIR" ./tests/render-idle.sh
 }
 
 case "${1:-all}" in

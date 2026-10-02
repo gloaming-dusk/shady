@@ -18,11 +18,15 @@ void shady_render_fini(void) {
 
 void shady_render_schedule_output(struct shady_output *output) {
 	if (!output || !output->wlr_output) return;
+	output->frame_schedule_requests++;
 	if (!output->wlr_output->enabled) {
 		output->frame_scheduled = false;
 		return;
 	}
-	if (output->frame_scheduled) return;
+	if (output->frame_scheduled) {
+		output->frame_schedule_coalesced++;
+		return;
+	}
 	output->frame_scheduled = true;
 	wlr_output_schedule_frame(output->wlr_output);
 }

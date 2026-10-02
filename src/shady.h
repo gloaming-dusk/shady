@@ -154,6 +154,9 @@ struct shady_output {
 	struct shady_server *server;
 	struct wlr_output *wlr_output;
 	bool frame_scheduled;
+	uint64_t frame_schedule_requests;
+	uint64_t frame_schedule_coalesced;
+	uint64_t frame_callbacks;
 	struct wl_listener frame;
 	struct wl_listener request_state;
 	struct wl_listener destroy;

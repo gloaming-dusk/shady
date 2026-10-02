@@ -1,6 +1,8 @@
 /* Adapted from wlroots 0.20.2 TinyWL (CC0). See LICENSES/tinywl-CC0.txt. */
 #include <stdbool.h>
+#include <inttypes.h>
 #include <stdlib.h>
+#include <string.h>
 #include <wayland-server-core.h>
 #include <wlr/types/wlr_output.h>
 #include <wlr/types/wlr_output_layout.h>
@@ -14,6 +16,7 @@
 static void output_frame(struct wl_listener *listener, void *data) {
 	(void)data;
 	struct shady_output *output = wl_container_of(listener, output, frame);
+	output->frame_callbacks++;
 	output->frame_scheduled = false;
 	shady_render_output_frame(output);
 }
@@ -74,6 +77,15 @@ static void output_destroy(struct wl_listener *listener, void *data) {
 	shady_event_emit_output(server, SHADY_EVENT_OUTPUT_REMOVED, output);
 	wl_list_remove(&output->destroy.link);
 	wl_list_remove(&output->link);
+	const char *render_stats = getenv("SHADY_RENDER_STATS");
+	if (render_stats && *render_stats && strcmp(render_stats, "0") != 0) {
+		wlr_log(WLR_INFO,
+			"render-stats output=%s requests=%" PRIu64 " coalesced=%" PRIu64 " frames=%" PRIu64,
+			output->wlr_output->name ? output->wlr_output->name : "<unnamed>",
+			output->frame_schedule_requests,
+			output->frame_schedule_coalesced,
+			output->frame_callbacks);
+	}
 	shady_recover_toplevels_to_outputs(server);
 	shady_output_manager_publish(server);
 	free(output);

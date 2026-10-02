@@ -186,7 +186,11 @@ nix develop
 ```
 
 `./daily-driver.sh build` only builds the sanitizer profile and
-`./daily-driver.sh test` reruns the smoke test. The profile intentionally uses
+`./daily-driver.sh test` reruns the smoke test plus an idle-render regression.
+The idle check leaves a headless compositor untouched for one second and fails
+if it develops a continuous frame loop. Set `SHADY_RENDER_STATS=1` when running
+Shady manually to log per-output render scheduling requests, coalesced requests,
+and delivered frame callbacks at output teardown. The profile intentionally uses
 the 2D/pixman path so failures in basic desktop lifecycle handling are isolated
 from the spatial renderer and physics stack.
 
