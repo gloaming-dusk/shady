@@ -1,20 +1,25 @@
 #define _POSIX_C_SOURCE 200809L
 
 #include <cairo/cairo.h>
+#include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <dirent.h>
 #include <linux/input-event-codes.h>
 #include <pango/pangocairo.h>
 #include <poll.h>
+#include <signal.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/mman.h>
 #include <time.h>
 #include <unistd.h>
 #include <wayland-client.h>
+#include <xkbcommon/xkbcommon.h>
 
 #include "wlr-layer-shell-unstable-v1-protocol.h"
 #include "shady-shell-v1-client-protocol.h"
@@ -23,6 +28,13 @@
 #define MAX_WORKSPACES 16
 #define WORKSPACE_NAME_MAX 64
 #define WINDOW_TEXT_MAX 256
+#define MAX_APPS 512
+#define APP_NAME_MAX 128
+#define APP_EXEC_MAX 512
+#define LAUNCHER_WIDTH 640
+#define LAUNCHER_HEIGHT 420
+#define LAUNCHER_RESULTS 8
+#define SEARCH_MAX 128
 
 struct shell_buffer {
     struct wl_buffer *wl_buffer;
@@ -35,6 +47,11 @@ struct workspace_region {
     double x1;
 };
 
+struct launcher_app {
+    char name[APP_NAME_MAX];
+    char exec[APP_EXEC_MAX];
+};
+
 struct shell {
     struct wl_display *display;
     struct wl_registry *registry;
@@ -42,10 +59,16 @@ struct shell {
     struct wl_shm *shm;
     struct wl_seat *seat;
     struct wl_pointer *pointer;
+    struct wl_keyboard *keyboard;
+    struct xkb_context *xkb_context;
+    struct xkb_keymap *xkb_keymap;
+    struct xkb_state *xkb_state;
     struct zwlr_layer_shell_v1 *layer_shell;
     struct shady_shell_v1 *shady_shell;
     struct wl_surface *surface;
     struct zwlr_layer_surface_v1 *layer_surface;
+    struct wl_surface *launcher_surface;
+    struct zwlr_layer_surface_v1 *launcher_layer_surface;
 
     uint32_t width;
     uint32_t height;
@@ -62,11 +85,153 @@ struct shell {
 
     double pointer_x;
     double pointer_y;
+    struct wl_surface *pointer_surface;
+
+    struct launcher_app apps[MAX_APPS];
+    size_t app_count;
+    bool launcher_visible;
+    bool launcher_configured;
+    uint32_t launcher_width;
+    uint32_t launcher_height;
+    char search[SEARCH_MAX];
+    size_t selected_result;
 };
 
 static void copy_text(char *dst, size_t dst_size, const char *src) {
     if (!dst || dst_size == 0) return;
     snprintf(dst, dst_size, "%s", src ? src : "");
+}
+
+static bool ascii_contains_ci(const char *haystack, const char *needle) {
+    if (!needle || !*needle) return true;
+    if (!haystack) return false;
+    size_t n = strlen(needle);
+    for (const char *p = haystack; *p; p++) {
+        size_t i = 0;
+        while (i < n && p[i] &&
+                (char)tolower((unsigned char)p[i]) ==
+                (char)tolower((unsigned char)needle[i])) i++;
+        if (i == n) return true;
+    }
+    return false;
+}
+
+static void sanitize_exec(char *dst, size_t dst_size, const char *src) {
+    size_t out = 0;
+    for (size_t i = 0; src && src[i] && out + 1 < dst_size; i++) {
+        if (src[i] != '%') {
+            dst[out++] = src[i];
+            continue;
+        }
+        if (src[i + 1] == '%') {
+            dst[out++] = '%';
+            i++;
+            continue;
+        }
+        if (src[i + 1]) i++;
+    }
+    while (out > 0 && (dst[out - 1] == ' ' || dst[out - 1] == '\t')) out--;
+    dst[out] = '\0';
+}
+
+static bool desktop_truthy(const char *value) {
+    return value && (!strcasecmp(value, "true") || !strcmp(value, "1"));
+}
+
+static void launcher_add_desktop_file(struct shell *shell, const char *path) {
+    if (shell->app_count >= MAX_APPS) return;
+    FILE *f = fopen(path, "r");
+    if (!f) return;
+
+    char line[1024], name[APP_NAME_MAX] = {0}, exec[APP_EXEC_MAX] = {0};
+    bool in_entry = false, hidden = false, nodisplay = false, application = true;
+    while (fgets(line, sizeof(line), f)) {
+        size_t len = strlen(line);
+        while (len && (line[len - 1] == '\n' || line[len - 1] == '\r')) line[--len] = '\0';
+        if (line[0] == '[') {
+            in_entry = strcmp(line, "[Desktop Entry]") == 0;
+            continue;
+        }
+        if (!in_entry || line[0] == '#' || !line[0]) continue;
+        char *eq = strchr(line, '=');
+        if (!eq) continue;
+        *eq++ = '\0';
+        if (!strcmp(line, "Name")) copy_text(name, sizeof(name), eq);
+        else if (!strcmp(line, "Exec")) copy_text(exec, sizeof(exec), eq);
+        else if (!strcmp(line, "Hidden")) hidden = desktop_truthy(eq);
+        else if (!strcmp(line, "NoDisplay")) nodisplay = desktop_truthy(eq);
+        else if (!strcmp(line, "Type")) application = strcmp(eq, "Application") == 0;
+    }
+    fclose(f);
+    if (!application || hidden || nodisplay || !name[0] || !exec[0]) return;
+
+    struct launcher_app *app = &shell->apps[shell->app_count];
+    copy_text(app->name, sizeof(app->name), name);
+    sanitize_exec(app->exec, sizeof(app->exec), exec);
+    if (!app->exec[0]) return;
+    shell->app_count++;
+}
+
+static void launcher_scan_dir(struct shell *shell, const char *base) {
+    if (!base || !*base) return;
+    char path[4096];
+    snprintf(path, sizeof(path), "%s/applications", base);
+    DIR *dir = opendir(path);
+    if (!dir) return;
+    struct dirent *entry;
+    while ((entry = readdir(dir)) != NULL && shell->app_count < MAX_APPS) {
+        size_t len = strlen(entry->d_name);
+        if (len < 9 || strcmp(entry->d_name + len - 8, ".desktop") != 0) continue;
+        char file[4096];
+        int written = snprintf(file, sizeof(file), "%s/%s", path, entry->d_name);
+        if (written < 0 || (size_t)written >= sizeof(file)) continue;
+        launcher_add_desktop_file(shell, file);
+    }
+    closedir(dir);
+}
+
+static void launcher_load_apps(struct shell *shell) {
+    const char *home = getenv("HOME");
+    const char *xdg_home = getenv("XDG_DATA_HOME");
+    char local[4096];
+    if (xdg_home && *xdg_home) launcher_scan_dir(shell, xdg_home);
+    else if (home && *home) {
+        snprintf(local, sizeof(local), "%s/.local/share", home);
+        launcher_scan_dir(shell, local);
+    }
+
+    const char *dirs = getenv("XDG_DATA_DIRS");
+    if (!dirs || !*dirs) dirs = "/usr/local/share:/usr/share";
+    char *copy = strdup(dirs);
+    if (copy) {
+        char *save = NULL;
+        for (char *p = strtok_r(copy, ":", &save); p; p = strtok_r(NULL, ":", &save))
+            launcher_scan_dir(shell, p);
+        free(copy);
+    }
+    fprintf(stderr, "shady-shell: indexed %zu applications\n", shell->app_count);
+}
+
+static size_t launcher_matching_indices(struct shell *shell,
+        size_t out[LAUNCHER_RESULTS]) {
+    size_t count = 0;
+    for (size_t i = 0; i < shell->app_count && count < LAUNCHER_RESULTS; i++) {
+        if (ascii_contains_ci(shell->apps[i].name, shell->search) ||
+                ascii_contains_ci(shell->apps[i].exec, shell->search)) {
+            out[count++] = i;
+        }
+    }
+    return count;
+}
+
+static void launcher_spawn(const struct launcher_app *app) {
+    if (!app || !app->exec[0]) return;
+    pid_t pid = fork();
+    if (pid == 0) {
+        setsid();
+        execl("/bin/sh", "sh", "-lc", app->exec, (char *)NULL);
+        _exit(127);
+    }
 }
 
 static int create_shm_file(size_t size) {
@@ -261,6 +426,141 @@ static void draw_bar(struct shell *shell) {
     wl_surface_commit(shell->surface);
 }
 
+static void draw_launcher(struct shell *shell) {
+    if (!shell->launcher_visible || !shell->launcher_configured ||
+            !shell->launcher_surface || shell->launcher_width == 0 ||
+            shell->launcher_height == 0) return;
+
+    struct shell_buffer *buffer = create_buffer(shell,
+        shell->launcher_width, shell->launcher_height);
+    if (!buffer) return;
+
+    cairo_surface_t *image = cairo_image_surface_create_for_data(
+        buffer->data, CAIRO_FORMAT_ARGB32,
+        (int)shell->launcher_width, (int)shell->launcher_height,
+        (int)shell->launcher_width * 4);
+    cairo_t *cr = cairo_create(image);
+
+    cairo_set_source_rgba(cr, 0.018, 0.026, 0.050, 0.98);
+    cairo_paint(cr);
+    cairo_set_source_rgba(cr, 0.08, 0.25, 0.38, 0.95);
+    cairo_rectangle(cr, 0, 0, shell->launcher_width, 2);
+    cairo_fill(cr);
+
+    char search_line[SEARCH_MAX + 8];
+    snprintf(search_line, sizeof(search_line), "> %s", shell->search);
+    draw_text(cr, search_line, 24, 20, true);
+
+    size_t matches[LAUNCHER_RESULTS];
+    size_t count = launcher_matching_indices(shell, matches);
+    if (count == 0) shell->selected_result = 0;
+    else if (shell->selected_result >= count) shell->selected_result = count - 1;
+
+    double y = 66.0;
+    for (size_t i = 0; i < count; i++) {
+        const struct launcher_app *app = &shell->apps[matches[i]];
+        if (i == shell->selected_result) {
+            cairo_set_source_rgba(cr, 0.07, 0.22, 0.34, 0.96);
+            cairo_rectangle(cr, 16, y - 6, shell->launcher_width - 32, 34);
+            cairo_fill(cr);
+        }
+        draw_text(cr, app->name, 28, y, i == shell->selected_result);
+        y += 40.0;
+    }
+
+    if (count == 0) {
+        draw_text(cr, "No applications found", 28, 70, false);
+    }
+
+    cairo_destroy(cr);
+    cairo_surface_flush(image);
+    cairo_surface_destroy(image);
+
+    wl_surface_attach(shell->launcher_surface, buffer->wl_buffer, 0, 0);
+    wl_surface_damage_buffer(shell->launcher_surface, 0, 0,
+        (int)shell->launcher_width, (int)shell->launcher_height);
+    wl_surface_commit(shell->launcher_surface);
+}
+
+static void launcher_hide(struct shell *shell) {
+    if (shell->launcher_layer_surface) {
+        zwlr_layer_surface_v1_destroy(shell->launcher_layer_surface);
+        shell->launcher_layer_surface = NULL;
+    }
+    if (shell->launcher_surface) {
+        wl_surface_destroy(shell->launcher_surface);
+        shell->launcher_surface = NULL;
+    }
+    shell->launcher_visible = false;
+    shell->launcher_configured = false;
+    shell->search[0] = '\0';
+    shell->selected_result = 0;
+}
+
+static void launcher_configure(void *data,
+        struct zwlr_layer_surface_v1 *layer_surface,
+        uint32_t serial, uint32_t width, uint32_t height) {
+    struct shell *shell = data;
+    zwlr_layer_surface_v1_ack_configure(layer_surface, serial);
+    shell->launcher_width = width ? width : LAUNCHER_WIDTH;
+    shell->launcher_height = height ? height : LAUNCHER_HEIGHT;
+    shell->launcher_configured = true;
+    fprintf(stderr, "shady-shell: launcher configured %ux%u\n",
+        shell->launcher_width, shell->launcher_height);
+    draw_launcher(shell);
+}
+
+static void launcher_closed(void *data,
+        struct zwlr_layer_surface_v1 *layer_surface) {
+    (void)layer_surface;
+    launcher_hide(data);
+}
+
+static const struct zwlr_layer_surface_v1_listener launcher_layer_listener = {
+    .configure = launcher_configure,
+    .closed = launcher_closed,
+};
+
+static void launcher_show(struct shell *shell) {
+    if (shell->launcher_visible || !shell->layer_shell || !shell->compositor)
+        return;
+    shell->launcher_surface = wl_compositor_create_surface(shell->compositor);
+    if (!shell->launcher_surface) return;
+    shell->launcher_layer_surface = zwlr_layer_shell_v1_get_layer_surface(
+        shell->layer_shell, shell->launcher_surface, NULL,
+        ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY, "shady-launcher");
+    if (!shell->launcher_layer_surface) {
+        wl_surface_destroy(shell->launcher_surface);
+        shell->launcher_surface = NULL;
+        return;
+    }
+    zwlr_layer_surface_v1_add_listener(shell->launcher_layer_surface,
+        &launcher_layer_listener, shell);
+    zwlr_layer_surface_v1_set_size(shell->launcher_layer_surface,
+        LAUNCHER_WIDTH, LAUNCHER_HEIGHT);
+    zwlr_layer_surface_v1_set_exclusive_zone(shell->launcher_layer_surface, 0);
+    zwlr_layer_surface_v1_set_keyboard_interactivity(shell->launcher_layer_surface,
+        ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_EXCLUSIVE);
+    shell->launcher_visible = true;
+    shell->launcher_configured = false;
+    shell->search[0] = '\0';
+    shell->selected_result = 0;
+    wl_surface_commit(shell->launcher_surface);
+}
+
+static void launcher_toggle(struct shell *shell) {
+    if (shell->launcher_visible) launcher_hide(shell);
+    else launcher_show(shell);
+}
+
+static void launcher_activate_selected(struct shell *shell) {
+    size_t matches[LAUNCHER_RESULTS];
+    size_t count = launcher_matching_indices(shell, matches);
+    if (count == 0 || shell->selected_result >= count) return;
+    launcher_spawn(&shell->apps[matches[shell->selected_result]]);
+    launcher_hide(shell);
+}
+
 static bool add_workspace(struct shell *shell, const char *name) {
     if (!name || !*name) return false;
     for (size_t i = 0; i < shell->workspace_count; i++) {
@@ -299,6 +599,11 @@ static void protocol_focused_window(void *data,
     if (shell->snapshot_done) draw_bar(shell);
 }
 
+static void protocol_toggle_launcher(void *data, struct shady_shell_v1 *protocol) {
+    (void)protocol;
+    launcher_toggle(data);
+}
+
 static void protocol_done(void *data, struct shady_shell_v1 *protocol) {
     (void)protocol;
     struct shell *shell = data;
@@ -315,6 +620,7 @@ static const struct shady_shell_v1_listener shady_shell_listener = {
     .workspace = protocol_workspace,
     .active_workspace = protocol_active_workspace,
     .focused_window = protocol_focused_window,
+    .toggle_launcher = protocol_toggle_launcher,
     .done = protocol_done,
 };
 
@@ -323,18 +629,19 @@ static void pointer_enter(void *data, struct wl_pointer *pointer,
         wl_fixed_t surface_x, wl_fixed_t surface_y) {
     (void)pointer;
     (void)serial;
-    (void)surface;
     struct shell *shell = data;
+    shell->pointer_surface = surface;
     shell->pointer_x = wl_fixed_to_double(surface_x);
     shell->pointer_y = wl_fixed_to_double(surface_y);
 }
 
 static void pointer_leave(void *data, struct wl_pointer *pointer,
         uint32_t serial, struct wl_surface *surface) {
-    (void)data;
     (void)pointer;
     (void)serial;
     (void)surface;
+    struct shell *shell = data;
+    shell->pointer_surface = NULL;
 }
 
 static void pointer_motion(void *data, struct wl_pointer *pointer,
@@ -352,7 +659,8 @@ static void pointer_button(void *data, struct wl_pointer *pointer,
     (void)serial;
     (void)time;
     struct shell *shell = data;
-    if (!shell->shady_shell || button != BTN_LEFT ||
+    if (!shell->shady_shell || shell->pointer_surface != shell->surface ||
+            button != BTN_LEFT ||
             state != WL_POINTER_BUTTON_STATE_PRESSED ||
             shell->pointer_y < 0 || shell->pointer_y >= shell->height) {
         return;
@@ -405,6 +713,111 @@ static const struct wl_pointer_listener pointer_listener = {
     .axis_discrete = pointer_axis_discrete,
 };
 
+static void keyboard_keymap(void *data, struct wl_keyboard *keyboard,
+        uint32_t format, int32_t fd, uint32_t size) {
+    (void)keyboard;
+    struct shell *shell = data;
+    if (format != WL_KEYBOARD_KEYMAP_FORMAT_XKB_V1) {
+        close(fd);
+        return;
+    }
+    char *map = mmap(NULL, size, PROT_READ, MAP_PRIVATE, fd, 0);
+    close(fd);
+    if (map == MAP_FAILED) return;
+
+    if (shell->xkb_state) xkb_state_unref(shell->xkb_state);
+    if (shell->xkb_keymap) xkb_keymap_unref(shell->xkb_keymap);
+    shell->xkb_keymap = xkb_keymap_new_from_string(shell->xkb_context, map,
+        XKB_KEYMAP_FORMAT_TEXT_V1, XKB_KEYMAP_COMPILE_NO_FLAGS);
+    munmap(map, size);
+    shell->xkb_state = shell->xkb_keymap ? xkb_state_new(shell->xkb_keymap) : NULL;
+}
+
+static void keyboard_enter(void *data, struct wl_keyboard *keyboard,
+        uint32_t serial, struct wl_surface *surface, struct wl_array *keys) {
+    (void)data; (void)keyboard; (void)serial; (void)surface; (void)keys;
+}
+
+static void keyboard_leave(void *data, struct wl_keyboard *keyboard,
+        uint32_t serial, struct wl_surface *surface) {
+    (void)data; (void)keyboard; (void)serial; (void)surface;
+}
+
+static void keyboard_key(void *data, struct wl_keyboard *keyboard,
+        uint32_t serial, uint32_t time, uint32_t key, uint32_t state) {
+    (void)keyboard; (void)serial; (void)time;
+    struct shell *shell = data;
+    if (!shell->launcher_visible || !shell->xkb_state ||
+            state != WL_KEYBOARD_KEY_STATE_PRESSED) return;
+
+    xkb_keycode_t code = key + 8;
+    xkb_keysym_t sym = xkb_state_key_get_one_sym(shell->xkb_state, code);
+    if (sym == XKB_KEY_Escape) {
+        launcher_hide(shell);
+        return;
+    }
+    if (sym == XKB_KEY_Return || sym == XKB_KEY_KP_Enter) {
+        launcher_activate_selected(shell);
+        return;
+    }
+    if (sym == XKB_KEY_Up) {
+        if (shell->selected_result > 0) shell->selected_result--;
+        draw_launcher(shell);
+        return;
+    }
+    if (sym == XKB_KEY_Down) {
+        size_t matches[LAUNCHER_RESULTS];
+        size_t count = launcher_matching_indices(shell, matches);
+        if (count && shell->selected_result + 1 < count) shell->selected_result++;
+        draw_launcher(shell);
+        return;
+    }
+    if (sym == XKB_KEY_BackSpace) {
+        size_t len = strlen(shell->search);
+        if (len) {
+            do { len--; } while (len && ((unsigned char)shell->search[len] & 0xC0) == 0x80);
+            shell->search[len] = '\0';
+            shell->selected_result = 0;
+            draw_launcher(shell);
+        }
+        return;
+    }
+
+    char text[32] = {0};
+    int n = xkb_state_key_get_utf8(shell->xkb_state, code, text, sizeof(text));
+    if (n <= 0 || (unsigned char)text[0] < 0x20) return;
+    size_t len = strlen(shell->search);
+    if (len + (size_t)n >= sizeof(shell->search)) return;
+    memcpy(shell->search + len, text, (size_t)n);
+    shell->search[len + (size_t)n] = '\0';
+    shell->selected_result = 0;
+    draw_launcher(shell);
+}
+
+static void keyboard_modifiers(void *data, struct wl_keyboard *keyboard,
+        uint32_t serial, uint32_t depressed, uint32_t latched,
+        uint32_t locked, uint32_t group) {
+    (void)keyboard; (void)serial;
+    struct shell *shell = data;
+    if (shell->xkb_state)
+        xkb_state_update_mask(shell->xkb_state, depressed, latched, locked,
+            0, 0, group);
+}
+
+static void keyboard_repeat_info(void *data, struct wl_keyboard *keyboard,
+        int32_t rate, int32_t delay) {
+    (void)data; (void)keyboard; (void)rate; (void)delay;
+}
+
+static const struct wl_keyboard_listener keyboard_listener = {
+    .keymap = keyboard_keymap,
+    .enter = keyboard_enter,
+    .leave = keyboard_leave,
+    .key = keyboard_key,
+    .modifiers = keyboard_modifiers,
+    .repeat_info = keyboard_repeat_info,
+};
+
 static void seat_capabilities(void *data, struct wl_seat *seat,
         uint32_t capabilities) {
     struct shell *shell = data;
@@ -414,6 +827,13 @@ static void seat_capabilities(void *data, struct wl_seat *seat,
     } else if (!(capabilities & WL_SEAT_CAPABILITY_POINTER) && shell->pointer) {
         wl_pointer_release(shell->pointer);
         shell->pointer = NULL;
+    }
+    if ((capabilities & WL_SEAT_CAPABILITY_KEYBOARD) && !shell->keyboard) {
+        shell->keyboard = wl_seat_get_keyboard(seat);
+        wl_keyboard_add_listener(shell->keyboard, &keyboard_listener, shell);
+    } else if (!(capabilities & WL_SEAT_CAPABILITY_KEYBOARD) && shell->keyboard) {
+        wl_keyboard_release(shell->keyboard);
+        shell->keyboard = NULL;
     }
 }
 
@@ -489,6 +909,10 @@ static const struct wl_registry_listener registry_listener = {
 };
 
 static bool shell_init(struct shell *shell) {
+    shell->xkb_context = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
+    if (!shell->xkb_context) return false;
+    launcher_load_apps(shell);
+
     shell->display = wl_display_connect(NULL);
     if (!shell->display) {
         fprintf(stderr, "shady-shell: failed to connect to Wayland display\n");
@@ -531,6 +955,8 @@ static bool shell_init(struct shell *shell) {
 }
 
 static void shell_finish(struct shell *shell) {
+    launcher_hide(shell);
+    if (shell->keyboard) wl_keyboard_release(shell->keyboard);
     if (shell->pointer) wl_pointer_release(shell->pointer);
     if (shell->seat) wl_seat_release(shell->seat);
     if (shell->layer_surface)
@@ -542,14 +968,21 @@ static void shell_finish(struct shell *shell) {
     if (shell->compositor) wl_compositor_destroy(shell->compositor);
     if (shell->registry) wl_registry_destroy(shell->registry);
     if (shell->display) wl_display_disconnect(shell->display);
+    if (shell->xkb_state) xkb_state_unref(shell->xkb_state);
+    if (shell->xkb_keymap) xkb_keymap_unref(shell->xkb_keymap);
+    if (shell->xkb_context) xkb_context_unref(shell->xkb_context);
 }
 
 int main(void) {
+    signal(SIGCHLD, SIG_IGN);
     struct shell shell = {0};
     if (!shell_init(&shell)) {
         shell_finish(&shell);
         return 1;
     }
+    const char *open_launcher = getenv("SHADY_SHELL_OPEN_LAUNCHER");
+    if (open_launcher && *open_launcher && strcmp(open_launcher, "0") != 0)
+        launcher_show(&shell);
 
     int display_fd = wl_display_get_fd(shell.display);
     while (shell.running) {

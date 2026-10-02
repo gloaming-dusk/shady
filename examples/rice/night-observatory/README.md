@@ -39,7 +39,7 @@ For a self-contained headless smoke test, replace `WLR_BACKENDS=wayland` with
 | Binding | Action |
 |---|---|
 | Super + Return | Open a terminal (`$TERMINAL` or `foot`) |
-| Super + D | Open an app launcher (`$SHADY_LAUNCHER`, then fuzzel/wofi/bemenu-run fallback) |
+| Super + D | Toggle the built-in Shady shell app launcher |
 | Super + Tab | Cycle focus on the current workspace |
 | Super + 1 / 2 / 3 | Switch to `main` / `code` / `web` workspace |
 | Super + Shift + 1 / 2 / 3 | Move focused window to `main` / `code` / `web` and follow it |
@@ -58,7 +58,13 @@ For a self-contained headless smoke test, replace `WLR_BACKENDS=wayland` with
 | Super + +/- | Zoom |
 | Super + Shift + Q | Quit through Lua |
 
-Running `run.sh` with no extra Shady arguments also starts one terminal automatically, so the rice never boots into an unusable empty desktop. Set `SHADY_STARTUP` to choose another default command.
+Running `run.sh` or `run-native.sh` with no extra Shady arguments starts `shady-shell` plus one terminal automatically, so the rice has both the bar and launcher available immediately. Set `SHADY_STARTUP` to replace the whole startup command.
+
+### Launcher
+
+`Super+D` toggles the shell-owned launcher overlay. It indexes `.desktop` application entries from `XDG_DATA_HOME` and `XDG_DATA_DIRS` (falling back to the standard local/system application directories), matches `Name` and `Exec` case-insensitively, and shows up to eight results.
+
+Keyboard controls: type to search, `Up`/`Down` to move selection, `Enter` to launch, `Backspace` to edit, and `Esc` to close. The launcher is an overlay layer surface with exclusive keyboard interactivity; when it closes, Shady restores focus to the current workspace's last-focused window.
 
 ## Visual tuning
 

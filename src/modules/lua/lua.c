@@ -11,6 +11,7 @@
 #include "../../render/render.h"
 #include "../../event/event.h"
 #include "../../plugin/plugin.h"
+#include "../../shell_protocol.h"
 #include "../physics/physics.h"
 #include "../fps/fps.h"
 #include "../fps/state.h"
@@ -183,6 +184,7 @@ static int l_shady_camera(lua_State *L){
 	return 0;
 }
 static int l_shady_quit(lua_State *L){(void)L;if(lua_server->wl_display)wl_display_terminate(lua_server->wl_display);return 0;}
+static int l_shady_toggle_launcher(lua_State *L){(void)L;shady_shell_protocol_toggle_launcher(lua_server);return 0;}
 static int l_shady_spawn(lua_State *L){
 	const char *command=luaL_checkstring(L,1);
 	pid_t pid=fork();
@@ -271,6 +273,7 @@ static void install_api(lua_State *L){
 	lua_pushcfunction(L,l_shady_rule);lua_setfield(L,-2,"rule");
 	lua_pushcfunction(L,l_shady_quit);lua_setfield(L,-2,"quit");
 	lua_pushcfunction(L,l_shady_spawn);lua_setfield(L,-2,"spawn");
+	lua_pushcfunction(L,l_shady_toggle_launcher);lua_setfield(L,-2,"toggle_launcher");
 	lua_pushcfunction(L,l_shady_windows);lua_setfield(L,-2,"windows");
 	lua_pushcfunction(L,l_shady_focused_window);lua_setfield(L,-2,"focused_window");
 	lua_pushcfunction(L,l_shady_outputs);lua_setfield(L,-2,"outputs");

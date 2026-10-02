@@ -15,5 +15,6 @@ size_t shady_workspace_count(struct shady_server *server);
 const char *shady_workspace_name_at(struct shady_server *server, size_t index);
 void shady_workspace_note_focus(struct shady_toplevel *toplevel);
 void shady_workspace_forget_toplevel(struct shady_toplevel *toplevel);
+void shady_workspace_refocus_current(struct shady_server *server);
 
 #endif

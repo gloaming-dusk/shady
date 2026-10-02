@@ -148,8 +148,9 @@ shell_option = get_option('shell')
 wayland_client = dependency('wayland-client', required: shell_option)
 cairo = dependency('cairo', required: shell_option)
 pangocairo = dependency('pangocairo', required: shell_option)
+shell_xkbcommon = dependency('xkbcommon', required: shell_option)
 wayland_protocols = dependency('wayland-protocols', required: shell_option)
-shell_enabled = wayland_client.found() and cairo.found() and pangocairo.found() and wayland_protocols.found()
+shell_enabled = wayland_client.found() and cairo.found() and pangocairo.found() and shell_xkbcommon.found() and wayland_protocols.found()
 
 if shell_enabled
   wayland_protocols_dir = wayland_protocols.get_variable(pkgconfig: 'pkgdatadir')
@@ -170,7 +171,7 @@ if shell_enabled
       'src/shell/main.c',
     ],
     include_directories: include_directories('.'),
-    dependencies: [wayland_client, cairo, pangocairo],
+    dependencies: [wayland_client, cairo, pangocairo, shell_xkbcommon],
     install: true)
 endif
 

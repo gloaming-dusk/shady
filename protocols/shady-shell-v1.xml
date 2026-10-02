@@ -28,6 +28,10 @@
       <arg name="title" type="string" summary="focused title, empty if none"/>
     </event>
 
+    <event name="toggle_launcher">
+      <description summary="toggle the shell application launcher"/>
+    </event>
+
     <event name="done">
       <description summary="initial snapshot complete"/>
     </event>

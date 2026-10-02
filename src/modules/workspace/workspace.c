@@ -136,6 +136,12 @@ bool shady_workspace_move_toplevel(struct shady_toplevel *toplevel,
 	return true;
 }
 
+void shady_workspace_refocus_current(struct shady_server *server) {
+	if (!server) return;
+	struct shady_toplevel *focus = preferred_current_mapped(server);
+	if (focus) focus_toplevel(focus);
+}
+
 void shady_workspace_note_focus(struct shady_toplevel *toplevel) {
 	if (!toplevel) return;
 	struct shady_workspace_state *state = shady_workspace_state_for(toplevel->server);

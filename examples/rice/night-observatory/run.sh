@@ -15,11 +15,11 @@ export SHADY_ROOT="$ROOT"
 export SHADY_LUA_INIT="$ROOT/examples/rice/night-observatory/init.lua"
 export WLR_BACKENDS="${WLR_BACKENDS:-wayland}"
 
-# An empty desktop with no launcher is a trap. When the demo is started with
-# no extra arguments, open one terminal by default. Set SHADY_STARTUP to pick
-# another command, or pass explicit Shady arguments to take full control.
+# Start the standalone shell plus one terminal by default. SHADY_STARTUP can
+# replace the entire startup command, or explicit Shady arguments can take over.
 if [[ $# -eq 0 ]]; then
-  set -- -s "${SHADY_STARTUP:-${TERMINAL:-foot}}"
+  default_startup="'$ROOT/build/shady-shell' & exec ${TERMINAL:-foot}"
+  set -- -s "${SHADY_STARTUP:-$default_startup}"
 fi
 
 exec "$ROOT/build/shady" \

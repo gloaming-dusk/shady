@@ -15,7 +15,8 @@ export SHADY_ROOT="$ROOT"
 export SHADY_LUA_INIT="$ROOT/examples/rice/night-observatory/init.lua"
 
 if [[ $# -eq 0 ]]; then
-  set -- -s "${SHADY_STARTUP:-${TERMINAL:-foot}}"
+  default_startup="'$ROOT/build/shady-shell' & exec ${TERMINAL:-foot}"
+  set -- -s "${SHADY_STARTUP:-$default_startup}"
 fi
 
 exec "$ROOT/run-native.sh" \

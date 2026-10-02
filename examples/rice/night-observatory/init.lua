@@ -21,12 +21,6 @@ end
 local expanded = false
 local workspace_names = { "main", "code", "web" }
 local terminal = os.getenv("TERMINAL") or "foot"
-local launcher = os.getenv("SHADY_LAUNCHER") or
-    "if command -v fuzzel >/dev/null 2>&1; then exec fuzzel; " ..
-    "elif command -v wofi >/dev/null 2>&1; then exec wofi --show drun; " ..
-    "elif command -v bemenu-run >/dev/null 2>&1; then exec bemenu-run; " ..
-    "else exec " .. terminal .. "; fi"
-
 local function describe_desktop()
     local windows = shady.windows()
     local outputs = shady.outputs()
@@ -48,8 +42,7 @@ shady.bind("Super+Return", function()
 end)
 
 shady.bind("Super+d", function()
-    local ok = shady.spawn(launcher)
-    shady.log("launcher spawn: " .. tostring(ok))
+    shady.toggle_launcher()
 end)
 
 for i, name in ipairs(workspace_names) do

@@ -168,6 +168,16 @@ bool shady_shell_protocol_init(struct shady_server *server) {
     return true;
 }
 
+void shady_shell_protocol_toggle_launcher(struct shady_server *server) {
+    struct shady_desktop_state *desktop = shady_desktop_state(server);
+    if (!desktop || !desktop->shell_protocol) return;
+    struct shady_shell_protocol_state *state = desktop->shell_protocol;
+    struct shady_shell_client *client;
+    wl_list_for_each(client, &state->clients, link) {
+        shady_shell_v1_send_toggle_launcher(client->resource);
+    }
+}
+
 void shady_shell_protocol_finish(struct shady_server *server) {
     struct shady_desktop_state *desktop = shady_desktop_state(server);
     if (!desktop || !desktop->shell_protocol) return;

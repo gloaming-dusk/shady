@@ -3,9 +3,12 @@
 #include <wlr/types/wlr_layer_shell_v1.h>
 #include <wlr/types/wlr_output_layout.h>
 #include <wlr/types/wlr_scene.h>
+#include <wlr/types/wlr_seat.h>
+#include <wlr/types/wlr_xdg_shell.h>
 
 #include "shady.h"
 #include "modules/desktop/state.h"
+#include "modules/workspace/workspace.h"
 
 static struct wlr_output *fallback_output(struct shady_server *server) {
 	if (wl_list_empty(&server->outputs)) {
@@ -83,6 +86,33 @@ static void refresh_maximized_for_output(struct shady_server *server,
 	}
 }
 
+static void focus_layer_surface(struct shady_layer_surface *layer) {
+	struct wlr_layer_surface_v1 *surface = layer->layer_surface;
+	if (!surface || !surface->surface->mapped ||
+			surface->current.keyboard_interactive ==
+			ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE) return;
+
+	struct shady_server *server = layer->server;
+	struct wlr_surface *old = server->seat->keyboard_state.focused_surface;
+	if (old && old != surface->surface) {
+		struct wlr_xdg_toplevel *xdg = wlr_xdg_toplevel_try_from_wlr_surface(old);
+		if (xdg) wlr_xdg_toplevel_set_activated(xdg, false);
+	}
+	struct wlr_keyboard *keyboard = wlr_seat_get_keyboard(server->seat);
+	if (keyboard) {
+		wlr_seat_keyboard_notify_enter(server->seat, surface->surface,
+			keyboard->keycodes, keyboard->num_keycodes, &keyboard->modifiers);
+	}
+}
+
+static void restore_layer_keyboard_focus(struct shady_layer_surface *layer) {
+	struct wlr_surface *surface = layer->layer_surface->surface;
+	if (layer->server->seat->keyboard_state.focused_surface == surface) {
+		wlr_seat_keyboard_clear_focus(layer->server->seat);
+		shady_workspace_refocus_current(layer->server);
+	}
+}
+
 static void configure_layer_surface(struct shady_layer_surface *layer) {
 	struct wlr_layer_surface_v1 *surface = layer->layer_surface;
 	struct shady_server *server = layer->server;
@@ -115,6 +145,8 @@ static void layer_surface_commit(struct wl_listener *listener, void *data) {
 
 	bool layout_changed = surface->initial_commit ||
 		(surface->current.committed & layout_fields) != 0;
+	bool keyboard_changed = surface->initial_commit ||
+		(surface->current.committed & WLR_LAYER_SURFACE_V1_STATE_KEYBOARD_INTERACTIVITY) != 0;
 	if (layout_changed) {
 		configure_layer_surface(layer);
 		if (surface->surface->mapped && surface->output)
@@ -126,6 +158,14 @@ static void layer_surface_commit(struct wl_listener *listener, void *data) {
 		layer->mapped = mapped;
 		if (surface->output)
 			refresh_maximized_for_output(layer->server, surface->output);
+		if (mapped) focus_layer_surface(layer);
+		else restore_layer_keyboard_focus(layer);
+	} else if (mapped && keyboard_changed) {
+		if (surface->current.keyboard_interactive ==
+				ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE)
+			restore_layer_keyboard_focus(layer);
+		else
+			focus_layer_surface(layer);
 	}
 }
 
@@ -135,6 +175,7 @@ static void layer_surface_destroy(struct wl_listener *listener, void *data) {
 		wl_container_of(listener, layer, destroy);
 	struct shady_server *server = layer->server;
 	struct wlr_output *output = layer->layer_surface->output;
+	restore_layer_keyboard_focus(layer);
 
 	wl_list_remove(&layer->commit.link);
 	wl_list_remove(&layer->destroy.link);
