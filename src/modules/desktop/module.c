@@ -3,6 +3,7 @@
 #include <wayland-server-core.h>
 #include <wlr/types/wlr_data_control_v1.h>
 #include <wlr/types/wlr_idle_notify_v1.h>
+#include <wlr/types/wlr_fractional_scale_v1.h>
 #include <wlr/types/wlr_layer_shell_v1.h>
 #include <wlr/types/wlr_output_management_v1.h>
 #include <wlr/types/wlr_pointer_constraints_v1.h>
@@ -10,6 +11,7 @@
 #include <wlr/types/wlr_relative_pointer_v1.h>
 #include <wlr/types/wlr_screencopy_v1.h>
 #include <wlr/types/wlr_session_lock_v1.h>
+#include <wlr/types/wlr_viewporter.h>
 #include <wlr/types/wlr_xdg_activation_v1.h>
 #include <wlr/types/wlr_xdg_decoration_v1.h>
 
@@ -67,6 +69,10 @@ static bool desktop_protocols_init(struct shady_server *server) {
 	state->xdg_activation_request.notify = xdg_activation_request;
 	wl_signal_add(&state->xdg_activation->events.request_activate,
 		&state->xdg_activation_request);
+	state->fractional_scale_manager =
+		wlr_fractional_scale_manager_v1_create(server->wl_display, 1);
+	state->viewporter = wlr_viewporter_create(server->wl_display);
+	if (!state->fractional_scale_manager || !state->viewporter) return false;
 	if (!shady_ime_init(server)) return false;
 
 	state->output_manager =
@@ -93,7 +99,9 @@ static bool desktop_protocols_init(struct shady_server *server) {
 		state->primary_selection_manager &&
 		state->data_control_manager &&
 		state->xdg_decoration_manager &&
-		state->xdg_activation;
+		state->xdg_activation &&
+		state->fractional_scale_manager &&
+		state->viewporter;
 }
 
 static void desktop_protocols_destroy(struct shady_server *server) {

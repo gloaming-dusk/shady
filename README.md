@@ -143,7 +143,7 @@ For native testing, Shady can start the shell and a terminal together:
 ./run-native.sh -s './build/shady-shell & exec foot'
 ```
 
-The compositor also exposes `text-input-v3` and `input-method-v2` and bridges focused text clients to a single seat input method, including preedit/commit/delete state and input-method keyboard grabs for IME use. `xdg-activation-v1` requests are handled for mapped toplevels so launched applications can request focus through activation tokens.
+The compositor also exposes `text-input-v3` and `input-method-v2` and bridges focused text clients to a single seat input method, including preedit/commit/delete state and input-method keyboard grabs for IME use. `xdg-activation-v1` requests are handled for mapped toplevels so launched applications can request focus through activation tokens. Fractional scaling is advertised through `wp_fractional_scale_v1` together with `wp_viewporter`; wlroots scene surfaces provide the preferred scale feedback based on output visibility.
 
 The bar consumes Shady's small `shady-shell-v1` Wayland protocol. On bind it receives the known workspace list, active workspace, and focused window metadata; later workspace/focus changes are pushed incrementally. Workspace labels are clickable and send `activate_workspace(name)` back to the compositor. The clock remains minute-resolution so an otherwise idle desktop is not woken every second.
 

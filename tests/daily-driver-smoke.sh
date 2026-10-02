@@ -53,6 +53,10 @@ if grep -q 'compositor does not implement XDG activation' "$log"; then
   echo "daily-driver: FAIL: xdg-activation support is not advertised" >&2
   exit 1
 fi
+if grep -q 'compositor does not implement fractional scaling' "$log"; then
+  echo "daily-driver: FAIL: fractional scaling support is not advertised" >&2
+  exit 1
+fi
 if [[ "$(grep -c 'output .* enabled:' "$log" || true)" -lt 2 ]]; then
   echo "daily-driver: FAIL: expected two headless outputs" >&2
   exit 1
