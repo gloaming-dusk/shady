@@ -43,11 +43,13 @@ struct shady_toplevel *shady_toplevel_at_3d(struct shady_server *server,
 
 	/* Output-local → GL NDC (+Y up). Vertex shader flips clip Y for the
 	 * wlroots FBO; unprojection still uses the unflipped view·proj. */
-	/* Fullscreen windows are rendered in output-local 2D screen space. Pick
-	 * them before constructing the 3D ray so pointer coordinates stay exact. */
+	/* Outside FPS mode, fullscreen/maximized windows live in output-local 2D
+	 * screen space. In FPS mode they become spatial cubes like every other
+	 * toplevel, so skip this direct 2D picking path. */
 	struct shady_toplevel *screen_toplevel;
 	wl_list_for_each(screen_toplevel, &server->toplevels, link) {
-		if ((!screen_toplevel->fullscreen && !screen_toplevel->maximized) || !screen_toplevel->scene_tree ||
+		if (shady_spatial_state(server)->runtime.camera.first_person ||
+				(!screen_toplevel->fullscreen && !screen_toplevel->maximized) || !screen_toplevel->scene_tree ||
 				!screen_toplevel->scene_tree->node.enabled) continue;
 		struct wlr_surface *root = screen_toplevel->xdg_toplevel->base->surface;
 		if (!root || !root->mapped) continue;

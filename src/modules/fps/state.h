@@ -23,6 +23,9 @@ struct shady_fps_state {
 
 struct shady_fps_toplevel_state {
 	bool expanded;
+	bool entry_saved;
+	int entry_x, entry_y;
+	float entry_z;
 };
 
 static inline struct shady_fps_state *shady_fps_state_for(

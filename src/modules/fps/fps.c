@@ -45,6 +45,11 @@ bool shady_fps_toggle(struct shady_server*s){
 	f->jump_queued=false;
 	f->held_toplevel=NULL;
 	if(entering){
+		struct shady_toplevel*t;wl_list_for_each(t,&s->toplevels,link){
+			struct shady_fps_toplevel_state*tw=shady_fps_toplevel_state(t);
+			tw->entry_saved=true;tw->entry_x=t->scene_tree->node.x;tw->entry_y=t->scene_tree->node.y;
+			tw->entry_z=shady_spatial_toplevel_state(t)->z;
+		}
 		struct shady_vec3 eye;shady_camera_eye(c,&eye);
 		f->orbit_yaw=c->yaw;f->orbit_pitch=c->pitch;f->orbit_distance=c->distance;
 		f->orbit_target_x=c->target_x;f->orbit_target_y=c->target_y;f->orbit_target_z=c->target_z;
@@ -53,6 +58,15 @@ bool shady_fps_toggle(struct shady_server*s){
 		c->first_person=true;f->input_capture=true;
 		wlr_seat_pointer_clear_focus(s->seat);center_cursor(s);
 	}else{
+		struct shady_toplevel*t;wl_list_for_each(t,&s->toplevels,link){
+			struct shady_fps_toplevel_state*tw=shady_fps_toplevel_state(t);
+			if(tw->entry_saved){
+				wlr_scene_node_set_position(&t->scene_tree->node,tw->entry_x,tw->entry_y);
+				shady_spatial_toplevel_state(t)->z=tw->entry_z;
+				tw->entry_saved=false;
+				shady_physics_stop(t);shady_window_motion_reset(t);
+			}
+		}
 		if(f->expanded_toplevel){
 			shady_fps_toplevel_state(f->expanded_toplevel)->expanded=false;
 			f->expanded_toplevel=NULL;

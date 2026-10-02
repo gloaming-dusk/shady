@@ -96,6 +96,7 @@ static bool spatial_pick_surface(struct shady_server *server,
 
 static bool spatial_pointer_motion(struct shady_server *server,
 		struct wlr_pointer_motion_event *event) {
+	if (shady_spatial_state(server)->runtime.camera.first_person) return false;
 	if (server->cursor_mode == SHADY_CURSOR_CAMERA_ORBIT) {
 		shady_spatial_state(server)->runtime.camera.yaw -=
 			(float)event->delta_x * CAMERA_ORBIT_SENS;
@@ -126,6 +127,7 @@ static bool spatial_pointer_motion(struct shady_server *server,
 
 static bool spatial_pointer_button(struct shady_server *server,
 		struct wlr_pointer_button_event *event, uint32_t modifiers) {
+	if (shady_spatial_state(server)->runtime.camera.first_person) return false;
 	if (event->button == BTN_RIGHT ||
 			(event->button == BTN_MIDDLE && (modifiers & WLR_MODIFIER_ALT))) {
 		if (event->state == WL_POINTER_BUTTON_STATE_PRESSED) {
@@ -143,6 +145,7 @@ static bool spatial_pointer_button(struct shady_server *server,
 
 static bool spatial_pointer_axis(struct shady_server *server,
 		struct wlr_pointer_axis_event *event, uint32_t modifiers) {
+	if (shady_spatial_state(server)->runtime.camera.first_person) return false;
 	if (event->orientation != WL_POINTER_AXIS_VERTICAL_SCROLL ||
 			!(modifiers & WLR_MODIFIER_ALT)) return false;
 
