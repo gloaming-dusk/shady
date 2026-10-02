@@ -30,6 +30,7 @@
 #include "../modules/spatial/state.h"
 #include "../modules/fps/fps.h"
 #include "../modules/fps/state.h"
+#include "../modules/physics/state.h"
 #include "../modules/window_motion/state.h"
 #include "../modules/close_animation/state.h"
 #include "../modules/close_animation/close_animation.h"
@@ -280,6 +281,64 @@ void shady_render_camera_matrices(
 		SHADY_CAMERA_NEAR,
 		SHADY_CAMERA_FAR
 	);
+}
+
+static bool close_snapshot_needs_frame(void) {
+	struct shady_close_snapshot *snapshot;
+	wl_list_for_each(snapshot, &close_snapshots, link) {
+		if (snapshot->animating) return true;
+	}
+	return false;
+}
+
+static bool spatial_needs_continuous_frames(struct shady_server *server) {
+	const struct shady_spatial_state *spatial = shady_spatial_state_const(server);
+	if (!spatial) return false;
+
+	const struct shady_fps_state *fps = shady_fps_state_for_const(server);
+	if (spatial->runtime.camera.first_person) {
+		const struct shady_camera *camera = &spatial->runtime.camera;
+		if (fps->forward || fps->back || fps->left || fps->right ||
+				fps->jump_queued || fabsf(camera->vel_y) > 0.00005f ||
+				!camera->grounded) {
+			return true;
+		}
+	}
+
+	struct shady_toplevel *toplevel;
+	wl_list_for_each(toplevel, &server->toplevels, link) {
+		if (!toplevel->scene_tree || !toplevel->scene_tree->node.enabled ||
+				!toplevel->xdg_toplevel->base->surface->mapped) continue;
+
+		const struct shady_window_motion_state *motion =
+			shady_window_motion_state_for_const(toplevel);
+		if (fabsf(motion->wobble_x) > 0.00005f ||
+				fabsf(motion->wobble_y) > 0.00005f ||
+				fabsf(motion->wobble_vx) > 0.00005f ||
+				fabsf(motion->wobble_vy) > 0.00005f ||
+				fabsf(motion->tilt_vx) > 0.00005f ||
+				fabsf(motion->tilt_vy) > 0.00005f) {
+			return true;
+		}
+
+		const struct shady_window_physics_state *physics =
+			shady_physics_toplevel_state_const(toplevel);
+		if (physics && (fabsf(physics->vx) > 0.00005f ||
+				fabsf(physics->vy) > 0.00005f ||
+				fabsf(physics->vz) > 0.00005f)) {
+			return true;
+		}
+
+		enum shady_close_state close_state =
+			shady_close_animation_state(toplevel);
+		if (close_state == SHADY_CLOSE_CRUMPLING ||
+				close_state == SHADY_CLOSE_WAITING ||
+				close_state == SHADY_CLOSE_RESTORING) {
+			return true;
+		}
+	}
+
+	return close_snapshot_needs_frame();
 }
 
 void shady_render_schedule_all_outputs(
@@ -1113,13 +1172,12 @@ void shady_render_output_frame(
 
 	(void)scene_output;
 
-	/*
-	 * u_time changes continuously, so request
-	 * another frame even when clients are idle.
-	 */
-	wlr_output_schedule_frame(
-		wlr_output
-	);
+	/* Keep the compositor fully idle when nothing is changing. Client commits,
+	 * input, config changes and module actions explicitly wake rendering. Only
+	 * time-dependent simulation/animation keeps the frame loop alive. */
+	if (spatial_needs_continuous_frames(server)) {
+		wlr_output_schedule_frame(wlr_output);
+	}
 }
 
 
@@ -1127,6 +1185,10 @@ void shady_render_output_frame(
 void shady_render_toplevel_commit(
 	struct shady_toplevel *toplevel
 ) {
+	/* A client buffer commit is itself a render wake-up. The old perpetual
+	 * frame loop hid this requirement by redrawing even when no damage existed. */
+	shady_render_schedule_all_outputs(toplevel->server);
+
 	if (
 		shady_close_state_for_const(toplevel)->state !=
 		SHADY_CLOSE_ARMED
@@ -1145,10 +1207,6 @@ void shady_render_toplevel_commit(
 
 	snapshot->dirty =
 		true;
-
-	shady_render_schedule_all_outputs(
-		toplevel->server
-	);
 }
 
 void shady_render_toplevel_unmap(

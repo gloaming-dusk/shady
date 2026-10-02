@@ -35,6 +35,10 @@ void shady_window_motion_update_toplevel(struct shady_server *server,
 	shady_window_motion_state_for(toplevel)->tilt_vy *= damping;
 	shady_window_motion_state_for(toplevel)->tilt_x += shady_window_motion_state_for(toplevel)->tilt_vx * dt;
 	shady_window_motion_state_for(toplevel)->tilt_y += shady_window_motion_state_for(toplevel)->tilt_vy * dt;
+	if (fabsf(shady_window_motion_state_for(toplevel)->tilt_vx) < .00005f)
+		shady_window_motion_state_for(toplevel)->tilt_vx = 0.f;
+	if (fabsf(shady_window_motion_state_for(toplevel)->tilt_vy) < .00005f)
+		shady_window_motion_state_for(toplevel)->tilt_vy = 0.f;
 }
 
 void shady_window_motion_add_impulse(struct shady_server *server,

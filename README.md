@@ -132,6 +132,12 @@ the GLES2 renderer, so it can run with `WLR_RENDERER=pixman` as well.
 Safe mode renders the wlroots scene graph directly and uses normal scene-graph
 pointer hit testing. It is the compatibility baseline for work toward a daily-driver compositor.
 
+The spatial renderer is demand-driven as well: client surface commits, input,
+configuration changes and module actions wake a frame, while continuous frames
+are only requested while time-dependent state is active (for example physics,
+FPS movement/falling, wobble/tilt settling, or close animations). An otherwise
+idle spatial desktop does not redraw solely to advance shader time.
+
 Or launch a client automatically:
 
 ```sh
