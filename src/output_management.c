@@ -58,6 +58,7 @@ static bool handle_configuration(struct shady_server *server,
 	if (ok) {
 		wlr_output_configuration_v1_send_succeeded(config);
 		if (apply) {
+			shady_recover_toplevels_to_outputs(server);
 			shady_output_manager_publish(server);
 		}
 	} else {

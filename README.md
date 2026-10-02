@@ -170,6 +170,24 @@ For the repository development setup:
 ./test.sh
 ```
 
+### Daily-driver sanitizer smoke test
+
+A separate compatibility profile exercises the non-spatial compositor under
+AddressSanitizer and UndefinedBehaviorSanitizer. It starts two headless outputs,
+keeps an xdg-toplevel alive while disabling the output that contains it, checks
+that the window is recovered onto the remaining output, then repeatedly
+creates and destroys client windows.
+
+```sh
+nix develop
+./daily-driver.sh all
+```
+
+`./daily-driver.sh build` only builds the sanitizer profile and
+`./daily-driver.sh test` reruns the smoke test. The profile intentionally uses
+the 2D/pixman path so failures in basic desktop lifecycle handling are isolated
+from the spatial renderer and physics stack.
+
 For a more opinionated ricing demo, the repository includes **Night Observatory**:
 
 ```sh

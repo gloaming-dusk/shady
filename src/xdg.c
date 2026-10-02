@@ -112,6 +112,57 @@ void shady_toplevel_refresh_state(struct shady_toplevel *toplevel) {
 	apply_toplevel_state_values(toplevel, toplevel->maximized, toplevel->fullscreen);
 }
 
+static void clamp_box_to_output(struct wlr_box *box, const struct wlr_box *area) {
+	if (!box || !area || area->width <= 0 || area->height <= 0) return;
+	int max_x = area->x + area->width - box->width;
+	int max_y = area->y + area->height - box->height;
+	if (max_x < area->x) max_x = area->x;
+	if (max_y < area->y) max_y = area->y;
+	if (box->x < area->x) box->x = area->x;
+	if (box->y < area->y) box->y = area->y;
+	if (box->x > max_x) box->x = max_x;
+	if (box->y > max_y) box->y = max_y;
+}
+
+void shady_toplevel_recover_to_output(struct shady_toplevel *toplevel,
+		struct wlr_output *output) {
+	if (!toplevel || !output || !toplevel->scene_tree || !toplevel->xdg_toplevel)
+		return;
+
+	struct shady_server *server = toplevel->server;
+	struct wlr_box area = {0};
+	if (toplevel->fullscreen) {
+		wlr_output_layout_get_box(server->output_layout, output, &area);
+	} else {
+		shady_output_work_area(server, output, &area);
+	}
+	if (area.width <= 0 || area.height <= 0) return;
+
+	if (toplevel->fullscreen || toplevel->maximized) {
+		wlr_scene_node_set_position(&toplevel->scene_tree->node, area.x, area.y);
+		wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, area.width, area.height);
+		if (toplevel->restore_geometry_valid) {
+			clamp_box_to_output(&toplevel->restore_geometry, &area);
+		}
+	} else {
+		struct wlr_surface *surface = toplevel->xdg_toplevel->base->surface;
+		struct wlr_box box = {
+			.x = toplevel->scene_tree->node.x,
+			.y = toplevel->scene_tree->node.y,
+			.width = surface ? surface->current.width : 0,
+			.height = surface ? surface->current.height : 0,
+		};
+		if (box.width <= 0 || box.height <= 0) {
+			struct wlr_box *geo = &toplevel->xdg_toplevel->base->geometry;
+			box.width = geo->width > 0 ? geo->width : 1;
+			box.height = geo->height > 0 ? geo->height : 1;
+		}
+		clamp_box_to_output(&box, &area);
+		wlr_scene_node_set_position(&toplevel->scene_tree->node, box.x, box.y);
+	}
+	shady_render_schedule_all_outputs(server);
+}
+
 void shady_toplevel_set_fullscreen(struct shady_toplevel *toplevel, bool enabled) {
 	if (!toplevel) return;
 	if (enabled && !toplevel->fullscreen) {

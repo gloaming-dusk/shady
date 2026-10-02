@@ -240,6 +240,8 @@ void focus_toplevel(struct shady_toplevel *toplevel);
 void shady_toplevel_set_maximized(struct shady_toplevel *toplevel, bool enabled);
 void shady_toplevel_set_fullscreen(struct shady_toplevel *toplevel, bool enabled);
 void shady_toplevel_refresh_state(struct shady_toplevel *toplevel);
+void shady_toplevel_recover_to_output(struct shady_toplevel *toplevel,
+	struct wlr_output *output);
 void reset_cursor_mode(struct shady_server *server);
 
 /* input.c */
@@ -256,6 +258,7 @@ void server_cursor_frame(struct wl_listener *listener, void *data);
 
 /* output.c */
 void server_new_output(struct wl_listener *listener, void *data);
+void shady_recover_toplevels_to_outputs(struct shady_server *server);
 void shady_output_manager_publish(struct shady_server *server);
 void shady_output_manager_apply(struct wl_listener *listener, void *data);
 void shady_output_manager_test(struct wl_listener *listener, void *data);

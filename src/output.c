@@ -1,8 +1,10 @@
 /* Adapted from wlroots 0.20.2 TinyWL (CC0). See LICENSES/tinywl-CC0.txt. */
+#include <stdbool.h>
 #include <stdlib.h>
 #include <wayland-server-core.h>
 #include <wlr/types/wlr_output.h>
 #include <wlr/types/wlr_output_layout.h>
+#include <wlr/types/wlr_xdg_shell.h>
 #include <wlr/types/wlr_scene.h>
 #include <wlr/util/log.h>
 
@@ -21,16 +23,58 @@ static void output_request_state(struct wl_listener *listener, void *data) {
 	wlr_output_commit_state(output->wlr_output, event->state);
 }
 
+static bool point_on_managed_output(struct shady_server *server,
+		double x, double y) {
+	struct shady_output *output;
+	wl_list_for_each(output, &server->outputs, link) {
+		struct wlr_box box = {0};
+		wlr_output_layout_get_box(server->output_layout, output->wlr_output, &box);
+		if (box.width <= 0 || box.height <= 0) continue;
+		if (x >= box.x && x < box.x + box.width &&
+				y >= box.y && y < box.y + box.height) return true;
+	}
+	return false;
+}
+
+void shady_recover_toplevels_to_outputs(struct shady_server *server) {
+	if (wl_list_empty(&server->outputs)) return;
+	struct shady_output *fallback = NULL;
+	struct shady_output *candidate;
+	wl_list_for_each(candidate, &server->outputs, link) {
+		struct wlr_box box = {0};
+		wlr_output_layout_get_box(server->output_layout, candidate->wlr_output, &box);
+		if (box.width > 0 && box.height > 0) {
+			fallback = candidate;
+			break;
+		}
+	}
+	if (!fallback) return;
+
+	struct shady_toplevel *toplevel;
+	wl_list_for_each(toplevel, &server->all_toplevels, all_link) {
+		if (!toplevel->scene_tree || !toplevel->xdg_toplevel ||
+				!toplevel->xdg_toplevel->base->surface->mapped) continue;
+		struct wlr_box *geo = &toplevel->xdg_toplevel->base->geometry;
+		double cx = toplevel->scene_tree->node.x + geo->x + geo->width * 0.5;
+		double cy = toplevel->scene_tree->node.y + geo->y + geo->height * 0.5;
+		if (point_on_managed_output(server, cx, cy)) continue;
+		wlr_log(WLR_INFO, "recovering window onto active output");
+		shady_toplevel_recover_to_output(toplevel, fallback->wlr_output);
+	}
+}
+
 static void output_destroy(struct wl_listener *listener, void *data) {
 	(void)data;
 	struct shady_output *output = wl_container_of(listener, output, destroy);
+	struct shady_server *server = output->server;
 
 	wl_list_remove(&output->frame.link);
 	wl_list_remove(&output->request_state.link);
-	shady_event_emit_output(output->server, SHADY_EVENT_OUTPUT_REMOVED, output);
+	shady_event_emit_output(server, SHADY_EVENT_OUTPUT_REMOVED, output);
 	wl_list_remove(&output->destroy.link);
 	wl_list_remove(&output->link);
-	shady_output_manager_publish(output->server);
+	shady_recover_toplevels_to_outputs(server);
+	shady_output_manager_publish(server);
 	free(output);
 }
 
