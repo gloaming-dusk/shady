@@ -3,6 +3,8 @@
 #include <time.h>
 #include <math.h>
 #include <stdlib.h>
+#include <string.h>
+#include <stdint.h>
 
 #include <wayland-server-core.h>
 
@@ -43,6 +45,23 @@ static bool pipeline_ready;
 static GLuint depth_rbo;
 static int depth_rbo_w;
 static int depth_rbo_h;
+static int render_stats_enabled_cache = -1;
+
+static bool render_stats_enabled(void) {
+	if (render_stats_enabled_cache < 0) {
+		const char *value = getenv("SHADY_RENDER_STATS");
+		render_stats_enabled_cache =
+			(value && *value && strcmp(value, "0") != 0) ? 1 : 0;
+	}
+	return render_stats_enabled_cache != 0;
+}
+
+static uint64_t timespec_delta_ns(const struct timespec *start,
+		const struct timespec *end) {
+	int64_t seconds = (int64_t)end->tv_sec - (int64_t)start->tv_sec;
+	int64_t nanoseconds = (int64_t)end->tv_nsec - (int64_t)start->tv_nsec;
+	return (uint64_t)(seconds * 1000000000ll + nanoseconds);
+}
 
 /*
  * Monotonic starting point for shader animation.
@@ -291,9 +310,19 @@ static bool close_snapshot_needs_frame(void) {
 	return false;
 }
 
-static bool spatial_needs_continuous_frames(struct shady_server *server) {
+enum shady_continuous_reason {
+	SHADY_CONTINUOUS_NONE = 0,
+	SHADY_CONTINUOUS_CAMERA,
+	SHADY_CONTINUOUS_MOTION,
+	SHADY_CONTINUOUS_PHYSICS,
+	SHADY_CONTINUOUS_CLOSE,
+	SHADY_CONTINUOUS_SNAPSHOT,
+};
+
+static enum shady_continuous_reason spatial_continuous_reason(
+		struct shady_server *server) {
 	const struct shady_spatial_state *spatial = shady_spatial_state_const(server);
-	if (!spatial) return false;
+	if (!spatial) return SHADY_CONTINUOUS_NONE;
 
 	const struct shady_fps_state *fps = shady_fps_state_for_const(server);
 	if (spatial->runtime.camera.first_person) {
@@ -301,7 +330,7 @@ static bool spatial_needs_continuous_frames(struct shady_server *server) {
 		if (fps->forward || fps->back || fps->left || fps->right ||
 				fps->jump_queued || fabsf(camera->vel_y) > 0.00005f ||
 				!camera->grounded) {
-			return true;
+			return SHADY_CONTINUOUS_CAMERA;
 		}
 	}
 
@@ -318,7 +347,7 @@ static bool spatial_needs_continuous_frames(struct shady_server *server) {
 				fabsf(motion->wobble_vy) > 0.00005f ||
 				fabsf(motion->tilt_vx) > 0.00005f ||
 				fabsf(motion->tilt_vy) > 0.00005f) {
-			return true;
+			return SHADY_CONTINUOUS_MOTION;
 		}
 
 		const struct shady_window_physics_state *physics =
@@ -326,7 +355,7 @@ static bool spatial_needs_continuous_frames(struct shady_server *server) {
 		if (physics && (fabsf(physics->vx) > 0.00005f ||
 				fabsf(physics->vy) > 0.00005f ||
 				fabsf(physics->vz) > 0.00005f)) {
-			return true;
+			return SHADY_CONTINUOUS_PHYSICS;
 		}
 
 		enum shady_close_state close_state =
@@ -334,11 +363,12 @@ static bool spatial_needs_continuous_frames(struct shady_server *server) {
 		if (close_state == SHADY_CLOSE_CRUMPLING ||
 				close_state == SHADY_CLOSE_WAITING ||
 				close_state == SHADY_CLOSE_RESTORING) {
-			return true;
+			return SHADY_CONTINUOUS_CLOSE;
 		}
 	}
 
-	return close_snapshot_needs_frame();
+	return close_snapshot_needs_frame() ?
+		SHADY_CONTINUOUS_SNAPSHOT : SHADY_CONTINUOUS_NONE;
 }
 
 void shady_render_schedule_output(struct shady_output *output) {
@@ -625,6 +655,17 @@ void shady_render_output_frame(
 		return;
 	}
 
+	bool profile = render_stats_enabled();
+	struct timespec profile_frame_start = {0};
+	struct timespec profile_effects_end = {0};
+	struct timespec profile_windows_start = {0};
+	struct timespec profile_windows_end = {0};
+	struct timespec profile_overlay_start = {0};
+	struct timespec profile_overlay_end = {0};
+	struct timespec profile_submit_start = {0};
+	struct timespec profile_submit_end = {0};
+	if (profile) clock_gettime(CLOCK_MONOTONIC, &profile_frame_start);
+
 	struct wlr_output_state state;
 
 	wlr_output_state_init(
@@ -799,6 +840,10 @@ void shady_render_output_frame(
 	struct shady_toplevel *toplevel;
 	shady_scene_effects_draw_shadows(server, &pipeline, vp,
 		logical_w, logical_h, ox, oy);
+	if (profile) {
+		clock_gettime(CLOCK_MONOTONIC, &profile_effects_end);
+		profile_windows_start = profile_effects_end;
+	}
 
 
 	wl_list_for_each_reverse(
@@ -1062,6 +1107,7 @@ void shady_render_output_frame(
 			server->config.window_brightness
 		);
 	}
+	if (profile) clock_gettime(CLOCK_MONOTONIC, &profile_windows_end);
 
 
 	if (shady_spatial_state(server)->runtime.camera.first_person) {
@@ -1137,7 +1183,12 @@ void shady_render_output_frame(
 	glDisable(GL_DEPTH_TEST);
 
 	/* Compose protocol-driven 2D surfaces after the spatial pass. */
+	if (profile) clock_gettime(CLOCK_MONOTONIC, &profile_overlay_start);
 	render_spatial_overlays(server, pass, wlr_output, ox, oy, scale);
+	if (profile) {
+		clock_gettime(CLOCK_MONOTONIC, &profile_overlay_end);
+		profile_submit_start = profile_overlay_end;
+	}
 
 	if (!wlr_render_pass_submit(pass)) {
 		wlr_log(
@@ -1154,6 +1205,21 @@ void shady_render_output_frame(
 	wlr_output_state_finish(
 		&state
 	);
+
+	if (profile) {
+		clock_gettime(CLOCK_MONOTONIC, &profile_submit_end);
+		output->profile_samples++;
+		output->profile_effects_ns += timespec_delta_ns(
+			&profile_frame_start, &profile_effects_end);
+		output->profile_windows_ns += timespec_delta_ns(
+			&profile_windows_start, &profile_windows_end);
+		output->profile_overlay_ns += timespec_delta_ns(
+			&profile_overlay_start, &profile_overlay_end);
+		output->profile_submit_ns += timespec_delta_ns(
+			&profile_submit_start, &profile_submit_end);
+		output->profile_frame_ns += timespec_delta_ns(
+			&profile_frame_start, &profile_submit_end);
+	}
 
 	struct timespec now;
 
@@ -1189,7 +1255,16 @@ void shady_render_output_frame(
 	/* Keep the compositor fully idle when nothing is changing. Client commits,
 	 * input, config changes and module actions explicitly wake rendering. Only
 	 * time-dependent simulation/animation keeps the frame loop alive. */
-	if (spatial_needs_continuous_frames(server)) {
+	enum shady_continuous_reason continuous = spatial_continuous_reason(server);
+	if (continuous != SHADY_CONTINUOUS_NONE) {
+		switch (continuous) {
+		case SHADY_CONTINUOUS_CAMERA: output->continuous_camera_frames++; break;
+		case SHADY_CONTINUOUS_MOTION: output->continuous_motion_frames++; break;
+		case SHADY_CONTINUOUS_PHYSICS: output->continuous_physics_frames++; break;
+		case SHADY_CONTINUOUS_CLOSE: output->continuous_close_frames++; break;
+		case SHADY_CONTINUOUS_SNAPSHOT: output->continuous_snapshot_frames++; break;
+		default: break;
+		}
 		shady_render_schedule_output(output);
 	}
 }

@@ -157,6 +157,17 @@ struct shady_output {
 	uint64_t frame_schedule_requests;
 	uint64_t frame_schedule_coalesced;
 	uint64_t frame_callbacks;
+	uint64_t profile_samples;
+	uint64_t profile_frame_ns;
+	uint64_t profile_effects_ns;
+	uint64_t profile_windows_ns;
+	uint64_t profile_overlay_ns;
+	uint64_t profile_submit_ns;
+	uint64_t continuous_camera_frames;
+	uint64_t continuous_motion_frames;
+	uint64_t continuous_physics_frames;
+	uint64_t continuous_close_frames;
+	uint64_t continuous_snapshot_frames;
 	struct wl_listener frame;
 	struct wl_listener request_state;
 	struct wl_listener destroy;

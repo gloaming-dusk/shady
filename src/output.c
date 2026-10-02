@@ -85,6 +85,28 @@ static void output_destroy(struct wl_listener *listener, void *data) {
 			output->frame_schedule_requests,
 			output->frame_schedule_coalesced,
 			output->frame_callbacks);
+		if (output->profile_samples > 0) {
+			wlr_log(WLR_INFO,
+				"render-profile output=%s samples=%" PRIu64
+				" avg_us=%.1f effects_us=%.1f windows_us=%.1f overlay_us=%.1f submit_us=%.1f",
+				output->wlr_output->name ? output->wlr_output->name : "<unnamed>",
+				output->profile_samples,
+				(double)output->profile_frame_ns / output->profile_samples / 1000.0,
+				(double)output->profile_effects_ns / output->profile_samples / 1000.0,
+				(double)output->profile_windows_ns / output->profile_samples / 1000.0,
+				(double)output->profile_overlay_ns / output->profile_samples / 1000.0,
+				(double)output->profile_submit_ns / output->profile_samples / 1000.0);
+			wlr_log(WLR_INFO,
+				"render-continuous output=%s camera=%" PRIu64
+				" motion=%" PRIu64 " physics=%" PRIu64
+				" close=%" PRIu64 " snapshot=%" PRIu64,
+				output->wlr_output->name ? output->wlr_output->name : "<unnamed>",
+				output->continuous_camera_frames,
+				output->continuous_motion_frames,
+				output->continuous_physics_frames,
+				output->continuous_close_frames,
+				output->continuous_snapshot_frames);
+		}
 	}
 	shady_recover_toplevels_to_outputs(server);
 	shady_output_manager_publish(server);

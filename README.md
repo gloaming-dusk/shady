@@ -190,7 +190,8 @@ nix develop
 The idle check leaves a headless compositor untouched for one second and fails
 if it develops a continuous frame loop. Set `SHADY_RENDER_STATS=1` when running
 Shady manually to log per-output render scheduling requests, coalesced requests,
-and delivered frame callbacks at output teardown. The profile intentionally uses
+delivered frame callbacks, 3D CPU frame timing (effects, windows, overlays,
+submit/commit), and the reason any continuous frames were requested. The profile intentionally uses
 the 2D/pixman path so failures in basic desktop lifecycle handling are isolated
 from the spatial renderer and physics stack.
 
