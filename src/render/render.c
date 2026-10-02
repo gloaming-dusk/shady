@@ -400,7 +400,18 @@ struct shady_spatial_surface_render_data {
 	float logical_w, logical_h;
 	double ox, oy;
 	float time_seconds;
+	bool screen_space;
 };
+
+static void shady_screen_space_model(float out[16], float x, float y,
+		float width, float height, float output_w, float output_h) {
+	shady_mat4_identity(out);
+	if (output_w <= 0.f || output_h <= 0.f) return;
+	out[0] = 2.f * width / output_w;
+	out[5] = 2.f * height / output_h;
+	out[12] = 2.f * x / output_w - 1.f;
+	out[13] = 2.f * y / output_h - 1.f;
+}
 
 static void render_spatial_subsurface_buffer(struct wlr_scene_buffer *buffer,
 		int sx, int sy, void *data) {
@@ -426,15 +437,27 @@ static void render_spatial_subsurface_buffer(struct wlr_scene_buffer *buffer,
 	}
 
 	float model[16], mvp[16];
-	shady_window_model(model,
-		(float)sx + (float)ctx->ox,
-		(float)sy + (float)ctx->oy,
-		width, height,
-		ctx->logical_w, ctx->logical_h,
-		shady_spatial_toplevel_state(ctx->toplevel)->z,
-		shady_window_motion_state_for_const(ctx->toplevel)->tilt_x,
-		shady_window_motion_state_for_const(ctx->toplevel)->tilt_y);
-	shady_mat4_multiply(mvp, ctx->vp, model);
+	float wobble_x = shady_window_motion_state_for_const(ctx->toplevel)->wobble_x;
+	float wobble_y = shady_window_motion_state_for_const(ctx->toplevel)->wobble_y;
+	if (ctx->screen_space) {
+		shady_mat4_identity(model);
+		shady_screen_space_model(mvp,
+			(float)sx + (float)ctx->ox,
+			(float)sy + (float)ctx->oy,
+			width, height, ctx->logical_w, ctx->logical_h);
+		wobble_x = 0.f;
+		wobble_y = 0.f;
+	} else {
+		shady_window_model(model,
+			(float)sx + (float)ctx->ox,
+			(float)sy + (float)ctx->oy,
+			width, height,
+			ctx->logical_w, ctx->logical_h,
+			shady_spatial_toplevel_state(ctx->toplevel)->z,
+			shady_window_motion_state_for_const(ctx->toplevel)->tilt_x,
+			shady_window_motion_state_for_const(ctx->toplevel)->tilt_y);
+		shady_mat4_multiply(mvp, ctx->vp, model);
+	}
 	struct shady_server *server = ctx->toplevel->server;
 	const float tint[4] = {
 		server->config.window_tint[0], server->config.window_tint[1],
@@ -444,8 +467,8 @@ static void render_spatial_subsurface_buffer(struct wlr_scene_buffer *buffer,
 	shady_gl_pipeline_draw_window(&pipeline,
 		attribs.target, attribs.tex, attribs.has_alpha,
 		mvp, model, ctx->time_seconds,
-		shady_window_motion_state_for_const(ctx->toplevel)->wobble_x,
-		shady_window_motion_state_for_const(ctx->toplevel)->wobble_y,
+		wobble_x,
+		wobble_y,
 		shady_close_state_for_const(ctx->toplevel)->progress,
 		tint, server->config.window_effect_strength,
 		server->config.window_brightness);
@@ -829,35 +852,44 @@ void shady_render_output_frame(
 			}
 		}
 
-		if(shady_spatial_state(server)->runtime.camera.first_person&&!shady_fps_toplevel_state_const(toplevel)->expanded){
-			float cx=(layout_x+tw*.5f-logical_w*.5f)/logical_h;
-			float cy=.5f-(layout_y+th*.5f)/logical_h;
-			shady_window_cube_model(model,cx,cy,shady_spatial_toplevel_state(toplevel)->z,SHADY_FPS_CUBE_SIZE,
-				shady_window_motion_state_for_const(toplevel)->tilt_x,shady_window_motion_state_for_const(toplevel)->tilt_y);
-		}else{
-			shady_window_model(
-			model,
-			layout_x,
-			layout_y,
-			tw,
-			th,
-			logical_w,
-			logical_h,
-			shady_spatial_toplevel_state(toplevel)->z,
-			shady_window_motion_state_for_const(toplevel)->tilt_x,
-			shady_window_motion_state_for_const(toplevel)->tilt_y
-		);
+		bool screen_space = toplevel->fullscreen;
+		float wobble_x = shady_window_motion_state_for_const(toplevel)->wobble_x;
+		float wobble_y = shady_window_motion_state_for_const(toplevel)->wobble_y;
+		if (screen_space) {
+			shady_mat4_identity(model);
+			shady_screen_space_model(mvp, layout_x, layout_y, tw, th,
+				logical_w, logical_h);
+			wobble_x = 0.f;
+			wobble_y = 0.f;
+		} else {
+			if(shady_spatial_state(server)->runtime.camera.first_person&&!shady_fps_toplevel_state_const(toplevel)->expanded){
+				float cx=(layout_x+tw*.5f-logical_w*.5f)/logical_h;
+				float cy=.5f-(layout_y+th*.5f)/logical_h;
+				shady_window_cube_model(model,cx,cy,shady_spatial_toplevel_state(toplevel)->z,SHADY_FPS_CUBE_SIZE,
+					shady_window_motion_state_for_const(toplevel)->tilt_x,shady_window_motion_state_for_const(toplevel)->tilt_y);
+			}else{
+				shady_window_model(
+				model,
+				layout_x,
+				layout_y,
+				tw,
+				th,
+				logical_w,
+				logical_h,
+				shady_spatial_toplevel_state(toplevel)->z,
+				shady_window_motion_state_for_const(toplevel)->tilt_x,
+				shady_window_motion_state_for_const(toplevel)->tilt_y
+			);
+			}
+			shady_mat4_multiply(mvp, vp, model);
 		}
 
-		shady_mat4_multiply(
-			mvp,
-			vp,
-			model
-		);
+		if (!screen_space) {
+			shady_scene_effects_draw_sides(server, &pipeline, mvp, model,
+				wobble_x, wobble_y, shady_close_state_for_const(toplevel)->progress);
+		}
 
-		shady_scene_effects_draw_sides(server, &pipeline, mvp, model,
-			shady_window_motion_state_for_const(toplevel)->wobble_x, shady_window_motion_state_for_const(toplevel)->wobble_y, shady_close_state_for_const(toplevel)->progress);
-
+		if (screen_space) glDisable(GL_DEPTH_TEST);
 		shady_gl_pipeline_draw_window(
 			&pipeline,
 			attribs.target,
@@ -866,8 +898,8 @@ void shady_render_output_frame(
 			mvp,
 			model,
 			time_seconds,
-			shady_window_motion_state_for_const(toplevel)->wobble_x,
-			shady_window_motion_state_for_const(toplevel)->wobble_y,
+			wobble_x,
+			wobble_y,
 			shady_close_state_for_const(toplevel)->progress,
 			window_tint,
 			server->config.window_effect_strength,
@@ -886,9 +918,11 @@ void shady_render_output_frame(
 			.ox = ox,
 			.oy = oy,
 			.time_seconds = time_seconds,
+			.screen_space = screen_space,
 		};
 		wlr_scene_node_for_each_buffer(&toplevel->scene_tree->node,
 			render_spatial_subsurface_buffer, &surface_ctx);
+		if (screen_space) glEnable(GL_DEPTH_TEST);
 	}
 
 	struct shady_close_snapshot *snapshot;

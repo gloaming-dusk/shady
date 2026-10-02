@@ -62,7 +62,7 @@ for i, name in ipairs(workspace_names) do
     end)
 end
 
-shady.bind("Super+m", function()
+shady.bind("Super+Ctrl+m", function()
     local window = shady.focused_window()
     if window then window:maximize() end
 end)

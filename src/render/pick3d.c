@@ -43,6 +43,24 @@ struct shady_toplevel *shady_toplevel_at_3d(struct shady_server *server,
 
 	/* Output-local → GL NDC (+Y up). Vertex shader flips clip Y for the
 	 * wlroots FBO; unprojection still uses the unflipped view·proj. */
+	/* Fullscreen windows are rendered in output-local 2D screen space. Pick
+	 * them before constructing the 3D ray so pointer coordinates stay exact. */
+	struct shady_toplevel *screen_toplevel;
+	wl_list_for_each(screen_toplevel, &server->toplevels, link) {
+		if (!screen_toplevel->fullscreen || !screen_toplevel->scene_tree ||
+				!screen_toplevel->scene_tree->node.enabled) continue;
+		struct wlr_surface *root = screen_toplevel->xdg_toplevel->base->surface;
+		if (!root || !root->mapped) continue;
+		double root_x = lx - screen_toplevel->scene_tree->node.x;
+		double root_y = ly - screen_toplevel->scene_tree->node.y;
+		if (root_x < 0 || root_y < 0 || root_x >= root->current.width ||
+				root_y >= root->current.height) continue;
+		struct wlr_surface *leaf = wlr_surface_surface_at(root, root_x, root_y, sx, sy);
+		if (leaf) *surface = leaf;
+		else { *surface = root; *sx = root_x; *sy = root_y; }
+		return screen_toplevel;
+	}
+
 	float ndc_x = (float)(local_x / logical_w) * 2.f - 1.f;
 	float ndc_y = 1.f - (float)(local_y / logical_h) * 2.f;
 
