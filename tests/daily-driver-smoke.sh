@@ -57,6 +57,10 @@ if grep -q 'compositor does not implement fractional scaling' "$log"; then
   echo "daily-driver: FAIL: fractional scaling support is not advertised" >&2
   exit 1
 fi
+if grep -q 'compositor does not implement server-side cursors' "$log"; then
+  echo "daily-driver: FAIL: cursor-shape-v1 support is not advertised" >&2
+  exit 1
+fi
 if [[ "$(grep -c 'output .* enabled:' "$log" || true)" -lt 2 ]]; then
   echo "daily-driver: FAIL: expected two headless outputs" >&2
   exit 1

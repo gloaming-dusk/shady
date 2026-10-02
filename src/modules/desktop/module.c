@@ -1,6 +1,8 @@
 #include "../../module/module.h"
 
 #include <wayland-server-core.h>
+#include <wlr/types/wlr_cursor.h>
+#include <wlr/types/wlr_cursor_shape_v1.h>
 #include <wlr/types/wlr_data_control_v1.h>
 #include <wlr/types/wlr_idle_notify_v1.h>
 #include <wlr/types/wlr_fractional_scale_v1.h>
@@ -19,6 +21,19 @@
 #include "../../shell_protocol.h"
 #include "ime.h"
 #include "state.h"
+
+static void cursor_shape_request(struct wl_listener *listener, void *data) {
+	struct shady_desktop_state *state =
+		wl_container_of(listener, state, cursor_shape_request);
+	struct wlr_cursor_shape_manager_v1_request_set_shape_event *event = data;
+	if (event->device_type != WLR_CURSOR_SHAPE_MANAGER_V1_DEVICE_TYPE_POINTER)
+		return;
+	if (state->server->seat->pointer_state.focused_client != event->seat_client)
+		return;
+	const char *name = wlr_cursor_shape_v1_name(event->shape);
+	if (name) wlr_cursor_set_xcursor(state->server->cursor,
+		state->server->cursor_mgr, name);
+}
 
 static void xdg_activation_request(struct wl_listener *listener, void *data) {
 	struct shady_desktop_state *state =
@@ -72,7 +87,13 @@ static bool desktop_protocols_init(struct shady_server *server) {
 	state->fractional_scale_manager =
 		wlr_fractional_scale_manager_v1_create(server->wl_display, 1);
 	state->viewporter = wlr_viewporter_create(server->wl_display);
-	if (!state->fractional_scale_manager || !state->viewporter) return false;
+	state->cursor_shape_manager =
+		wlr_cursor_shape_manager_v1_create(server->wl_display, 1);
+	if (!state->fractional_scale_manager || !state->viewporter ||
+			!state->cursor_shape_manager) return false;
+	state->cursor_shape_request.notify = cursor_shape_request;
+	wl_signal_add(&state->cursor_shape_manager->events.request_set_shape,
+		&state->cursor_shape_request);
 	if (!shady_ime_init(server)) return false;
 
 	state->output_manager =
@@ -101,13 +122,16 @@ static bool desktop_protocols_init(struct shady_server *server) {
 		state->xdg_decoration_manager &&
 		state->xdg_activation &&
 		state->fractional_scale_manager &&
-		state->viewporter;
+		state->viewporter &&
+		state->cursor_shape_manager;
 }
 
 static void desktop_protocols_destroy(struct shady_server *server) {
 	struct shady_desktop_state *state = shady_desktop_state(server);
 	shady_ime_finish(server);
 	shady_shell_protocol_finish(server);
+	if (state->cursor_shape_request.link.prev)
+		wl_list_remove(&state->cursor_shape_request.link);
 	if (state->xdg_activation_request.link.prev)
 		wl_list_remove(&state->xdg_activation_request.link);
 	if (state->new_layer_surface.link.prev)

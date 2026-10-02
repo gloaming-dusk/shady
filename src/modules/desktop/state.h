@@ -17,6 +17,7 @@ struct wlr_xdg_decoration_manager_v1;
 struct wlr_xdg_activation_v1;
 struct wlr_fractional_scale_manager_v1;
 struct wlr_viewporter;
+struct wlr_cursor_shape_manager_v1;
 struct wlr_output_manager_v1;
 struct wlr_session_lock_manager_v1;
 struct wlr_session_lock_v1;
@@ -45,6 +46,8 @@ struct shady_desktop_state {
 	struct wl_listener xdg_activation_request;
 	struct wlr_fractional_scale_manager_v1 *fractional_scale_manager;
 	struct wlr_viewporter *viewporter;
+	struct wlr_cursor_shape_manager_v1 *cursor_shape_manager;
+	struct wl_listener cursor_shape_request;
 	struct shady_ime_state *ime;
 
 	struct wlr_output_manager_v1 *output_manager;
