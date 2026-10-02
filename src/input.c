@@ -24,6 +24,7 @@
 
 #include "shady.h"
 #include "module/module.h"
+#include "modules/desktop/ime.h"
 #include "modules/desktop/state.h"
 #include "render/render.h"
 
@@ -194,8 +195,11 @@ static void keyboard_handle_modifiers(
 			0, 0, 0, 0, 0, keyboard->wlr_keyboard->modifiers.group);
 	}
 	wlr_seat_set_keyboard(keyboard->server->seat, keyboard->wlr_keyboard);
-	wlr_seat_keyboard_notify_modifiers(keyboard->server->seat,
-		&keyboard->wlr_keyboard->modifiers);
+	if (!shady_ime_handle_modifiers(keyboard->server,
+			&keyboard->wlr_keyboard->modifiers)) {
+		wlr_seat_keyboard_notify_modifiers(keyboard->server->seat,
+			&keyboard->wlr_keyboard->modifiers);
+	}
 }
 
 static bool bind_matches(const struct shady_keybind *bind,
@@ -257,7 +261,11 @@ static void keyboard_handle_key(
 	}
 	if (!handled) {
 		wlr_seat_set_keyboard(seat, keyboard->wlr_keyboard);
-		wlr_seat_keyboard_notify_key(seat,event->time_msec,event->keycode,event->state);
+		if (!shady_ime_handle_key(server, event->time_msec,
+				event->keycode, event->state)) {
+			wlr_seat_keyboard_notify_key(seat, event->time_msec,
+				event->keycode, event->state);
+		}
 	}
 }
 

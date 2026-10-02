@@ -14,6 +14,7 @@
 
 #include "../../shady.h"
 #include "../../shell_protocol.h"
+#include "ime.h"
 #include "state.h"
 
 static bool desktop_protocols_init(struct shady_server *server) {
@@ -41,6 +42,7 @@ static bool desktop_protocols_init(struct shady_server *server) {
 		wlr_data_control_manager_v1_create(server->wl_display);
 	state->xdg_decoration_manager =
 		wlr_xdg_decoration_manager_v1_create(server->wl_display);
+	if (!shady_ime_init(server)) return false;
 
 	state->output_manager =
 		wlr_output_manager_v1_create(server->wl_display);
@@ -70,6 +72,7 @@ static bool desktop_protocols_init(struct shady_server *server) {
 
 static void desktop_protocols_destroy(struct shady_server *server) {
 	struct shady_desktop_state *state = shady_desktop_state(server);
+	shady_ime_finish(server);
 	shady_shell_protocol_finish(server);
 	if (state->new_layer_surface.link.prev)
 		wl_list_remove(&state->new_layer_surface.link);

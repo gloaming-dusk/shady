@@ -68,6 +68,7 @@ shady_sources = [
   shady_shell_server_header,
   shady_shell_protocol_code,
   'src/modules/desktop/module.c',
+  'src/modules/desktop/ime.c',
   'src/modules/workspace/workspace.c',
   'src/modules/workspace/module.c',
 ]

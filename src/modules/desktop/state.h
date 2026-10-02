@@ -21,6 +21,7 @@ struct wlr_scene_tree;
 
 struct shady_server;
 struct shady_shell_protocol_state;
+struct shady_ime_state;
 
 struct shady_desktop_state {
 	struct shady_server *server;
@@ -37,6 +38,7 @@ struct shady_desktop_state {
 	struct wlr_primary_selection_v1_device_manager *primary_selection_manager;
 	struct wlr_data_control_manager_v1 *data_control_manager;
 	struct wlr_xdg_decoration_manager_v1 *xdg_decoration_manager;
+	struct shady_ime_state *ime;
 
 	struct wlr_output_manager_v1 *output_manager;
 	struct wl_listener output_manager_apply;
