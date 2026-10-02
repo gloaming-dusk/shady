@@ -6,6 +6,7 @@
 #include <fcntl.h>
 #include <dirent.h>
 #include <linux/input-event-codes.h>
+#include <math.h>
 #include <pango/pangocairo.h>
 #include <poll.h>
 #include <signal.h>
@@ -24,15 +25,15 @@
 #include "wlr-layer-shell-unstable-v1-protocol.h"
 #include "shady-shell-v1-client-protocol.h"
 
-#define BAR_HEIGHT 32
+#define BAR_HEIGHT 38
 #define MAX_WORKSPACES 16
 #define WORKSPACE_NAME_MAX 64
 #define WINDOW_TEXT_MAX 256
 #define MAX_APPS 512
 #define APP_NAME_MAX 128
 #define APP_EXEC_MAX 512
-#define LAUNCHER_WIDTH 640
-#define LAUNCHER_HEIGHT 420
+#define LAUNCHER_WIDTH 680
+#define LAUNCHER_HEIGHT 560
 #define LAUNCHER_RESULTS 8
 #define SEARCH_MAX 128
 
@@ -95,6 +96,8 @@ struct shell {
     uint32_t launcher_height;
     char search[SEARCH_MAX];
     size_t selected_result;
+    int hovered_workspace;
+    int hovered_result;
 };
 
 static void copy_text(char *dst, size_t dst_size, const char *src) {
@@ -316,14 +319,20 @@ static struct shell_buffer *create_buffer(struct shell *shell,
     return buffer;
 }
 
-static PangoLayout *make_layout(cairo_t *cr, const char *text, bool bold) {
+static PangoLayout *make_layout_sized(cairo_t *cr, const char *text,
+        bool bold, int size) {
     PangoLayout *layout = pango_cairo_create_layout(cr);
-    PangoFontDescription *font = pango_font_description_from_string(
-        bold ? "Sans Bold 10" : "Sans 10");
+    char desc[64];
+    snprintf(desc, sizeof(desc), bold ? "Sans Bold %d" : "Sans %d", size);
+    PangoFontDescription *font = pango_font_description_from_string(desc);
     pango_layout_set_font_description(layout, font);
     pango_layout_set_text(layout, text ? text : "", -1);
     pango_font_description_free(font);
     return layout;
+}
+
+static PangoLayout *make_layout(cairo_t *cr, const char *text, bool bold) {
+    return make_layout_sized(cr, text, bold, 10);
 }
 
 static int text_width(cairo_t *cr, const char *text, bool bold) {
@@ -341,11 +350,25 @@ static void draw_layout(cairo_t *cr, PangoLayout *layout,
     pango_cairo_show_layout(cr, layout);
 }
 
-static void draw_text(cairo_t *cr, const char *text,
-        double x, double y, bool bold) {
-    PangoLayout *layout = make_layout(cr, text, bold);
-    draw_layout(cr, layout, x, y, 0.91, 0.94, 0.98);
+static void draw_text_color(cairo_t *cr, const char *text,
+        double x, double y, bool bold, int size,
+        double r, double g, double b) {
+    PangoLayout *layout = make_layout_sized(cr, text, bold, size);
+    draw_layout(cr, layout, x, y, r, g, b);
     g_object_unref(layout);
+}
+
+static void rounded_rect(cairo_t *cr, double x, double y,
+        double width, double height, double radius) {
+    double r = radius;
+    if (r > width * 0.5) r = width * 0.5;
+    if (r > height * 0.5) r = height * 0.5;
+    cairo_new_sub_path(cr);
+    cairo_arc(cr, x + width - r, y + r, r, -G_PI_2, 0);
+    cairo_arc(cr, x + width - r, y + height - r, r, 0, G_PI_2);
+    cairo_arc(cr, x + r, y + height - r, r, G_PI_2, G_PI);
+    cairo_arc(cr, x + r, y + r, r, G_PI, G_PI + G_PI_2);
+    cairo_close_path(cr);
 }
 
 static void draw_bar(struct shell *shell) {
@@ -360,33 +383,51 @@ static void draw_bar(struct shell *shell) {
         (int)shell->width, (int)shell->height, (int)shell->width * 4);
     cairo_t *cr = cairo_create(image);
 
-    cairo_set_source_rgba(cr, 0.025, 0.035, 0.065, 0.96);
+    cairo_set_source_rgba(cr, 0.020, 0.028, 0.052, 0.97);
     cairo_paint(cr);
 
-    cairo_set_source_rgba(cr, 0.09, 0.24, 0.35, 0.9);
+    cairo_set_source_rgba(cr, 0.10, 0.32, 0.46, 0.72);
     cairo_rectangle(cr, 0, shell->height - 1, shell->width, 1);
     cairo_fill(cr);
 
-    draw_text(cr, "Shady", 10, 8, true);
+    cairo_set_source_rgba(cr, 0.08, 0.24, 0.36, 0.92);
+    rounded_rect(cr, 8, 6, 26, 26, 8);
+    cairo_fill(cr);
+    draw_text_color(cr, "S", 17, 9, true, 10, 0.86, 0.95, 1.0);
+    draw_text_color(cr, "Shady", 42, 10, true, 10, 0.91, 0.95, 0.99);
 
-    double x = 72.0;
+    double x = 94.0;
     for (size_t i = 0; i < shell->workspace_count; i++) {
         const char *name = shell->workspaces[i];
         bool active = strcmp(name, shell->active_workspace) == 0;
         int label_width = text_width(cr, name, active);
-        double box_width = label_width + 18.0;
+        double box_width = label_width + 22.0;
+        bool hovered = shell->hovered_workspace == (int)i;
 
         shell->workspace_regions[i].x0 = x;
         shell->workspace_regions[i].x1 = x + box_width;
 
-        if (active) {
-            cairo_set_source_rgba(cr, 0.08, 0.26, 0.39, 0.95);
-            cairo_rectangle(cr, x, 4, box_width, shell->height - 8);
+        if (active || hovered) {
+            cairo_set_source_rgba(cr,
+                active ? 0.075 : 0.055,
+                active ? 0.245 : 0.110,
+                active ? 0.365 : 0.170,
+                active ? 0.96 : 0.82);
+            rounded_rect(cr, x, 6, box_width, shell->height - 12, 8);
             cairo_fill(cr);
         }
-
-        draw_text(cr, name, x + 9, 8, active);
-        x += box_width + 4.0;
+        if (active) {
+            cairo_set_source_rgba(cr, 0.24, 0.72, 0.94, 1.0);
+            cairo_arc(cr, x + 10, shell->height / 2.0, 2.2, 0, 2 * G_PI);
+            cairo_fill(cr);
+            draw_text_color(cr, name, x + 17, 10, true, 10, 0.94, 0.98, 1.0);
+        } else {
+            draw_text_color(cr, name, x + 11, 10, false, 10,
+                hovered ? 0.88 : 0.70,
+                hovered ? 0.93 : 0.77,
+                hovered ? 0.98 : 0.86);
+        }
+        x += box_width + 5.0;
     }
 
     const char *focused = shell->focused_title[0]
@@ -397,7 +438,10 @@ static void draw_bar(struct shell *shell) {
         int available = (int)shell->width - (int)x - 130;
         if (available > 80) {
             pango_layout_set_width(layout, available * PANGO_SCALE);
-            draw_layout(cr, layout, x + 16, 8, 0.72, 0.79, 0.88);
+            cairo_set_source_rgba(cr, 0.25, 0.45, 0.58, 0.8);
+            cairo_arc(cr, x + 10, shell->height / 2.0, 2.0, 0, 2 * G_PI);
+            cairo_fill(cr);
+            draw_layout(cr, layout, x + 18, 10, 0.72, 0.79, 0.88);
         }
         g_object_unref(layout);
     }
@@ -408,12 +452,16 @@ static void draw_bar(struct shell *shell) {
     localtime_r(&now, &local);
     strftime(clock_text, sizeof(clock_text), "%H:%M", &local);
 
-    PangoLayout *clock = make_layout(cr, clock_text, false);
+    PangoLayout *clock = make_layout(cr, clock_text, true);
     int clock_width = 0;
     int clock_height = 0;
     pango_layout_get_pixel_size(clock, &clock_width, &clock_height);
-    draw_layout(cr, clock, shell->width - clock_width - 10,
-        (shell->height - clock_height) / 2.0, 0.80, 0.86, 0.93);
+    double clock_x = shell->width - clock_width - 22.0;
+    cairo_set_source_rgba(cr, 0.045, 0.075, 0.115, 0.92);
+    rounded_rect(cr, clock_x - 10, 6, clock_width + 20, shell->height - 12, 8);
+    cairo_fill(cr);
+    draw_layout(cr, clock, clock_x,
+        (shell->height - clock_height) / 2.0, 0.80, 0.88, 0.95);
     g_object_unref(clock);
 
     cairo_destroy(cr);
@@ -441,36 +489,79 @@ static void draw_launcher(struct shell *shell) {
         (int)shell->launcher_width * 4);
     cairo_t *cr = cairo_create(image);
 
-    cairo_set_source_rgba(cr, 0.018, 0.026, 0.050, 0.98);
+    cairo_set_operator(cr, CAIRO_OPERATOR_SOURCE);
+    cairo_set_source_rgba(cr, 0, 0, 0, 0);
     cairo_paint(cr);
-    cairo_set_source_rgba(cr, 0.08, 0.25, 0.38, 0.95);
-    cairo_rectangle(cr, 0, 0, shell->launcher_width, 2);
-    cairo_fill(cr);
+    cairo_set_operator(cr, CAIRO_OPERATOR_OVER);
 
-    char search_line[SEARCH_MAX + 8];
-    snprintf(search_line, sizeof(search_line), "> %s", shell->search);
-    draw_text(cr, search_line, 24, 20, true);
+    cairo_set_source_rgba(cr, 0.018, 0.026, 0.050, 0.985);
+    rounded_rect(cr, 0, 0, shell->launcher_width, shell->launcher_height, 18);
+    cairo_fill(cr);
+    cairo_set_source_rgba(cr, 0.10, 0.34, 0.50, 0.9);
+    rounded_rect(cr, 22, 18, 34, 34, 10);
+    cairo_fill(cr);
+    draw_text_color(cr, "S", 34, 25, true, 11, 0.88, 0.96, 1.0);
+    draw_text_color(cr, "Applications", 68, 19, true, 13, 0.94, 0.97, 1.0);
+    draw_text_color(cr, "Launch something", 68, 37, false, 9, 0.48, 0.59, 0.70);
+    draw_text_color(cr, "Esc  close", shell->launcher_width - 82, 27,
+        false, 8, 0.45, 0.55, 0.66);
+
+    cairo_set_source_rgba(cr, 0.035, 0.060, 0.095, 0.98);
+    rounded_rect(cr, 22, 68, shell->launcher_width - 44, 48, 12);
+    cairo_fill(cr);
+    cairo_set_source_rgba(cr, 0.11, 0.30, 0.43, 0.85);
+    cairo_set_line_width(cr, 1.0);
+    rounded_rect(cr, 22.5, 68.5, shell->launcher_width - 45, 47, 12);
+    cairo_stroke(cr);
+    draw_text_color(cr, "⌕", 38, 80, false, 13, 0.48, 0.72, 0.84);
+    if (shell->search[0])
+        draw_text_color(cr, shell->search, 62, 83, true, 10, 0.92, 0.96, 1.0);
+    else
+        draw_text_color(cr, "Search applications…", 62, 83, false, 10,
+            0.43, 0.53, 0.64);
 
     size_t matches[LAUNCHER_RESULTS];
     size_t count = launcher_matching_indices(shell, matches);
     if (count == 0) shell->selected_result = 0;
     else if (shell->selected_result >= count) shell->selected_result = count - 1;
 
-    double y = 66.0;
+    double y = 132.0;
     for (size_t i = 0; i < count; i++) {
         const struct launcher_app *app = &shell->apps[matches[i]];
-        if (i == shell->selected_result) {
-            cairo_set_source_rgba(cr, 0.07, 0.22, 0.34, 0.96);
-            cairo_rectangle(cr, 16, y - 6, shell->launcher_width - 32, 34);
+        bool selected = i == shell->selected_result;
+        bool hovered = shell->hovered_result == (int)i;
+        if (selected || hovered) {
+            cairo_set_source_rgba(cr,
+                selected ? 0.055 : 0.035,
+                selected ? 0.185 : 0.085,
+                selected ? 0.285 : 0.130,
+                selected ? 0.98 : 0.90);
+            rounded_rect(cr, 22, y - 7, shell->launcher_width - 44, 46, 11);
             cairo_fill(cr);
         }
-        draw_text(cr, app->name, 28, y, i == shell->selected_result);
-        y += 40.0;
+        if (selected) {
+            cairo_set_source_rgba(cr, 0.24, 0.72, 0.94, 1.0);
+            rounded_rect(cr, 22, y - 7, 3, 46, 1.5);
+            cairo_fill(cr);
+        }
+        draw_text_color(cr, app->name, 38, y, selected, 10,
+            selected ? 0.95 : 0.82,
+            selected ? 0.98 : 0.87,
+            selected ? 1.0 : 0.93);
+        draw_text_color(cr, app->exec, 38, y + 17, false, 8,
+            0.43, 0.53, 0.63);
+        y += 50.0;
     }
 
     if (count == 0) {
-        draw_text(cr, "No applications found", 28, 70, false);
+        draw_text_color(cr, "No applications found", 38, 145, true, 10,
+            0.78, 0.84, 0.90);
+        draw_text_color(cr, "Try another name or executable", 38, 165, false, 9,
+            0.43, 0.53, 0.63);
     }
+
+    draw_text_color(cr, "↑ ↓  navigate    Enter  launch", 24,
+        shell->launcher_height - 30, false, 8, 0.42, 0.52, 0.62);
 
     cairo_destroy(cr);
     cairo_surface_flush(image);
@@ -495,6 +586,7 @@ static void launcher_hide(struct shell *shell) {
     shell->launcher_configured = false;
     shell->search[0] = '\0';
     shell->selected_result = 0;
+    shell->hovered_result = -1;
 }
 
 static void launcher_configure(void *data,
@@ -545,6 +637,7 @@ static void launcher_show(struct shell *shell) {
     shell->launcher_configured = false;
     shell->search[0] = '\0';
     shell->selected_result = 0;
+    shell->hovered_result = -1;
     wl_surface_commit(shell->launcher_surface);
 }
 
@@ -624,6 +717,46 @@ static const struct shady_shell_v1_listener shady_shell_listener = {
     .done = protocol_done,
 };
 
+static void update_pointer_hover(struct shell *shell) {
+    if (shell->pointer_surface == shell->surface) {
+        int hovered = -1;
+        if (shell->pointer_y >= 0 && shell->pointer_y < shell->height) {
+            for (size_t i = 0; i < shell->workspace_count; i++) {
+                if (shell->pointer_x >= shell->workspace_regions[i].x0 &&
+                        shell->pointer_x < shell->workspace_regions[i].x1) {
+                    hovered = (int)i;
+                    break;
+                }
+            }
+        }
+        if (hovered != shell->hovered_workspace) {
+            shell->hovered_workspace = hovered;
+            draw_bar(shell);
+        }
+        return;
+    }
+
+    if (shell->pointer_surface == shell->launcher_surface &&
+            shell->launcher_visible) {
+        int hovered = -1;
+        size_t matches[LAUNCHER_RESULTS];
+        size_t count = launcher_matching_indices(shell, matches);
+        if (shell->pointer_y >= 125.0) {
+            int row = (int)((shell->pointer_y - 125.0) / 50.0);
+            double row_y = 125.0 + row * 50.0;
+            if (row >= 0 && (size_t)row < count &&
+                    shell->pointer_y < row_y + 46.0 &&
+                    shell->pointer_x >= 22.0 &&
+                    shell->pointer_x < shell->launcher_width - 22.0)
+                hovered = row;
+        }
+        if (hovered != shell->hovered_result) {
+            shell->hovered_result = hovered;
+            draw_launcher(shell);
+        }
+    }
+}
+
 static void pointer_enter(void *data, struct wl_pointer *pointer,
         uint32_t serial, struct wl_surface *surface,
         wl_fixed_t surface_x, wl_fixed_t surface_y) {
@@ -633,15 +766,21 @@ static void pointer_enter(void *data, struct wl_pointer *pointer,
     shell->pointer_surface = surface;
     shell->pointer_x = wl_fixed_to_double(surface_x);
     shell->pointer_y = wl_fixed_to_double(surface_y);
+    update_pointer_hover(shell);
 }
 
 static void pointer_leave(void *data, struct wl_pointer *pointer,
         uint32_t serial, struct wl_surface *surface) {
     (void)pointer;
     (void)serial;
-    (void)surface;
     struct shell *shell = data;
+    bool redraw_bar = surface == shell->surface && shell->hovered_workspace >= 0;
+    bool redraw_launcher = surface == shell->launcher_surface && shell->hovered_result >= 0;
     shell->pointer_surface = NULL;
+    shell->hovered_workspace = -1;
+    shell->hovered_result = -1;
+    if (redraw_bar) draw_bar(shell);
+    if (redraw_launcher) draw_launcher(shell);
 }
 
 static void pointer_motion(void *data, struct wl_pointer *pointer,
@@ -651,6 +790,7 @@ static void pointer_motion(void *data, struct wl_pointer *pointer,
     struct shell *shell = data;
     shell->pointer_x = wl_fixed_to_double(surface_x);
     shell->pointer_y = wl_fixed_to_double(surface_y);
+    update_pointer_hover(shell);
 }
 
 static void pointer_button(void *data, struct wl_pointer *pointer,
@@ -659,12 +799,19 @@ static void pointer_button(void *data, struct wl_pointer *pointer,
     (void)serial;
     (void)time;
     struct shell *shell = data;
-    if (!shell->shady_shell || shell->pointer_surface != shell->surface ||
-            button != BTN_LEFT ||
-            state != WL_POINTER_BUTTON_STATE_PRESSED ||
-            shell->pointer_y < 0 || shell->pointer_y >= shell->height) {
+    if (button != BTN_LEFT || state != WL_POINTER_BUTTON_STATE_PRESSED)
+        return;
+
+    if (shell->pointer_surface == shell->launcher_surface &&
+            shell->launcher_visible && shell->hovered_result >= 0) {
+        shell->selected_result = (size_t)shell->hovered_result;
+        launcher_activate_selected(shell);
         return;
     }
+
+    if (!shell->shady_shell || shell->pointer_surface != shell->surface ||
+            shell->pointer_y < 0 || shell->pointer_y >= shell->height)
+        return;
 
     for (size_t i = 0; i < shell->workspace_count; i++) {
         if (shell->pointer_x >= shell->workspace_regions[i].x0 &&
@@ -909,6 +1056,8 @@ static const struct wl_registry_listener registry_listener = {
 };
 
 static bool shell_init(struct shell *shell) {
+    shell->hovered_workspace = -1;
+    shell->hovered_result = -1;
     shell->xkb_context = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
     if (!shell->xkb_context) return false;
     launcher_load_apps(shell);
