@@ -15,6 +15,9 @@
 #define WINDOW_GRAVITY 2.8f
 #define WINDOW_RESPAWN_Y -3.0f
 #define WINDOW_RESPAWN_Z_LIMIT 12.0f
+#define WINDOW_GROUND_IMPACT_TANGENT_RETAIN .58f
+#define WINDOW_REST_FRICTION_RATE 7.0f
+#define WINDOW_REST_SPEED_EPSILON .025f
 
 static float dot3(const float a[3],const float b[3]){
 	return a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
@@ -136,7 +139,7 @@ void shady_physics_toggle_gravity(struct shady_server *server) {
 }
 void shady_physics_update(struct shady_server *server,float dt,float logical_w,float logical_h) {
 	if(!server->config.physics_enabled || !shady_physics_state_for(server)->gravity_enabled || !shady_spatial_state(server)->runtime.camera.first_person || dt<=0.f || logical_w<=0.f || logical_h<=0.f) return;
-	const float restitution=.22f, friction_rate=7.f, angular_kick=.22f;
+	const float restitution=.22f, angular_kick=.22f;
 	struct shady_toplevel *t;
 	wl_list_for_each(t,&server->toplevels,link) {
 		if(shady_fps_is_holding(server,t)||shady_fps_is_expanded(server,t)){shady_physics_stop(t);continue;}
@@ -156,6 +159,7 @@ void shady_physics_update(struct shady_server *server,float dt,float logical_w,f
 		float half_x=cube_size*.5f,half_h=cube_size*.5f,half_z=cube_size*.5f;
 		float previous_bottom=center_y-half_h;
 		shady_physics_toplevel_state(t)->vy-=WINDOW_GRAVITY*dt;
+		bool falling_before_sweep=shady_physics_toplevel_state(t)->vy<=0.f;
 
 		/* Substep fast diagonal throws. A single axis-separated sweep can miss
 		 * an edge when another coordinate enters a collider during the same
@@ -187,7 +191,15 @@ void shady_physics_update(struct shady_server *server,float dt,float logical_w,f
 		if(hit_z)shady_window_motion_add_impulse(server,t,0.f,
 			shady_physics_toplevel_state(t)->vz>=0.f?.018f:-.018f,
 			shady_physics_toplevel_state(t)->vz>=0.f?angular_kick:-angular_kick,0.f);
-		(void)hit_y;
+		/* A downward Y sweep is already a real ground contact even though the
+		 * restitution response has flipped vy positive by this point. Apply an
+		 * impact friction impulse here; otherwise a thrown cube spends most of
+		 * its time in tiny bounces and keeps almost all of its horizontal speed. */
+		bool ground_impact=hit_y&&falling_before_sweep;
+		if(ground_impact){
+			shady_physics_toplevel_state(t)->vx*=WINDOW_GROUND_IMPACT_TANGENT_RETAIN;
+			shady_physics_toplevel_state(t)->vz*=WINDOW_GROUND_IMPACT_TANGENT_RETAIN;
+		}
 
 		struct shady_box_collider body={
 			center_x-half_x,center_x+half_x,
@@ -222,7 +234,17 @@ void shady_physics_update(struct shady_server *server,float dt,float logical_w,f
 					impact*.035f,side*impact*angular_kick,0.f);
 			}
 			else shady_physics_toplevel_state(t)->vy=0.f;
-			float friction=1.f-friction_rate*dt;if(friction<0.f)friction=0.f;shady_window_motion_apply_damping(t,friction);shady_physics_toplevel_state(t)->vx*=friction;shady_physics_toplevel_state(t)->vz*=friction;
+			float friction=1.f-WINDOW_REST_FRICTION_RATE*dt;
+			if(friction<0.f)friction=0.f;
+			shady_window_motion_apply_damping(t,friction);
+			shady_physics_toplevel_state(t)->vx*=friction;
+			shady_physics_toplevel_state(t)->vz*=friction;
+		}
+		if(ground_impact||supported){
+			if(fabsf(shady_physics_toplevel_state(t)->vx)<WINDOW_REST_SPEED_EPSILON)
+				shady_physics_toplevel_state(t)->vx=0.f;
+			if(fabsf(shady_physics_toplevel_state(t)->vz)<WINDOW_REST_SPEED_EPSILON)
+				shady_physics_toplevel_state(t)->vz=0.f;
 		}
 		int x=(int)(center_x*logical_h+logical_w*.5f-tw*.5f);int y=(int)((.5f-center_y)*logical_h-th*.5f);
 		wlr_scene_node_set_position(&t->scene_tree->node,x,y);
