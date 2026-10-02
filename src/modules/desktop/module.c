@@ -10,12 +10,32 @@
 #include <wlr/types/wlr_relative_pointer_v1.h>
 #include <wlr/types/wlr_screencopy_v1.h>
 #include <wlr/types/wlr_session_lock_v1.h>
+#include <wlr/types/wlr_xdg_activation_v1.h>
 #include <wlr/types/wlr_xdg_decoration_v1.h>
 
 #include "../../shady.h"
 #include "../../shell_protocol.h"
 #include "ime.h"
 #include "state.h"
+
+static void xdg_activation_request(struct wl_listener *listener, void *data) {
+	struct shady_desktop_state *state =
+		wl_container_of(listener, state, xdg_activation_request);
+	struct wlr_xdg_activation_v1_request_activate_event *event = data;
+	if (state->session_locked || !event->surface) return;
+	if (event->token && event->token->seat && event->token->seat != state->server->seat)
+		return;
+
+	struct shady_toplevel *toplevel;
+	wl_list_for_each(toplevel, &state->server->all_toplevels, all_link) {
+		if (toplevel->xdg_toplevel &&
+				toplevel->xdg_toplevel->base->surface == event->surface &&
+				event->surface->mapped) {
+			focus_toplevel(toplevel);
+			return;
+		}
+	}
+}
 
 static bool desktop_protocols_init(struct shady_server *server) {
 	struct shady_desktop_state *state = shady_desktop_state(server);
@@ -42,6 +62,11 @@ static bool desktop_protocols_init(struct shady_server *server) {
 		wlr_data_control_manager_v1_create(server->wl_display);
 	state->xdg_decoration_manager =
 		wlr_xdg_decoration_manager_v1_create(server->wl_display);
+	state->xdg_activation = wlr_xdg_activation_v1_create(server->wl_display);
+	if (!state->xdg_activation) return false;
+	state->xdg_activation_request.notify = xdg_activation_request;
+	wl_signal_add(&state->xdg_activation->events.request_activate,
+		&state->xdg_activation_request);
 	if (!shady_ime_init(server)) return false;
 
 	state->output_manager =
@@ -67,13 +92,16 @@ static bool desktop_protocols_init(struct shady_server *server) {
 		state->idle_notifier &&
 		state->primary_selection_manager &&
 		state->data_control_manager &&
-		state->xdg_decoration_manager;
+		state->xdg_decoration_manager &&
+		state->xdg_activation;
 }
 
 static void desktop_protocols_destroy(struct shady_server *server) {
 	struct shady_desktop_state *state = shady_desktop_state(server);
 	shady_ime_finish(server);
 	shady_shell_protocol_finish(server);
+	if (state->xdg_activation_request.link.prev)
+		wl_list_remove(&state->xdg_activation_request.link);
 	if (state->new_layer_surface.link.prev)
 		wl_list_remove(&state->new_layer_surface.link);
 	if (state->output_manager_apply.link.prev)

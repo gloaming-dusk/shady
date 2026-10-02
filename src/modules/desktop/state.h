@@ -14,6 +14,7 @@ struct wlr_idle_notifier_v1;
 struct wlr_primary_selection_v1_device_manager;
 struct wlr_data_control_manager_v1;
 struct wlr_xdg_decoration_manager_v1;
+struct wlr_xdg_activation_v1;
 struct wlr_output_manager_v1;
 struct wlr_session_lock_manager_v1;
 struct wlr_session_lock_v1;
@@ -38,6 +39,8 @@ struct shady_desktop_state {
 	struct wlr_primary_selection_v1_device_manager *primary_selection_manager;
 	struct wlr_data_control_manager_v1 *data_control_manager;
 	struct wlr_xdg_decoration_manager_v1 *xdg_decoration_manager;
+	struct wlr_xdg_activation_v1 *xdg_activation;
+	struct wl_listener xdg_activation_request;
 	struct shady_ime_state *ime;
 
 	struct wlr_output_manager_v1 *output_manager;
