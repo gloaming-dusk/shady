@@ -217,9 +217,10 @@ static void keyboard_focus_change(struct wl_listener *listener, void *data) {
 	struct wlr_seat_keyboard_focus_change_event *event = data;
 	struct shady_text_input *entry;
 	wl_list_for_each(entry, &ime->text_inputs, link) {
-		if (entry->text_input->focused_surface == event->old_surface)
+		if (entry->text_input->focused_surface &&
+				entry->text_input->focused_surface == event->old_surface)
 			wlr_text_input_v3_send_leave(entry->text_input);
-		if (event->new_surface &&
+		if (event->new_surface && !entry->text_input->focused_surface &&
 				wl_resource_get_client(entry->text_input->resource) ==
 				wl_resource_get_client(event->new_surface->resource)) {
 			wlr_text_input_v3_send_enter(entry->text_input, event->new_surface);
