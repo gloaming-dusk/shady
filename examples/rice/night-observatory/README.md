@@ -32,7 +32,7 @@ For a self-contained headless smoke test, replace `WLR_BACKENDS=wayland` with
 | Super + D | Open an app launcher (`$SHADY_LAUNCHER`, then fuzzel/wofi/bemenu-run fallback) |
 | Super + Tab | Cycle focus on the current workspace |
 | Super + 1 / 2 / 3 | Switch to `main` / `code` / `web` workspace |
-| Super + Shift + 1 / 2 / 3 | Move focused window to `main` / `code` / `web` |
+| Super + Shift + 1 / 2 / 3 | Move focused window to `main` / `code` / `web` and follow it |
 | Super + Ctrl + M | Toggle maximize on focused window (screen-space work area) |
 | Super + Shift + M | Toggle fullscreen on focused window (entire output) |
 | Super + Q | Close focused window |

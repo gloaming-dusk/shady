@@ -55,9 +55,12 @@ for i, name in ipairs(workspace_names) do
 
     shady.bind("Super+Shift+" .. i, function()
         local window = shady.focused_window()
-        if window then
-            window:move_to_workspace(name)
-            shady.log("moved focus to workspace: " .. name)
+        if window and window:move_to_workspace(name) then
+            -- Night Observatory uses move-and-follow semantics: sending a
+            -- focused window to another workspace also takes you there.
+            shady.workspace(name)
+            window:focus()
+            shady.log("moved focus and followed to workspace: " .. name)
         end
     end)
 end
