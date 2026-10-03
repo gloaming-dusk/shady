@@ -13,6 +13,8 @@ uniform float u_effect_strength;
 uniform float u_brightness;
 uniform vec4 u_water; /* amplitude, frequency, speed, phase */
 uniform vec4 u_water_surface; /* fresnel, specular, caustic, tint */
+uniform vec4 u_border_color;
+uniform vec2 u_border_width; /* normalized x/y thickness */
 
 varying vec2 v_uv;
 varying vec3 v_normal;
@@ -183,6 +185,18 @@ void main() {
 	vec3 water_compressed = color.rgb / (vec3(1.0) + color.rgb * 0.18);
 	color.rgb = mix(color.rgb, water_compressed * 1.12,
 		water_active * clamp(u_water_surface.y * 0.20, 0.0, 0.30));
+
+	/* Window border uses the original mesh UV, not refracted UV, so it stays
+	 * locked to the physical window perimeter even when the water surface
+	 * bends application contents underneath it. */
+	float border_enabled = step(0.000001, max(u_border_width.x, u_border_width.y));
+	float border_x = min(v_uv.x, 1.0 - v_uv.x) / max(u_border_width.x, 0.000001);
+	float border_y = min(v_uv.y, 1.0 - v_uv.y) / max(u_border_width.y, 0.000001);
+	float border_mask = (1.0 - smoothstep(0.72, 1.0, min(border_x, border_y))) *
+		border_enabled;
+	float border_alpha = clamp(border_mask * u_border_color.a, 0.0, 1.0);
+	color.rgb = color.rgb * (1.0 - border_alpha) + u_border_color.rgb * border_alpha;
+	color.a = color.a + border_alpha * (1.0 - color.a);
 
 	gl_FragColor = color;
 }

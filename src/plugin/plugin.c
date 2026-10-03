@@ -40,7 +40,15 @@ static bool host_has_capability(shady_host host, const char *capability) {
 }
 
 static bool host_config_set(shady_host host, const char *key, const char *value) {
-	return shady_config_set(&HOST(host)->config, key, value);
+	struct shady_server *server = HOST(host);
+	if (!shady_config_set(&server->config, key, value)) return false;
+	if (!strncmp(key, "window_border_", 14)) {
+		struct shady_toplevel *toplevel;
+		wl_list_for_each(toplevel, &server->all_toplevels, all_link)
+			shady_toplevel_refresh_border(toplevel);
+	}
+	if (server->renderer) shady_render_schedule_all_outputs(server);
+	return true;
 }
 
 static void *host_module_state(shady_host host, const char *module_name) {
@@ -404,6 +412,43 @@ static bool host_window_water_surface(shady_window window,
 	return true;
 }
 
+static bool host_window_set_border(shady_host host, shady_window window,
+		float width, float r, float g, float b, float a) {
+	if (!host_window_valid(host, window)) return false;
+	if (width < 0.f) width = 0.f;
+	if (width > 32.f) width = 32.f;
+	float color[4] = {r, g, b, a};
+	for (size_t i = 0; i < 4; i++) {
+		if (color[i] < 0.f) color[i] = 0.f;
+		if (color[i] > 1.f) color[i] = 1.f;
+	}
+	struct shady_toplevel *toplevel = WINDOW(window);
+	toplevel->border_override = true;
+	toplevel->border_width = width;
+	for (size_t i = 0; i < 4; i++) toplevel->border_color[i] = color[i];
+	shady_toplevel_refresh_border(toplevel);
+	if (HOST(host)->renderer) shady_render_schedule_all_outputs(HOST(host));
+	return true;
+}
+
+static bool host_window_border(shady_window window,
+		float *width, float color[4], bool *overridden) {
+	struct shady_toplevel *toplevel = WINDOW(window);
+	if (!toplevel) return false;
+	shady_toplevel_get_border(toplevel, width, color);
+	if (overridden) *overridden = toplevel->border_override;
+	return true;
+}
+
+static bool host_window_reset_border(shady_host host, shady_window window) {
+	if (!host_window_valid(host, window)) return false;
+	struct shady_toplevel *toplevel = WINDOW(window);
+	toplevel->border_override = false;
+	shady_toplevel_refresh_border(toplevel);
+	if (HOST(host)->renderer) shady_render_schedule_all_outputs(HOST(host));
+	return true;
+}
+
 static void host_terminate(shady_host host) {
 	struct shady_server *server = HOST(host);
 	if (server->wl_display) wl_display_terminate(server->wl_display);
@@ -457,6 +502,9 @@ static const struct shady_plugin_api_v1 plugin_api = {
 	.window_water_effect = host_window_water_effect,
 	.window_set_water_surface = host_window_set_water_surface,
 	.window_water_surface = host_window_water_surface,
+	.window_set_border = host_window_set_border,
+	.window_border = host_window_border,
+	.window_reset_border = host_window_reset_border,
 	.event_name = host_event_name,
 	.subscribe_event = host_subscribe_event,
 	.subscribe_event_handle = host_subscribe_event_handle,

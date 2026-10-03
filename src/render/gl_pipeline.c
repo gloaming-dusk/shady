@@ -731,6 +731,8 @@ bool shady_gl_pipeline_init(
 		);
 	pipeline->u_water_2d = glGetUniformLocation(pipeline->prog_2d, "u_water");
 	pipeline->u_water_surface_2d = glGetUniformLocation(pipeline->prog_2d, "u_water_surface");
+	pipeline->u_border_color_2d = glGetUniformLocation(pipeline->prog_2d, "u_border_color");
+	pipeline->u_border_width_2d = glGetUniformLocation(pipeline->prog_2d, "u_border_width");
 
 	pipeline->u_close_progress_2d =
 		glGetUniformLocation(pipeline->prog_2d, "u_close_progress");
@@ -779,6 +781,8 @@ bool shady_gl_pipeline_init(
 		);
 	pipeline->u_water_ext = glGetUniformLocation(pipeline->prog_ext, "u_water");
 	pipeline->u_water_surface_ext = glGetUniformLocation(pipeline->prog_ext, "u_water_surface");
+	pipeline->u_border_color_ext = glGetUniformLocation(pipeline->prog_ext, "u_border_color");
+	pipeline->u_border_width_ext = glGetUniformLocation(pipeline->prog_ext, "u_border_width");
 
 	pipeline->u_close_progress_ext =
 		glGetUniformLocation(pipeline->prog_ext, "u_close_progress");
@@ -984,6 +988,8 @@ void shady_gl_pipeline_draw_window(
 	float wobble_y,
 	const float water[4],
 	const float water_surface[4],
+	const float border_color[4],
+	const float border_width[2],
 	float close_progress,
 	const float tint[4],
 	float effect_strength,
@@ -1029,6 +1035,8 @@ void shady_gl_pipeline_draw_window(
 
 	GLint u_water = external ? pipeline->u_water_ext : pipeline->u_water_2d;
 	GLint u_water_surface = external ? pipeline->u_water_surface_ext : pipeline->u_water_surface_2d;
+	GLint u_border_color = external ? pipeline->u_border_color_ext : pipeline->u_border_color_2d;
+	GLint u_border_width = external ? pipeline->u_border_width_ext : pipeline->u_border_width_2d;
 	GLint u_close_progress = external ? pipeline->u_close_progress_ext : pipeline->u_close_progress_2d;
 	GLint u_model = external ? pipeline->u_model_ext : pipeline->u_model_2d;
 	GLint u_light_dir = external ? pipeline->u_light_dir_ext : pipeline->u_light_dir_2d;
@@ -1066,6 +1074,8 @@ void shady_gl_pipeline_draw_window(
 	);
 	glUniform4fv(u_water, 1, water);
 	glUniform4fv(u_water_surface, 1, water_surface);
+	glUniform4fv(u_border_color, 1, border_color);
+	glUniform2fv(u_border_width, 1, border_width);
 
 	glUniform1f(
 		u_close_progress,

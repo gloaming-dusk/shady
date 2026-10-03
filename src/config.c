@@ -36,6 +36,9 @@ void shady_config_defaults(struct shady_config *c) {
 		.window_effect_strength = 1.0f,
 		.window_brightness = 1.0f,
 		.window_opacity = 1.0f,
+		.window_border_width = 3.0f,
+		.window_border_color = { 0.055f, 0.20f, 0.30f },
+		.window_border_focus_color = { 0.10f, 0.65f, 1.0f },
 		.environment_obj = false,
 		.environment_obj_path = "",
 		.bind_quit = { XKB_KEY_Escape, 0 },
@@ -149,6 +152,9 @@ bool shady_config_set(struct shady_config *c,const char *key,const char *value){
 	if(!strcmp(key,"window_effect_strength"))return parse_float_range(value,0.f,1.f,&c->window_effect_strength);
 	if(!strcmp(key,"window_brightness"))return parse_float_range(value,0.25f,3.f,&c->window_brightness);
 	if(!strcmp(key,"window_opacity"))return parse_float_range(value,0.f,1.f,&c->window_opacity);
+	if(!strcmp(key,"window_border_width"))return parse_float_range(value,0.f,32.f,&c->window_border_width);
+	if(!strcmp(key,"window_border_color"))return parse_color(value,c->window_border_color);
+	if(!strcmp(key,"window_border_focus_color"))return parse_color(value,c->window_border_focus_color);
 	if(!strcmp(key,"environment_obj_path")){snprintf(c->environment_obj_path,sizeof(c->environment_obj_path),"%s",value);return true;}
 #define BIND_SET(name,field) if(!strcmp(key,"bind." name))return parse_keybind(value,&c->field);
 	BIND_SET("quit",bind_quit) BIND_SET("cycle_windows",bind_cycle_windows)

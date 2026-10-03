@@ -81,6 +81,9 @@ struct shady_config {
 	float window_effect_strength;
 	float window_brightness;
 	float window_opacity;
+	float window_border_width;
+	float window_border_color[3];
+	float window_border_focus_color[3];
 	bool environment_obj;
 	char environment_obj_path[512];
 
@@ -210,6 +213,9 @@ struct shady_toplevel {
 	float water_specular;
 	float water_caustic;
 	float water_tint;
+	bool border_override;
+	float border_width;
+	float border_color[4];
 	/* Opaque per-module extension state. The core toplevel does not know
 	 * which optional modules attach data here. */
 	void *module_state[SHADY_MAX_MODULES];
@@ -271,6 +277,9 @@ void focus_toplevel(struct shady_toplevel *toplevel);
 void shady_toplevel_set_maximized(struct shady_toplevel *toplevel, bool enabled);
 void shady_toplevel_set_fullscreen(struct shady_toplevel *toplevel, bool enabled);
 void shady_toplevel_refresh_state(struct shady_toplevel *toplevel);
+void shady_toplevel_get_border(const struct shady_toplevel *toplevel,
+	float *width, float color[4]);
+void shady_toplevel_refresh_border(struct shady_toplevel *toplevel);
 void shady_toplevel_recover_to_output(struct shady_toplevel *toplevel,
 	struct wlr_output *output);
 void reset_cursor_mode(struct shady_server *server);

@@ -263,6 +263,13 @@ shared_module('shady-plugin-water-windows',
   build_by_default: true,
   install: false)
 
+shared_module('shady-plugin-border-accent',
+  'examples/plugins/border_accent.c',
+  include_directories: include_directories('include'),
+  dependencies: [dependency('xkbcommon')],
+  build_by_default: true,
+  install: false)
+
 module_resolver_test = executable('module-resolver-test',
   [
     'tests/module-resolver.c',
@@ -328,3 +335,18 @@ config_opacity_test = executable('config-opacity-test',
   install: false)
 
 test('config-opacity', config_opacity_test)
+
+config_border_test = executable('config-border-test',
+  [
+    'tests/config-border.c',
+    'src/config.c',
+  ],
+  c_args: [
+    '-DWLR_USE_UNSTABLE',
+    '-D_POSIX_C_SOURCE=200809L',
+  ],
+  include_directories: include_directories('src', 'include'),
+  dependencies: [wlroots, dependency('wayland-server'), dependency('xkbcommon')],
+  install: false)
+
+test('config-border', config_border_test)

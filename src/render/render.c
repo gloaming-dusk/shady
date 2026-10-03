@@ -586,6 +586,8 @@ static void render_spatial_subsurface_buffer(struct wlr_scene_buffer *buffer,
 		ctx->toplevel->fullscreen ? 0.f : ctx->toplevel->water_caustic,
 		ctx->toplevel->fullscreen ? 0.f : ctx->toplevel->water_tint,
 	};
+	const float no_border_color[4] = {0.f, 0.f, 0.f, 0.f};
+	const float no_border_width[2] = {0.f, 0.f};
 	shady_gl_pipeline_draw_window(&pipeline,
 		attribs.target, attribs.tex, attribs.has_alpha,
 		mvp, model, ctx->time_seconds,
@@ -593,6 +595,8 @@ static void render_spatial_subsurface_buffer(struct wlr_scene_buffer *buffer,
 		wobble_y,
 		water,
 		water_surface,
+		no_border_color,
+		no_border_width,
 		shady_close_state_for_const(ctx->toplevel)->progress,
 		tint, server->config.window_effect_strength,
 		server->config.window_brightness * (focused ? 1.08f : 1.0f));
@@ -1050,6 +1054,12 @@ void shady_render_output_frame(
 			toplevel->fullscreen ? 0.f : toplevel->water_caustic,
 			toplevel->fullscreen ? 0.f : toplevel->water_tint,
 		};
+		float border_px = 0.f, border_color[4];
+		shady_toplevel_get_border(toplevel, &border_px, border_color);
+		float border_width[2] = {
+			tw > 0.f ? border_px / tw : 0.f,
+			th > 0.f ? border_px / th : 0.f,
+		};
 		shady_gl_pipeline_draw_window(
 			&pipeline,
 			attribs.target,
@@ -1062,6 +1072,8 @@ void shady_render_output_frame(
 			wobble_y,
 			water,
 			water_surface,
+			border_color,
+			border_width,
 			shady_close_state_for_const(toplevel)->progress,
 			focused_tint,
 			server->config.window_effect_strength,
@@ -1137,6 +1149,8 @@ void shady_render_output_frame(
 
 		const float no_water[4] = {0.f, 1.f, 0.f, 0.f};
 		const float no_water_surface[4] = {0.f, 0.f, 0.f, 0.f};
+		const float no_border_color[4] = {0.f, 0.f, 0.f, 0.f};
+		const float no_border_width[2] = {0.f, 0.f};
 		shady_gl_pipeline_draw_window(
 			&pipeline,
 			GL_TEXTURE_2D,
@@ -1149,6 +1163,8 @@ void shady_render_output_frame(
 			0.0f,
 			no_water,
 			no_water_surface,
+			no_border_color,
+			no_border_width,
 			snapshot->progress,
 			window_tint,
 			server->config.window_effect_strength,

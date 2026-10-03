@@ -107,6 +107,11 @@ struct shady_plugin_api_v1 {
 		float fresnel, float specular, float caustic, float tint);
 	bool (*window_water_surface)(shady_window window,
 		float *fresnel, float *specular, float *caustic, float *tint);
+	bool (*window_set_border)(shady_host host, shady_window window,
+		float width, float r, float g, float b, float a);
+	bool (*window_border)(shady_window window,
+		float *width, float color[4], bool *overridden);
+	bool (*window_reset_border)(shady_host host, shady_window window);
 };
 
 typedef const struct shady_module *(*shady_plugin_entry_v1_fn)(
