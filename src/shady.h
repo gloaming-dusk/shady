@@ -367,6 +367,9 @@ bool shady_toplevel_representation_base(const struct shady_toplevel *toplevel,
 bool shady_toplevel_representation_model(const struct shady_toplevel *toplevel,
 	const struct shady_representation_context *context,
 	struct shady_representation_model *model);
+bool shady_toplevel_representation_mesh(const struct shady_toplevel *toplevel,
+	const struct shady_representation_context *context,
+	struct shady_representation_mesh *mesh);
 bool shady_toplevel_representation_collision(const struct shady_toplevel *toplevel,
 	const struct shady_representation_context *context,
 	const struct shady_representation_model *model,

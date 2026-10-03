@@ -1,9 +1,11 @@
 precision mediump float;
 
 attribute vec3 a_pos;
+attribute vec2 a_uv;
 
 uniform mat4 u_mvp;
 uniform vec4 u_frame_rect;
+uniform float u_use_vertex_uv;
 uniform float u_close_progress;
 uniform float u_time;
 
@@ -12,8 +14,9 @@ varying vec2 v_frame_uv;
 varying float v_burn_progress;
 
 void main() {
-    vec2 local_uv = a_pos.xy;
-    vec2 frame_uv = u_frame_rect.xy + local_uv * u_frame_rect.zw;
+    vec2 local_pos = a_pos.xy;
+    vec2 local_uv = mix(local_pos, a_uv, step(0.5, u_use_vertex_uv));
+    vec2 frame_uv = u_frame_rect.xy + local_pos * u_frame_rect.zw;
     vec3 pos = vec3(frame_uv, a_pos.z);
 
     float p = smoothstep(0.0, 1.0, clamp(u_close_progress, 0.0, 1.0));

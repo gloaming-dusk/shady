@@ -19,6 +19,9 @@
 #include "../module/module.h"
 #include "../event/event.h"
 #include "../render/render.h"
+#if SHADY_HAS_SPATIAL
+#include "../render/math3d.h"
+#endif
 #include "../modules/spatial/state.h"
 #include "../modules/close_animation/close_animation.h"
 #include "../modules/workspace/workspace.h"
@@ -30,6 +33,8 @@
 #define SEAT(s) ((struct wlr_seat *)(s))
 #define MODULE(m) ((const struct shady_module *)(m))
 #define SHADY_MAX_REPRESENTATION_STATE (1024u * 1024u)
+#define SHADY_MAX_REPRESENTATION_VERTICES 16384u
+#define SHADY_MAX_REPRESENTATION_INDICES 49152u
 
 static void host_log(enum shady_plugin_log_level level, const char *message) {
 	enum wlr_log_importance importance = WLR_INFO;
@@ -522,6 +527,8 @@ static bool plugin_representation_provider_callbacks_valid(
 			!plugin_callback_owned_by(owner, (void *)provider->model)) return false;
 	if (provider->collision &&
 			!plugin_callback_owned_by(owner, (void *)provider->collision)) return false;
+	if (provider->mesh &&
+			!plugin_callback_owned_by(owner, (void *)provider->mesh)) return false;
 	return true;
 }
 
@@ -590,11 +597,13 @@ bool shady_toplevel_representation_base(const struct shady_toplevel *toplevel,
 	if (!toplevel || !representation) return false;
 	if (toplevel->plugin_representation_provider_active) {
 		*representation = toplevel->plugin_representation_provider.base;
-		return representation->kind == SHADY_WINDOW_REPRESENTATION_BOX;
+		return representation->kind == SHADY_WINDOW_REPRESENTATION_BOX ||
+			representation->kind == SHADY_WINDOW_REPRESENTATION_MESH;
 	}
 	if (!toplevel->plugin_representation_override) return false;
 	*representation = toplevel->plugin_representation;
-	return representation->kind == SHADY_WINDOW_REPRESENTATION_BOX;
+	return representation->kind == SHADY_WINDOW_REPRESENTATION_BOX ||
+		representation->kind == SHADY_WINDOW_REPRESENTATION_MESH;
 }
 
 bool shady_toplevel_representation_model(const struct shady_toplevel *toplevel,
@@ -631,6 +640,44 @@ bool shady_toplevel_representation_model(const struct shady_toplevel *toplevel,
 	return true;
 }
 
+bool shady_toplevel_representation_mesh(const struct shady_toplevel *toplevel,
+		const struct shady_representation_context *context,
+		struct shady_representation_mesh *mesh) {
+	if (!toplevel || !context || !mesh ||
+			!toplevel->plugin_representation_provider_active ||
+			toplevel->plugin_representation_provider.base.kind !=
+				SHADY_WINDOW_REPRESENTATION_MESH)
+		return false;
+	shady_representation_mesh_callback callback =
+		toplevel->plugin_representation_provider.mesh;
+	if (!callback || !plugin_callback_owned_by(
+			toplevel->plugin_representation_provider_owner, (void *)callback))
+		return false;
+	struct shady_representation_mesh resolved = {
+		.struct_size = sizeof(resolved),
+	};
+	if (!callback((shady_host)toplevel->server, (shady_window)toplevel,
+			context, &resolved, toplevel->plugin_representation_state,
+			toplevel->plugin_representation_provider.user_data))
+		return false;
+	if (resolved.struct_size < sizeof(resolved) || !resolved.vertices ||
+			resolved.vertex_count < 3 ||
+			resolved.vertex_count > SHADY_MAX_REPRESENTATION_VERTICES)
+		return false;
+	if (resolved.indices) {
+		if (resolved.index_count < 3 ||
+				resolved.index_count > SHADY_MAX_REPRESENTATION_INDICES ||
+				resolved.index_count % 3 != 0)
+			return false;
+		for (size_t i = 0; i < resolved.index_count; ++i)
+			if (resolved.indices[i] >= resolved.vertex_count) return false;
+	} else if (resolved.index_count != 0 || resolved.vertex_count % 3 != 0) {
+		return false;
+	}
+	*mesh = resolved;
+	return true;
+}
+
 bool shady_toplevel_representation_collision(const struct shady_toplevel *toplevel,
 		const struct shady_representation_context *context,
 		const struct shady_representation_model *model,
@@ -641,6 +688,24 @@ bool shady_toplevel_representation_collision(const struct shady_toplevel *toplev
 		.center = {model->center_x, model->center_y, model->center_z},
 		.half = {model->width * .5f, model->height * .5f, model->depth * .5f},
 	};
+
+#if SHADY_HAS_SPATIAL
+	struct shady_window_representation base = {0};
+	if (shady_toplevel_representation_base(toplevel, &base) &&
+			base.kind == SHADY_WINDOW_REPRESENTATION_MESH) {
+		struct shady_representation_mesh mesh = {0};
+		if (shady_toplevel_representation_mesh(toplevel, context, &mesh)) {
+			float transform[16];
+			shady_window_box_model(transform,
+				model->center_x, model->center_y, model->center_z,
+				model->width, model->height, model->depth,
+				model->tilt_x, model->tilt_y);
+			shady_mesh_bounds(transform, (const float *)mesh.vertices,
+				mesh.vertex_count, mesh.indices, mesh.index_count,
+				box->center, box->half);
+		}
+	}
+#endif
 	shady_representation_collision_callback callback =
 		toplevel->plugin_representation_provider.collision;
 	if (toplevel->plugin_representation_provider_active && callback &&
@@ -782,13 +847,15 @@ static bool host_window_set_representation_provider(shady_host host,
 	if (!host_window_valid(host, window) || !provider ||
 			provider->struct_size < sizeof(*provider) ||
 			provider->base.struct_size < sizeof(provider->base) ||
-			provider->base.kind != SHADY_WINDOW_REPRESENTATION_BOX ||
+			(provider->base.kind != SHADY_WINDOW_REPRESENTATION_BOX &&
+			 provider->base.kind != SHADY_WINDOW_REPRESENTATION_MESH) ||
 			provider->base.width <= 0.f || provider->base.height <= 0.f ||
 			provider->base.depth <= 0.f)
 		return false;
 	void *owner = plugin_owner_from_address((void *)provider);
 	if (!owner || provider->state_size > SHADY_MAX_REPRESENTATION_STATE ||
-			!plugin_representation_provider_callbacks_valid(owner, provider))
+			!plugin_representation_provider_callbacks_valid(owner, provider) ||
+			(provider->base.kind == SHADY_WINDOW_REPRESENTATION_MESH && !provider->mesh))
 		return false;
 	struct shady_toplevel *toplevel = WINDOW(window);
 	if (toplevel->plugin_representation_override &&

@@ -343,9 +343,64 @@ The repository includes three provider examples:
 - `examples/plugins/fps_jelly.c` — spring state integrated in `update(dt)` and used to deform both the visible model and its derived collision body.
 
 This API is plugin-owned. The FPS module itself no longer decides that folded windows
-must be cubes. The current provider contract intentionally remains box-based; arbitrary
-mesh/deformable representations can be added later without changing FPS interaction
-semantics.
+must be cubes.
+
+### Mesh and deformable representations
+
+`SHADY_WINDOW_REPRESENTATION_MESH` lets a provider replace the folded front surface
+with plugin-owned triangle geometry while keeping the same model/collision/lifecycle
+contract:
+
+```c
+static bool mesh(shady_host host, shady_window window,
+        const struct shady_representation_context *ctx,
+        struct shady_representation_mesh *out,
+        void *state, void *data) {
+    struct my_state *s = state;
+    out->struct_size = sizeof(*out);
+    out->vertices = s->vertices;
+    out->vertex_count = s->vertex_count;
+    out->indices = s->indices;           /* optional uint16 triangle indices */
+    out->index_count = s->index_count;   /* multiple of 3 when indices != NULL */
+    out->revision = s->revision;
+    return true;
+}
+```
+
+Mesh vertices are `struct shady_representation_vertex { x, y, z, u, v; }`. `x/y/z`
+control local geometry while `u/v` are independent client-texture coordinates. Position
+and UV therefore do not need to match. If `indices == NULL`, vertices form an unindexed
+triangle list and `vertex_count` must be a multiple of three. If `indices != NULL`,
+`index_count` must be a multiple of three and every `uint16_t` index must be smaller than
+`vertex_count`.
+
+The public API is indexed even though the GLES2 host currently expands indexed topology
+into a streaming triangle list before upload. This avoids relying on optional 32-bit
+index extensions while allowing plugins to store shared vertices compactly.
+
+The host consumes exactly the same topology for GPU rendering and ray-triangle picking.
+Picking barycentrically interpolates each vertex's independent `u/v`, so clicks on a bent
+or UV-remapped surface still map back to the intended client coordinates.
+
+`revision` should change whenever the vertex data changes. The current renderer uploads
+the mesh as streaming data; the revision field is part of the API now so future host
+implementations may cache unchanged meshes without changing the plugin contract.
+
+Mesh providers still resolve a `shady_representation_model`, which supplies the world
+transform and nominal width/height/depth scale. If no `collision` callback is supplied,
+Shady transforms the active mesh vertices into world space and derives a conservative
+axis-aligned collision box from their actual bounds. A custom collision callback can
+still override that result when a different physical body is desired.
+
+The host currently accepts up to 16,384 vertices and 49,152 indices per window
+representation. A mesh
+callback that fails validation falls back to the normal representation path rather than
+calling into invalid geometry.
+
+`examples/plugins/fps_folded_paper.c` demonstrates the full deformable flow: 81 shared
+vertices, a 384-index grid, independent UVs, host-owned per-window mesh state,
+`update(dt)` deformation, mesh revision updates, mesh-derived collision bounds, GPU
+rendering, and triangle-accurate picking.
 
 ## Per-window shader replacement
 

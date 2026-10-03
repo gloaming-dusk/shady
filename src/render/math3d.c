@@ -389,6 +389,68 @@ static bool ray_triangle(const struct shady_ray *ray,
 	return true;
 }
 
+bool shady_mesh_bounds(const float model[16], const float *vertices,
+		size_t vertex_count, const uint16_t *indices, size_t index_count,
+		float center[3], float half[3]) {
+	if (!model || !vertices || !center || !half || vertex_count < 1) return false;
+	size_t count = indices ? index_count : vertex_count;
+	if (count < 1) return false;
+	float minv[3] = {INFINITY, INFINITY, INFINITY};
+	float maxv[3] = {-INFINITY, -INFINITY, -INFINITY};
+	for (size_t i = 0; i < count; ++i) {
+		size_t index = indices ? indices[i] : i;
+		if (index >= vertex_count) return false;
+		const float *v = &vertices[index * 5];
+		struct shady_vec3 p = transform_point(model, v[0], v[1], v[2]);
+		const float values[3] = {p.x, p.y, p.z};
+		for (int axis = 0; axis < 3; ++axis) {
+			if (values[axis] < minv[axis]) minv[axis] = values[axis];
+			if (values[axis] > maxv[axis]) maxv[axis] = values[axis];
+		}
+	}
+	for (int axis = 0; axis < 3; ++axis) {
+		center[axis] = (minv[axis] + maxv[axis]) * .5f;
+		half[axis] = fmaxf((maxv[axis] - minv[axis]) * .5f, .001f);
+	}
+	return true;
+}
+
+bool shady_ray_mesh_hit(const struct shady_ray *ray, const float model[16],
+		const float *vertices, size_t vertex_count,
+		const uint16_t *indices, size_t index_count,
+		float *t_out, float *u_out, float *v_out) {
+	if (!ray || !model || !vertices || vertex_count < 3) return false;
+	size_t element_count = indices ? index_count : vertex_count;
+	if (element_count < 3 || element_count % 3 != 0) return false;
+	bool hit = false;
+	float best_t = 1e30f, best_u = 0.f, best_v = 0.f;
+	for (size_t i = 0; i < element_count; i += 3) {
+		size_t ia = indices ? indices[i + 0] : i + 0;
+		size_t ib = indices ? indices[i + 1] : i + 1;
+		size_t ic = indices ? indices[i + 2] : i + 2;
+		if (ia >= vertex_count || ib >= vertex_count || ic >= vertex_count) continue;
+		const float *a = &vertices[ia * 5];
+		const float *b = &vertices[ib * 5];
+		const float *c = &vertices[ic * 5];
+		struct shady_vec3 p0 = transform_point(model, a[0], a[1], a[2]);
+		struct shady_vec3 p1 = transform_point(model, b[0], b[1], b[2]);
+		struct shady_vec3 p2 = transform_point(model, c[0], c[1], c[2]);
+		float t, bu, bv;
+		if (!ray_triangle(ray, p0, p1, p2, &t, &bu, &bv) || t >= best_t)
+			continue;
+		float bw = 1.f - bu - bv;
+		best_t = t;
+		best_u = a[3] * bw + b[3] * bu + c[3] * bv;
+		best_v = a[4] * bw + b[4] * bu + c[4] * bv;
+		hit = true;
+	}
+	if (!hit) return false;
+	if (t_out) *t_out = best_t;
+	if (u_out) *u_out = best_u;
+	if (v_out) *v_out = best_v;
+	return true;
+}
+
 bool shady_ray_quad_hit(const struct shady_ray *ray, const float model[16],
 		float *t_out, float *u_out, float *v_out) {
 	/* Unit quad: (0,0)-(1,0)-(0,1)-(1,1). Two triangles. */

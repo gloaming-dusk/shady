@@ -2,6 +2,8 @@
 #define SHADY_MATH3D_H
 
 #include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
 
 struct shady_camera {
 	float yaw;      /* radians, around +Y */
@@ -86,5 +88,12 @@ bool shady_ray_wobble_hit(const struct shady_ray *ray, const float model[16],
 bool shady_ray_window_shell_hit(const struct shady_ray *ray, const float model[16],
 	float wobble_x, float wobble_y, float *t_out, float *u_out, float *v_out,
 	bool *front_out);
+bool shady_ray_mesh_hit(const struct shady_ray *ray, const float model[16],
+	const float *vertices, size_t vertex_count,
+	const uint16_t *indices, size_t index_count,
+	float *t_out, float *u_out, float *v_out);
+bool shady_mesh_bounds(const float model[16], const float *vertices,
+	size_t vertex_count, const uint16_t *indices, size_t index_count,
+	float center[3], float half[3]);
 
 #endif

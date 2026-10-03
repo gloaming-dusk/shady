@@ -1,10 +1,12 @@
 precision mediump float;
 
 attribute vec3 a_pos;
+attribute vec2 a_uv;
 
 uniform mat4 u_mvp;
 uniform mat4 u_model;
 uniform vec4 u_frame_rect; /* x, y, width, height in full-frame local coords */
+uniform float u_use_vertex_uv;
 
 uniform vec2 u_wobble;
 uniform vec4 u_water; /* amplitude, frequency, speed, phase */
@@ -22,8 +24,9 @@ varying vec3 v_normal;
 varying float v_water_wave;
 
 void main() {
-	vec2 local_uv = a_pos.xy;
-	vec2 uv = u_frame_rect.xy + local_uv * u_frame_rect.zw;
+	vec2 local_pos = a_pos.xy;
+	vec2 local_uv = mix(local_pos, a_uv, step(0.5, u_use_vertex_uv));
+	vec2 uv = u_frame_rect.xy + local_pos * u_frame_rect.zw;
 
 	v_uv = vec2(
 		local_uv.x,

@@ -186,6 +186,58 @@ static void test_transformed_shell_hit(void) {
 		fail("transformed shell uv bounds");
 }
 
+static void test_mesh_bounds(void) {
+	float model[16];
+	shady_mat4_identity(model);
+	const float mesh[] = {
+		0.f, 0.f, 0.f,    0.f, 0.f,
+		1.f, 0.f, -0.2f,  1.f, 0.f,
+		0.f, 1.f, 0.1f,   0.f, 1.f,
+		1.f, 1.f, 0.f,    1.f, 1.f,
+		9.f, 9.f, 9.f,    0.f, 0.f,
+	};
+	const uint16_t indices[] = {0, 1, 2, 2, 1, 3};
+	float center[3], half[3];
+	if (!shady_mesh_bounds(model, mesh, 5, indices, 6, center, half)) {
+		fail("indexed mesh bounds");
+		return;
+	}
+	expect_near(center[0], 0.5f, 1e-5f, "mesh bounds center x");
+	expect_near(center[1], 0.5f, 1e-5f, "mesh bounds center y");
+	expect_near(center[2], -0.05f, 1e-5f, "mesh bounds center z");
+	expect_near(half[0], 0.5f, 1e-5f, "mesh bounds half x");
+	expect_near(half[1], 0.5f, 1e-5f, "mesh bounds half y");
+	expect_near(half[2], 0.15f, 1e-5f, "mesh bounds half z");
+}
+
+static void test_mesh_hit(void) {
+	float model[16];
+	shady_mat4_identity(model);
+	const float mesh[] = {
+		0.f, 0.f, 0.f,   0.10f, 0.20f,
+		1.f, 0.f, -0.2f, 0.90f, 0.20f,
+		0.f, 1.f, 0.1f,  0.10f, 0.80f,
+		1.f, 1.f, 0.f,   0.90f, 0.80f,
+	};
+	const uint16_t indices[] = {0, 1, 2, 2, 1, 3};
+	struct shady_ray ray = {
+		.origin = {0.25f, 0.25f, 1.f},
+		.dir = {0.f, 0.f, -1.f},
+	};
+	float t = 0.f, u = 0.f, v = 0.f;
+	if (!shady_ray_mesh_hit(&ray, model, mesh, 4, indices, 6, &t, &u, &v)) {
+		fail("deformable mesh hit");
+		return;
+	}
+	expect_near(u, 0.30f, 1e-5f, "mesh hit independent u");
+	expect_near(v, 0.35f, 1e-5f, "mesh hit independent v");
+	if (!(t > 0.f)) fail("mesh hit positive distance");
+
+	ray.origin.x = 2.f;
+	if (shady_ray_mesh_hit(&ray, model, mesh, 4, indices, 6, &t, &u, &v))
+		fail("deformable mesh miss outside bounds");
+}
+
 static void test_quad_hit(void) {
 	float model[16];
 	shady_mat4_identity(model);
@@ -212,6 +264,8 @@ int main(void) {
 	test_cube_center();
 	test_center_ray();
 	test_quad_hit();
+	test_mesh_hit();
+	test_mesh_bounds();
 	test_wobble_hit();
 	test_window_shell_hit();
 	test_transformed_shell_hit();

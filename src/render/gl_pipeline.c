@@ -182,6 +182,7 @@ static GLuint link_program(
 		1,
 		"a_normal"
 	);
+	glBindAttribLocation(prog, 2, "a_uv");
 
 	glLinkProgram(prog);
 
@@ -577,6 +578,7 @@ bool shady_gl_pipeline_init(
 	pipeline->u_effect_strength_2d = glGetUniformLocation(pipeline->prog_2d, "u_effect_strength");
 	pipeline->u_brightness_2d = glGetUniformLocation(pipeline->prog_2d, "u_brightness");
 	pipeline->u_frame_rect_2d = glGetUniformLocation(pipeline->prog_2d, "u_frame_rect");
+	pipeline->u_use_vertex_uv_2d = glGetUniformLocation(pipeline->prog_2d, "u_use_vertex_uv");
 
 	/*
 	 * EGL external texture uniforms.
@@ -630,6 +632,7 @@ bool shady_gl_pipeline_init(
 	pipeline->u_effect_strength_ext = glGetUniformLocation(pipeline->prog_ext, "u_effect_strength");
 	pipeline->u_brightness_ext = glGetUniformLocation(pipeline->prog_ext, "u_brightness");
 	pipeline->u_frame_rect_ext = glGetUniformLocation(pipeline->prog_ext, "u_frame_rect");
+	pipeline->u_use_vertex_uv_ext = glGetUniformLocation(pipeline->prog_ext, "u_use_vertex_uv");
 
 	pipeline->titlebar_prog = link_program_files("titlebar.vert", "titlebar.frag", "titlebar");
 	if (!pipeline->titlebar_prog) {
@@ -777,13 +780,13 @@ void shady_gl_pipeline_fini(
 		pipeline->side_prog = 0;
 	}
 	if (pipeline->mesh_vbo) {
-		glDeleteBuffers(
-			1,
-			&pipeline->mesh_vbo
-		);
-
+		glDeleteBuffers(1, &pipeline->mesh_vbo);
 		pipeline->mesh_vbo = 0;
 		pipeline->mesh_vertex_count = 0;
+	}
+	if (pipeline->dynamic_mesh_vbo) {
+		glDeleteBuffers(1, &pipeline->dynamic_mesh_vbo);
+		pipeline->dynamic_mesh_vbo = 0;
 	}
 	if (pipeline->prog_2d) {
 		glDeleteProgram(
@@ -893,6 +896,7 @@ void shady_gl_pipeline_draw_window(
 	GLint u_effect_strength = external ? pipeline->u_effect_strength_ext : pipeline->u_effect_strength_2d;
 	GLint u_brightness = external ? pipeline->u_brightness_ext : pipeline->u_brightness_2d;
 	GLint u_frame_rect = external ? pipeline->u_frame_rect_ext : pipeline->u_frame_rect_2d;
+	GLint u_use_vertex_uv = external ? pipeline->u_use_vertex_uv_ext : pipeline->u_use_vertex_uv_2d;
 
 	glUseProgram(prog);
 
@@ -902,6 +906,8 @@ void shady_gl_pipeline_draw_window(
 	glUniform1f(u_effect_strength, effect_strength);
 	glUniform1f(u_brightness, brightness);
 	glUniform4fv(u_frame_rect, 1, frame_rect);
+	if (u_use_vertex_uv >= 0)
+		glUniform1f(u_use_vertex_uv, pipeline->mesh_use_vertex_uv ? 1.f : 0.f);
 
 	glUniform4fv(
 		u_tint,
@@ -992,16 +998,16 @@ void shady_gl_pipeline_draw_window(
 		pipeline->mesh_vbo
 	);
 
-	glVertexAttribPointer(
-		0,
-		3,
-		GL_FLOAT,
-		GL_FALSE,
-		3 * sizeof(GLfloat),
-		(void *)0
-	);
-
+	GLsizei vertex_stride = (pipeline->mesh_use_vertex_uv ? 5 : 3) * sizeof(GLfloat);
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, vertex_stride, (void *)0);
 	glEnableVertexAttribArray(0);
+	if (pipeline->mesh_use_vertex_uv) {
+		glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, vertex_stride,
+			(void *)(3 * sizeof(GLfloat)));
+		glEnableVertexAttribArray(2);
+	} else {
+		glDisableVertexAttribArray(2);
+	}
 
 	glDrawArrays(
 		GL_TRIANGLES,
@@ -1010,6 +1016,7 @@ void shady_gl_pipeline_draw_window(
 	);
 
 	glDisableVertexAttribArray(0);
+	if (pipeline->mesh_use_vertex_uv) glDisableVertexAttribArray(2);
 
 	glBindBuffer(
 		GL_ARRAY_BUFFER,
@@ -1024,6 +1031,63 @@ void shady_gl_pipeline_draw_window(
 	);
 
 	glUseProgram(0);
+}
+
+bool shady_gl_pipeline_prepare_dynamic_mesh(
+		struct shady_gl_pipeline *pipeline, const float *vertices,
+		size_t vertex_count, const uint16_t *indices, size_t index_count) {
+	if (!pipeline || !vertices || vertex_count < 3 || vertex_count > 16384)
+		return false;
+	size_t draw_count = indices ? index_count : vertex_count;
+	if (draw_count < 3 || draw_count > 49152 || draw_count % 3 != 0)
+		return false;
+	float *expanded = malloc(draw_count * 5 * sizeof(float));
+	if (!expanded) return false;
+	for (size_t i = 0; i < draw_count; ++i) {
+		size_t src = indices ? indices[i] : i;
+		if (src >= vertex_count) { free(expanded); return false; }
+		memcpy(&expanded[i * 5], &vertices[src * 5], 5 * sizeof(float));
+	}
+	if (!pipeline->dynamic_mesh_vbo)
+		glGenBuffers(1, &pipeline->dynamic_mesh_vbo);
+	if (!pipeline->dynamic_mesh_vbo) { free(expanded); return false; }
+	glBindBuffer(GL_ARRAY_BUFFER, pipeline->dynamic_mesh_vbo);
+	glBufferData(GL_ARRAY_BUFFER,
+		(GLsizeiptr)(draw_count * 5 * sizeof(float)),
+		expanded, GL_STREAM_DRAW);
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
+	free(expanded);
+	pipeline->dynamic_mesh_vertex_count = (GLsizei)draw_count;
+	return true;
+}
+
+void shady_gl_pipeline_draw_window_mesh(
+		struct shady_gl_pipeline *pipeline, GLenum target, GLuint tex,
+		bool has_alpha, const float mvp[16], const float model[16],
+		const float frame_rect[4], float time_seconds,
+		float wobble_x, float wobble_y, const float water[4],
+		const float water_surface[4], const float border_color[4],
+		const float border_width[2], float close_progress,
+		const float close_effect[4], const float tint[4],
+		float effect_strength, float brightness,
+		const float *vertices, size_t vertex_count,
+		const uint16_t *indices, size_t index_count) {
+	if (!shady_gl_pipeline_prepare_dynamic_mesh(pipeline, vertices, vertex_count,
+			indices, index_count))
+		return;
+	GLuint old_vbo = pipeline->mesh_vbo;
+	GLsizei old_count = pipeline->mesh_vertex_count;
+	bool old_use_uv = pipeline->mesh_use_vertex_uv;
+	pipeline->mesh_vbo = pipeline->dynamic_mesh_vbo;
+	pipeline->mesh_vertex_count = pipeline->dynamic_mesh_vertex_count;
+	pipeline->mesh_use_vertex_uv = true;
+	shady_gl_pipeline_draw_window(pipeline, target, tex, has_alpha,
+		mvp, model, frame_rect, time_seconds, wobble_x, wobble_y,
+		water, water_surface, border_color, border_width,
+		close_progress, close_effect, tint, effect_strength, brightness);
+	pipeline->mesh_vbo = old_vbo;
+	pipeline->mesh_vertex_count = old_count;
+	pipeline->mesh_use_vertex_uv = old_use_uv;
 }
 
 void shady_gl_pipeline_draw_titlebar(

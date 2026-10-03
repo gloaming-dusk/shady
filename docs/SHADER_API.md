@@ -35,7 +35,10 @@ program = api->shader_program_create(host,
 
 The host compiles and links the program. A zero handle means failure.
 
-Shady binds attribute location 0 to `a_pos`.
+Shady binds attribute location 0 to `a_pos`. Window shaders may also declare `a_uv` at
+attribute location 2. For normal BOX rendering, `a_uv` is unused and `u_use_vertex_uv`
+is `0`. For MESH representations, `a_uv` contains the plugin-provided texture UV and
+`u_use_vertex_uv` is `1`.
 
 ## Fullscreen shaders
 
@@ -128,15 +131,26 @@ Uniforms are optional. Shady checks whether each uniform exists before assigning
 
 ### Vertex coordinates
 
-`a_pos` is a 3-component position from Shady's subdivided window mesh.
+`a_pos` is a 3-component local geometry position. MESH-aware shaders can additionally
+use `a_uv` as an independent 2-component client-texture coordinate. The host sets
+`u_use_vertex_uv` to select whether separate UVs are active.
 
 For frame-aware effects, follow the same pattern as the built-in shader:
 
 ```glsl
-vec2 local_uv = a_pos.xy;
-vec2 uv = u_frame_rect.xy + local_uv * u_frame_rect.zw;
-vec3 pos = vec3(uv, a_pos.z);
+attribute vec3 a_pos;
+attribute vec2 a_uv;
+uniform float u_use_vertex_uv;
+
+vec2 local_pos = a_pos.xy;
+vec2 local_uv = mix(local_pos, a_uv, step(0.5, u_use_vertex_uv));
+vec2 frame_pos = u_frame_rect.xy + local_pos * u_frame_rect.zw;
+vec3 pos = vec3(frame_pos, a_pos.z);
 ```
+
+Use `local_uv` for texture sampling and `frame_pos`/`a_pos` for geometry. This distinction
+allows a deformable mesh to move vertices without forcing its texture UVs to move with
+them.
 
 This is important for windows with compositor title bars: the client and titlebar occupy sub-regions of the same logical frame.
 

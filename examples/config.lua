@@ -34,7 +34,8 @@ shady.modules({
 
 -- FPS window shape is an external representation plugin rather than a core
 -- renderer policy. Swap this plugin to change folded-window geometry.
-shady.plugin(root .. "/build/libshady-plugin-fps-cube.so")
+shady.plugin(os.getenv("SHADY_FPS_REPRESENTATION_PLUGIN") or
+    (root .. "/build/libshady-plugin-fps-cube.so"))
 
 -- External native plugins are loaded before dependency resolution:
 -- shady.plugin("/absolute/path/to/my-plugin.so")

@@ -188,10 +188,18 @@ struct shady_toplevel *shady_toplevel_at_3d(struct shady_server *server,
 			.focused = !wl_list_empty(&server->toplevels) &&
 				server->toplevels.next == &toplevel->link,
 		};
+		struct shady_window_representation representation_base = {0};
+		bool has_representation_base = shady_toplevel_representation_base(
+			toplevel, &representation_base);
 		struct shady_representation_model representation_model;
 		bool folded_representation = representation_context.folded &&
-			shady_toplevel_representation_model(toplevel,
+			has_representation_base && shady_toplevel_representation_model(toplevel,
 				&representation_context, &representation_model);
+		struct shady_representation_mesh representation_mesh = {0};
+		bool mesh_representation = folded_representation &&
+			representation_base.kind == SHADY_WINDOW_REPRESENTATION_MESH &&
+			shady_toplevel_representation_mesh(toplevel,
+				&representation_context, &representation_mesh);
 		if (folded_representation) {
 			shady_window_box_model(model,
 				representation_model.center_x, representation_model.center_y,
@@ -211,11 +219,18 @@ struct shady_toplevel *shady_toplevel_at_3d(struct shady_server *server,
 		}
 
 		float t, u, v;
-		bool front_hit = false;
-		if (!shady_ray_window_shell_hit(&ray, model, shady_window_motion_state_for_const(toplevel)->wobble_x,
-				shady_window_motion_state_for_const(toplevel)->wobble_y, &t, &u, &v, &front_hit)) {
-			continue;
-		}
+		bool front_hit = true;
+		bool hit = mesh_representation
+			? shady_ray_mesh_hit(&ray, model,
+				(const float *)representation_mesh.vertices,
+				representation_mesh.vertex_count,
+				representation_mesh.indices,
+				representation_mesh.index_count, &t, &u, &v)
+			: shady_ray_window_shell_hit(&ray, model,
+				shady_window_motion_state_for_const(toplevel)->wobble_x,
+				shady_window_motion_state_for_const(toplevel)->wobble_y,
+				&t, &u, &v, &front_hit);
+		if (!hit) continue;
 		if (client_fraction < 1.f) {
 			if (v > client_fraction) continue;
 			v /= client_fraction;
@@ -310,10 +325,18 @@ struct shady_toplevel *shady_toplevel_at_camera_center_hit_output(
 				.focused = !wl_list_empty(&server->toplevels) &&
 					server->toplevels.next == &toplevel->link,
 			};
+			struct shady_window_representation representation_base = {0};
+			bool has_representation_base = shady_toplevel_representation_base(
+				toplevel, &representation_base);
 			struct shady_representation_model representation_model;
 			bool folded_representation = representation_context.folded &&
-				shady_toplevel_representation_model(toplevel,
+				has_representation_base && shady_toplevel_representation_model(toplevel,
 					&representation_context, &representation_model);
+			struct shady_representation_mesh representation_mesh = {0};
+			bool mesh_representation = folded_representation &&
+				representation_base.kind == SHADY_WINDOW_REPRESENTATION_MESH &&
+				shady_toplevel_representation_mesh(toplevel,
+					&representation_context, &representation_mesh);
 			if (folded_representation) {
 				shady_window_box_model(model,
 					representation_model.center_x, representation_model.center_y,
@@ -332,11 +355,18 @@ struct shady_toplevel *shady_toplevel_at_camera_center_hit_output(
 			}
 
 			float t, u, v;
-			bool front_hit = false;
-			if (shady_ray_window_shell_hit(&ray, model,
+			bool front_hit = true;
+			bool hit = mesh_representation
+				? shady_ray_mesh_hit(&ray, model,
+					(const float *)representation_mesh.vertices,
+					representation_mesh.vertex_count,
+					representation_mesh.indices,
+					representation_mesh.index_count, &t, &u, &v)
+				: shady_ray_window_shell_hit(&ray, model,
 					shady_window_motion_state_for_const(toplevel)->wobble_x,
 					shady_window_motion_state_for_const(toplevel)->wobble_y,
-					&t, &u, &v, &front_hit) && t < best_t) {
+					&t, &u, &v, &front_hit);
+			if (hit && t < best_t) {
 				best_t = t;
 				best = toplevel;
 				best_output = wlr_output;

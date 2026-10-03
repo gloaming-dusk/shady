@@ -46,6 +46,24 @@ enum shady_close_effect_style {
 enum shady_window_representation_kind {
 	SHADY_WINDOW_REPRESENTATION_DEFAULT = 0,
 	SHADY_WINDOW_REPRESENTATION_BOX = 1,
+	SHADY_WINDOW_REPRESENTATION_MESH = 2,
+};
+
+struct shady_representation_vertex {
+	float x;
+	float y;
+	float z;
+	float u;
+	float v;
+};
+
+struct shady_representation_mesh {
+	uint32_t struct_size;
+	const struct shady_representation_vertex *vertices;
+	size_t vertex_count;
+	const uint16_t *indices;
+	size_t index_count;
+	uint64_t revision;
 };
 
 struct shady_window_representation {
@@ -115,6 +133,12 @@ typedef bool (*shady_representation_collision_callback)(
 	struct shady_collision_box *box,
 	void *state, void *user_data);
 
+typedef bool (*shady_representation_mesh_callback)(
+	shady_host host, shady_window window,
+	const struct shady_representation_context *context,
+	struct shady_representation_mesh *mesh,
+	void *state, void *user_data);
+
 struct shady_window_representation_provider {
 	uint32_t struct_size;
 	struct shady_window_representation base;
@@ -124,6 +148,7 @@ struct shady_window_representation_provider {
 	shady_representation_update_callback update;
 	shady_representation_model_callback model;
 	shady_representation_collision_callback collision;
+	shady_representation_mesh_callback mesh;
 	void *user_data;
 };
 

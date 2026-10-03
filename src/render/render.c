@@ -135,6 +135,7 @@ static GLuint plugin_link_shader_files(const char *vert_path, const char *frag_p
 	glAttachShader(prog, vs);
 	glAttachShader(prog, fs);
 	glBindAttribLocation(prog, 0, "a_pos");
+	glBindAttribLocation(prog, 2, "a_uv");
 	glLinkProgram(prog);
 	glDeleteShader(vs);
 	glDeleteShader(fs);
@@ -271,7 +272,9 @@ static bool plugin_shader_draw_window(struct shady_server *server,
 		const float water[4], const float water_surface[4],
 		const float border_color[4], const float border_width[2],
 		float close_progress, const float close_effect[4], const float tint[4],
-		float effect_strength, float brightness) {
+		float effect_strength, float brightness,
+		const float *mesh_vertices, size_t mesh_vertex_count,
+		const uint16_t *mesh_indices, size_t mesh_index_count) {
 	(void)server;
 	if (!shader_program || !shader_owner) return false;
 	struct plugin_shader_slot *slot = plugin_shader_find(shader_program, shader_owner);
@@ -349,11 +352,30 @@ static bool plugin_shader_draw_window(struct shady_server *server,
 		glDepthMask(GL_FALSE);
 	}
 
-	glBindBuffer(GL_ARRAY_BUFFER, pipeline.mesh_vbo);
-	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(GLfloat), (void *)0);
+	GLuint draw_vbo = pipeline.mesh_vbo;
+	GLsizei draw_count = pipeline.mesh_vertex_count;
+	bool use_mesh_uv = false;
+	if (mesh_vertices && mesh_vertex_count >= 3 &&
+			shady_gl_pipeline_prepare_dynamic_mesh(&pipeline, mesh_vertices,
+				mesh_vertex_count, mesh_indices, mesh_index_count)) {
+		draw_vbo = pipeline.dynamic_mesh_vbo;
+		draw_count = pipeline.dynamic_mesh_vertex_count;
+		use_mesh_uv = true;
+	}
+	loc = glGetUniformLocation(slot->program, "u_use_vertex_uv");
+	if (loc >= 0) glUniform1f(loc, use_mesh_uv ? 1.f : 0.f);
+	glBindBuffer(GL_ARRAY_BUFFER, draw_vbo);
+	GLsizei draw_stride = (use_mesh_uv ? 5 : 3) * sizeof(GLfloat);
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, draw_stride, (void *)0);
 	glEnableVertexAttribArray(0);
-	glDrawArrays(GL_TRIANGLES, 0, pipeline.mesh_vertex_count);
+	if (use_mesh_uv) {
+		glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, draw_stride,
+			(void *)(3 * sizeof(GLfloat)));
+		glEnableVertexAttribArray(2);
+	}
+	glDrawArrays(GL_TRIANGLES, 0, draw_count);
 	glDisableVertexAttribArray(0);
+	if (use_mesh_uv) glDisableVertexAttribArray(2);
 
 	glBindBuffer(GL_ARRAY_BUFFER, (GLuint)old_buffer);
 	glBindTexture(GL_TEXTURE_2D, (GLuint)old_texture);
@@ -1486,10 +1508,19 @@ void shady_render_output_frame(
 			.held = shady_fps_is_holding(server, toplevel),
 			.focused = focused,
 		};
+		struct shady_window_representation representation_base = {0};
+		bool has_representation_base = shady_toplevel_representation_base(
+			toplevel, &representation_base);
 		struct shady_representation_model representation_model;
 		bool folded_representation = representation_context.folded &&
+			has_representation_base &&
 			shady_toplevel_representation_model(toplevel,
 				&representation_context, &representation_model);
+		struct shady_representation_mesh representation_mesh = {0};
+		bool mesh_representation = folded_representation &&
+			representation_base.kind == SHADY_WINDOW_REPRESENTATION_MESH &&
+			shady_toplevel_representation_mesh(toplevel,
+				&representation_context, &representation_mesh);
 		bool frame_has_titlebar = !toplevel->fullscreen &&
 			!(folded_representation && representation_model.hide_titlebar) &&
 			server->config.window_titlebar && toplevel->titlebar_texture &&
@@ -1543,7 +1574,7 @@ void shady_render_output_frame(
 			shady_mat4_multiply(mvp, vp, model);
 		}
 
-		if (!screen_space) {
+		if (!screen_space && !mesh_representation) {
 			shady_scene_effects_draw_sides(server, &pipeline, mvp, model,
 				wobble_x, wobble_y, shady_close_state_for_const(toplevel)->progress);
 		}
@@ -1592,7 +1623,26 @@ void shady_render_output_frame(
 				water, water_surface, border_color, border_width,
 				shady_close_state_for_const(toplevel)->progress, close_effect,
 				focused_tint, server->config.window_effect_strength,
-				server->config.window_brightness * (focused ? 1.08f : 1.0f));
+				server->config.window_brightness * (focused ? 1.08f : 1.0f),
+				mesh_representation ? (const float *)representation_mesh.vertices : NULL,
+				mesh_representation ? representation_mesh.vertex_count : 0,
+				mesh_representation ? representation_mesh.indices : NULL,
+				mesh_representation ? representation_mesh.index_count : 0);
+		}
+		if (!custom_drawn && mesh_representation) {
+			shady_gl_pipeline_draw_window_mesh(
+				&pipeline, attribs.target, attribs.tex, attribs.has_alpha,
+				mvp, model, client_frame_rect, time_seconds,
+				wobble_x, wobble_y, water, water_surface,
+				border_color, border_width,
+				shady_close_state_for_const(toplevel)->progress, close_effect,
+				focused_tint, server->config.window_effect_strength,
+				server->config.window_brightness * (focused ? 1.08f : 1.0f),
+				(const float *)representation_mesh.vertices,
+				representation_mesh.vertex_count,
+				representation_mesh.indices,
+				representation_mesh.index_count);
+			custom_drawn = true;
 		}
 		if (!custom_drawn) {
 			shady_gl_pipeline_draw_window(
@@ -1654,7 +1704,7 @@ void shady_render_output_frame(
 						water, water_surface,
 						no_border_color, no_border_width,
 						close_state->progress, close_effect, title_tint,
-						0.f, 1.f);
+						0.f, 1.f, NULL, 0, NULL, 0);
 				}
 				if (!custom_title_drawn) {
 					shady_gl_pipeline_draw_window(
@@ -1772,7 +1822,7 @@ void shady_render_output_frame(
 				no_border_color, no_border_width,
 				snapshot->progress, close_effect, window_tint,
 				server->config.window_effect_strength,
-				server->config.window_brightness);
+				server->config.window_brightness, NULL, 0, NULL, 0);
 		}
 		if (!snapshot_custom_drawn) {
 			shady_gl_pipeline_draw_window(
