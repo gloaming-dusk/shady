@@ -18,6 +18,22 @@ The project is intentionally experimental. The imported TinyWL example is CC0; s
 - [C plugin API](docs/C_PLUGIN_API.md)
 - [Shader API](docs/SHADER_API.md)
 
+## Website
+
+The project website lives in `website/` and is built with Astro. Its documentation
+routes read the existing `docs/*.md` files directly, so the repository and website
+share one documentation source.
+
+```sh
+nix develop
+cd website
+npm ci
+npm run dev
+```
+
+Use `npm run check` for Astro diagnostics and `npm run build` for the static
+production output in `website/dist/`.
+
 ## Highlights
 
 - Custom GLES2 renderer for Wayland surfaces in a perspective 3D world

@@ -1,0 +1,54 @@
+---
+import { getCollection, render, type CollectionEntry } from 'astro:content';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { docLabel, docSlug, docSort } from '../../lib/docs';
+
+type DocEntry = CollectionEntry<'docs'>;
+type Heading = { depth: number; slug: string; text: string };
+
+export async function getStaticPaths() {
+  const docs = (await getCollection('docs')).sort(docSort);
+  return docs.map((entry: DocEntry) => ({
+    params: { slug: docSlug(entry.id) },
+    props: { entry, docs }
+  }));
+}
+
+const { entry, docs } = Astro.props as { entry: DocEntry; docs: DocEntry[] };
+const { Content, headings } = await render(entry);
+const toc = (headings as Heading[]).filter(
+  (heading) => heading.depth === 2 || heading.depth === 3
+);
+const title = docLabel(entry.id);
+---
+<BaseLayout
+  title={`${title} · Shady docs`}
+  description={`${title} documentation for the Shady Wayland compositor.`}
+  path={Astro.url.pathname}
+>
+  <div class="shell docs-shell">
+    <aside class="docs-sidebar">
+      <div class="label">Docs</div>
+      <nav aria-label="Documentation">
+        {docs.map((doc: DocEntry) => (
+          <a class={doc.id === entry.id ? 'active' : undefined} href={`/docs/${docSlug(doc.id)}/`}>
+            {docLabel(doc.id)}
+          </a>
+        ))}
+      </nav>
+    </aside>
+
+    <article class="docs-article">
+      <Content />
+    </article>
+
+    <aside class="docs-toc">
+      <div class="label">On this page</div>
+      <nav>
+        {toc.map((heading: Heading) => (
+          <a class={`depth-${heading.depth}`} href={`#${heading.slug}`}>{heading.text}</a>
+        ))}
+      </nav>
+    </aside>
+  </div>
+</BaseLayout>

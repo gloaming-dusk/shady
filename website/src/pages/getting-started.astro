@@ -1,0 +1,99 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+---
+<BaseLayout
+  title="Getting started · Shady"
+  description="Build and run Shady nested, in safe mode, or directly from a Linux VT."
+  path="/getting-started/"
+>
+  <header class="page-hero">
+    <div class="shell">
+      <p class="eyebrow">Getting started</p>
+      <h1>Run Shady without guessing.</h1>
+      <p class="lede">
+        Start with a nested session, verify the compatibility path, then move to the
+        spatial renderer and finally native DRM/libinput when you are ready.
+      </p>
+    </div>
+  </header>
+
+  <div class="page-content">
+    <div class="shell two-col">
+      <div class="steps">
+        <article class="step">
+          <div>
+            <h3>Enter the development shell</h3>
+            <p>Shady targets wlroots 0.20.2. The Nix shell supplies Meson, Ninja, Wayland tooling, Lua, GLES/EGL, and the test utilities.</p>
+          </div>
+        </article>
+        <article class="step">
+          <div>
+            <h3>Build the compositor</h3>
+            <p><code>./build.sh</code> creates or reconfigures the Meson build and runs Ninja.</p>
+          </div>
+        </article>
+        <article class="step">
+          <div>
+            <h3>Run nested first</h3>
+            <p>Use the Wayland backend inside your current compositor. This is the easiest place to validate clients and configuration.</p>
+          </div>
+        </article>
+        <article class="step">
+          <div>
+            <h3>Try the compatibility path</h3>
+            <p><code>--safe</code> bypasses the spatial renderer, physics, FPS interaction, and visual effects.</p>
+          </div>
+        </article>
+        <article class="step">
+          <div>
+            <h3>Move to a real VT</h3>
+            <p>Once nested operation is reliable, use <code>./run-native.sh</code> for DRM + libinput on a normal Linux VT login.</p>
+          </div>
+        </article>
+      </div>
+
+      <div>
+        <div class="code-window">
+          <div class="code-title">build + nested run</div>
+          <pre><code>nix develop
+./build.sh
+
+WLR_BACKENDS=wayland ./build/shady -s foot</code></pre>
+        </div>
+
+        <div style="height: 18px"></div>
+
+        <div class="code-window">
+          <div class="code-title">safe compatibility path</div>
+          <pre><code>WLR_BACKENDS=wayland ./build/shady --safe
+
+# First native smoke test from a real VT
+./run-native.sh --safe -s foot</code></pre>
+        </div>
+
+        <div style="height: 18px"></div>
+
+        <aside class="notice">
+          Shady is still experimental. Treat nested mode and <code>--safe</code> as
+          recovery-friendly baselines before relying on a full spatial native session.
+        </aside>
+      </div>
+    </div>
+
+    <section class="section">
+      <div class="shell two-col" style="width: 100%">
+        <div>
+          <p class="eyebrow">Regression gates</p>
+          <h2>Fast checks before you trust a build.</h2>
+          <p class="lede">The repository includes separate core, spatial, and Astral Loom gates for quick local validation.</p>
+        </div>
+        <div class="code-window">
+          <div class="code-title">stability checks</div>
+          <pre><code>./daily-driver.sh all
+./spatial-daily-driver.sh all
+./astral-loom-daily-driver.sh all</code></pre>
+        </div>
+      </div>
+    </section>
+  </div>
+</BaseLayout>

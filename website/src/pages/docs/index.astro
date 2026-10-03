@@ -1,0 +1,45 @@
+---
+import { getCollection, type CollectionEntry } from 'astro:content';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { docLabel, docSlug, docSort } from '../../lib/docs';
+
+type DocEntry = CollectionEntry<'docs'>;
+const docs = (await getCollection('docs')).sort(docSort);
+const descriptions: Record<string, string> = {
+  api: 'Choose between Lua, headless automation, C plugins, and shaders.',
+  'lua-api': 'Runtime configuration, events, windows, workspaces, and automation hooks.',
+  'headless-api': 'Deterministic input, timers, screenshots, and CI-oriented helpers.',
+  'c-plugin-api': 'Native modules, opaque handles, hot reload, state migration, and render hooks.',
+  'shader-api': 'Fullscreen passes and host-managed per-window shader replacement.',
+  architecture: 'Core ownership, plugin boundaries, capability resolution, and lifetime rules.'
+};
+---
+<BaseLayout
+  title="Documentation · Shady"
+  description="Shady API and architecture documentation."
+  path="/docs/"
+>
+  <header class="page-hero">
+    <div class="shell">
+      <p class="eyebrow">Documentation</p>
+      <h1>One source of truth.</h1>
+      <p class="lede">
+        These pages are rendered directly from the repository's existing
+        <code>docs/*.md</code> files, so the website and source tree stay in sync.
+      </p>
+    </div>
+  </header>
+  <div class="page-content">
+    <div class="shell docs-index">
+      {docs.map((entry: DocEntry) => {
+        const slug = docSlug(entry.id);
+        return (
+          <a class="doc-link" href={`/docs/${slug}/`}>
+            <strong>{docLabel(entry.id)}</strong>
+            <span>{descriptions[slug] ?? 'Repository documentation.'}</span>
+          </a>
+        );
+      })}
+    </div>
+  </div>
+</BaseLayout>

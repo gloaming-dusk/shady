@@ -1,0 +1,54 @@
+---
+import '../styles/global.css';
+
+interface Props {
+  title?: string;
+  description?: string;
+  path?: string;
+}
+
+const {
+  title = 'Shady — 3D Wayland compositor',
+  description = 'An experimental 3D Wayland compositor built on wlroots, with native spatial rendering, Lua scripting, and a public C plugin API.',
+  path = Astro.url.pathname
+} = Astro.props;
+
+const is = (prefix: string) =>
+  prefix === '/' ? path === '/' : path.startsWith(prefix);
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width" />
+    <meta name="description" content={description} />
+    <meta name="theme-color" content="#07080d" />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22><rect width=%2264%22 height=%2264%22 rx=%2218%22 fill=%22%2307080d%22/><path d=%22M14 41 28 17h12L27 39h23L36 52H17Z%22 fill=%22%2357e7ff%22/></svg>" />
+    <title>{title}</title>
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="shell nav">
+        <a class="brand" href="/">
+          <span class="brand-mark">S</span>
+          <span>Shady</span>
+        </a>
+        <nav class="nav-links" aria-label="Primary navigation">
+          <a href="/getting-started/" aria-current={is('/getting-started') ? 'page' : undefined}>Getting started</a>
+          <a href="/demo/astral-loom/" aria-current={is('/demo') ? 'page' : undefined}>Demo</a>
+          <a class="optional" href="/docs/" aria-current={is('/docs') ? 'page' : undefined}>Docs</a>
+          <a class="nav-github" href="https://github.com/jihoo12/shady">GitHub ↗</a>
+        </nav>
+      </div>
+    </header>
+    <main>
+      <slot />
+    </main>
+    <footer class="site-footer">
+      <div class="shell footer-inner">
+        <span>Shady is experimental software built around wlroots.</span>
+        <span><code>wlroots 0.20.2</code> · Lua 5.4 · GLES2</span>
+      </div>
+    </footer>
+  </body>
+</html>

@@ -1,0 +1,102 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import astral from '../../../../examples/rice/astral-loom/preview.png';
+
+const shortcuts = [
+  ['Super + J', 'Toggle animated layout / restore original X/Y/Z'],
+  ['Super + Shift + J', 'Switch orbit / helix'],
+  ['Super + B', 'Freeze or resume scene motion'],
+  ['Super + F', 'Switch FPS curved panels / orbit camera'],
+  ['Super + Shift + F', 'Release or capture mouse in FPS mode'],
+  ['Super + Tab', 'Focus the next app'],
+  ['Super + Shift + R', 'Reload the plugin'],
+  ['Super + Q', 'Close the focused app']
+];
+---
+<BaseLayout
+  title="Astral Loom · Shady"
+  description="Astral Loom is a live 3D Wayland observatory built as an external Shady plugin."
+  path="/demo/astral-loom/"
+>
+  <header class="page-hero">
+    <div class="shell">
+      <p class="eyebrow">Featured demo</p>
+      <h1><span class="gradient-text">Astral Loom</span></h1>
+      <p class="lede">
+        A live 3D window observatory: curved application panels, cyan and violet
+        energy rings, and an orbital or helical workspace — implemented as an
+        external C plugin rather than compositor-core behavior.
+      </p>
+    </div>
+  </header>
+
+  <div class="page-content">
+    <div class="shell">
+      <figure class="demo-frame">
+        <img src={astral.src} width={astral.width} height={astral.height} alt="Four colored Wayland clients rendered by Astral Loom as curved spatial panels" />
+      </figure>
+
+      <section class="section">
+        <div class="two-col">
+          <div>
+            <p class="eyebrow">Run it</p>
+            <h2>Launch the observatory.</h2>
+            <p class="lede">
+              The rice enters FPS mode immediately so the indexed curved meshes are visible.
+              Application textures remain live while Astral Loom owns their spatial arrangement.
+            </p>
+          </div>
+          <div class="code-window">
+            <div class="code-title">terminal</div>
+            <pre><code>nix develop
+./build.sh
+./examples/rice/astral-loom/run.sh
+
+# On a real Linux VT
+./examples/rice/astral-loom/run-native.sh</code></pre>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="section-head">
+          <h2>Controls</h2>
+          <p>Restore the ordinary layout before manually dragging windows; the animated layout owns their position while active.</p>
+        </div>
+        <table class="shortcuts">
+          <thead><tr><th>Shortcut</th><th>Action</th></tr></thead>
+          <tbody>
+            {shortcuts.map(([key, action]) => (
+              <tr><td>{key}</td><td>{action}</td></tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
+
+      <section class="section">
+        <div class="card-grid">
+          <article class="card">
+            <span class="kicker">Geometry</span>
+            <h3>Curved live panels</h3>
+            <p>Background windows bend across a 16 × 16 indexed mesh. The focused panel relaxes toward flat for readability.</p>
+          </article>
+          <article class="card">
+            <span class="kicker">State</span>
+            <h3>Reloadable</h3>
+            <p>ABI v2 snapshots preserve module and per-window state while providers and shaders are reattached after reload.</p>
+          </article>
+          <article class="card">
+            <span class="kicker">Verification</span>
+            <h3>Daily-driver gates</h3>
+            <p>Headless GLES tests cover window churn, input/focus stress, workspaces, output recovery, session lock, and repeated reload migration.</p>
+          </article>
+        </div>
+      </section>
+
+      <div class="button-row">
+        <a class="button primary" href="/getting-started/">Build Shady</a>
+        <a class="button" href="/docs/c-plugin-api/">C plugin API</a>
+      </div>
+    </div>
+  </div>
+</BaseLayout>

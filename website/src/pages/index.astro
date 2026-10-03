@@ -1,0 +1,82 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import astral from '../../../examples/rice/astral-loom/preview.png';
+---
+<BaseLayout path="/">
+  <section class="hero">
+    <div class="shell hero-grid">
+      <div>
+        <p class="eyebrow">Wayland, with depth</p>
+        <h1>A compositor for <span class="gradient-text">spatial desktops.</span></h1>
+        <p class="lede">
+          Shady turns ordinary Wayland windows into objects in a shared 3D world,
+          while keeping a conventional scene-graph path for compatibility.
+        </p>
+        <div class="button-row">
+          <a class="button primary" href="/getting-started/">Build Shady</a>
+          <a class="button" href="/demo/astral-loom/">See Astral Loom</a>
+          <a class="button" href="/docs/">Read the API</a>
+        </div>
+      </div>
+      <figure class="hero-visual">
+        <img src={astral.src} width={astral.width} height={astral.height} alt="Astral Loom rendering live Wayland windows as curved panels in a 3D observatory" />
+        <figcaption class="visual-caption">
+          <span>ASTRAL LOOM / LIVE WAYLAND SURFACES</span>
+          <span>GLES2 · C PLUGIN</span>
+        </figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="shell">
+      <div class="section-head">
+        <h2>Built for experiments that still need boundaries.</h2>
+        <p>
+          The compositor owns Wayland objects, GPU resources, lifetime, and validation.
+          Plugins own the effects and simulations layered on top.
+        </p>
+      </div>
+      <div class="card-grid">
+        <article class="card">
+          <span class="kicker">Render</span>
+          <h3>Native perspective world</h3>
+          <p>Real xdg-shell surfaces rendered in depth, with shared geometry for drawing, picking, and collision.</p>
+        </article>
+        <article class="card">
+          <span class="kicker">Extend</span>
+          <h3>Hot-reloadable C plugins</h3>
+          <p>Window representations, render hooks, input behavior, and ABI v2 state migration without raw GL ownership.</p>
+        </article>
+        <article class="card">
+          <span class="kicker">Automate</span>
+          <h3>Lua runtime + headless tests</h3>
+          <p>Configure the compositor, react to events, and drive deterministic regression tests from the same runtime API.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="shell two-col">
+      <div>
+        <p class="eyebrow">Fast path</p>
+        <h2>From checkout to nested compositor.</h2>
+        <p class="lede">
+          The Nix development shell pins the toolchain and compositor dependencies.
+          Start nested first, then move to a real VT when the basics are solid.
+        </p>
+        <div class="button-row">
+          <a class="button" href="/getting-started/">Full getting started guide</a>
+        </div>
+      </div>
+      <div class="code-window">
+        <div class="code-title">terminal</div>
+        <pre><code>nix develop
+./build.sh
+
+WLR_BACKENDS=wayland ./build/shady -s foot</code></pre>
+      </div>
+    </div>
+  </section>
+</BaseLayout>
