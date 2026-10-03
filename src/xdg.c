@@ -278,12 +278,47 @@ static void begin_interactive(struct shady_toplevel *toplevel,
 	}
 }
 
+static void place_toplevel_initial(struct shady_toplevel *toplevel) {
+	struct shady_server *server = toplevel->server;
+	if (wl_list_empty(&server->outputs)) return;
+	struct shady_output *first = wl_container_of(server->outputs.next, first, link);
+	if (!first->wlr_output) return;
+
+	struct wlr_box area = {0};
+	shady_output_work_area(server, first->wlr_output, &area);
+	if (area.width <= 0 || area.height <= 0) return;
+
+	struct wlr_surface *surface = toplevel->xdg_toplevel->base->surface;
+	struct wlr_box *geo = &toplevel->xdg_toplevel->base->geometry;
+	int width = geo->width > 0 ? geo->width : surface->current.width;
+	int height = geo->height > 0 ? geo->height : surface->current.height;
+	if (width <= 0 || height <= 0) return;
+
+	size_t mapped_before = 0;
+	struct shady_toplevel *other;
+	wl_list_for_each(other, &server->toplevels, link) {
+		if (other != toplevel && other->mapped) mapped_before++;
+	}
+	int cascade = (int)(mapped_before % 6) * 28;
+	int target_x = area.x + (area.width - width) / 2 + cascade;
+	int target_y = area.y + (area.height - height) / 2 + cascade;
+	if (target_x + width > area.x + area.width)
+		target_x = area.x + area.width - width;
+	if (target_y + height > area.y + area.height)
+		target_y = area.y + area.height - height;
+	if (target_x < area.x) target_x = area.x;
+	if (target_y < area.y) target_y = area.y;
+	wlr_scene_node_set_position(&toplevel->scene_tree->node,
+		target_x - geo->x, target_y - geo->y);
+}
+
 static void xdg_toplevel_map(struct wl_listener *listener, void *data) {
 	(void)data;
 	struct shady_toplevel *toplevel = wl_container_of(listener, toplevel, map);
 
 	wl_list_insert(&toplevel->server->toplevels, &toplevel->link);
 	toplevel->mapped = true;
+	place_toplevel_initial(toplevel);
 	focus_border_update_geometry(toplevel);
 	if (toplevel->xdg_toplevel->requested.maximized ||
 			toplevel->xdg_toplevel->requested.fullscreen) {

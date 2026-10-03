@@ -176,5 +176,10 @@ void shady_physics_respawn_window(struct shady_server *server,struct shady_tople
 }
 void shady_physics_respawn_all(struct shady_server *server){struct shady_toplevel*t;wl_list_for_each(t,&server->toplevels,link)shady_physics_respawn_window(server,t);shady_render_schedule_all_outputs(server);}
 
-void shady_physics_set_velocity(struct shady_toplevel *toplevel,float vx,float vy,float vz){shady_physics_toplevel_state(toplevel)->vx=vx;shady_physics_toplevel_state(toplevel)->vy=vy;shady_physics_toplevel_state(toplevel)->vz=vz;}
+void shady_physics_set_velocity(struct shady_toplevel *toplevel,float vx,float vy,float vz){
+	if(!toplevel)return;
+	struct shady_window_physics_state *state=shady_physics_toplevel_state(toplevel);
+	if(!state)return;
+	state->vx=vx;state->vy=vy;state->vz=vz;
+}
 void shady_physics_stop(struct shady_toplevel *toplevel){shady_physics_set_velocity(toplevel,0.f,0.f,0.f);}
