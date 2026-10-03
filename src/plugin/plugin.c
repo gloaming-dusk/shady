@@ -3,6 +3,7 @@
 
 #include <dlfcn.h>
 #include <fcntl.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -19,6 +20,7 @@
 #include "../event/event.h"
 #include "../render/render.h"
 #include "../modules/spatial/state.h"
+#include "../modules/close_animation/close_animation.h"
 #include "../modules/workspace/workspace.h"
 #include "../shady.h"
 
@@ -159,7 +161,7 @@ static bool host_window_close(shady_host host, shady_window window) {
 	if (!host_window_valid(host, window)) return false;
 	struct shady_toplevel *toplevel = WINDOW(window);
 	if (!toplevel->xdg_toplevel) return false;
-	wlr_xdg_toplevel_send_close(toplevel->xdg_toplevel);
+	shady_close_animation_begin_window(HOST(host), toplevel);
 	return true;
 }
 
@@ -452,6 +454,46 @@ static bool host_window_reset_border(shady_host host, shady_window window) {
 	return true;
 }
 
+static bool host_window_set_close_effect(shady_host host, shady_window window,
+		const struct shady_close_effect *effect) {
+	if (!host_window_valid(host, window) || !effect) return false;
+	if (effect->style > SHADY_CLOSE_EFFECT_SLIDE_FADE ||
+			!isfinite(effect->duration) || !isfinite(effect->strength) ||
+			!isfinite(effect->direction_x) || !isfinite(effect->direction_y)) return false;
+	struct shady_toplevel *toplevel = WINDOW(window);
+	toplevel->close_effect_override = true;
+	toplevel->close_effect_style = effect->style;
+	toplevel->close_effect_duration = effect->duration;
+	if (toplevel->close_effect_duration < .08f) toplevel->close_effect_duration = .08f;
+	if (toplevel->close_effect_duration > 2.5f) toplevel->close_effect_duration = 2.5f;
+	toplevel->close_effect_strength = effect->strength;
+	if (toplevel->close_effect_strength < 0.f) toplevel->close_effect_strength = 0.f;
+	if (toplevel->close_effect_strength > 2.f) toplevel->close_effect_strength = 2.f;
+	toplevel->close_effect_direction_x = effect->direction_x;
+	toplevel->close_effect_direction_y = effect->direction_y;
+	if (toplevel->close_effect_direction_x < -2.f) toplevel->close_effect_direction_x = -2.f;
+	if (toplevel->close_effect_direction_x > 2.f) toplevel->close_effect_direction_x = 2.f;
+	if (toplevel->close_effect_direction_y < -2.f) toplevel->close_effect_direction_y = -2.f;
+	if (toplevel->close_effect_direction_y > 2.f) toplevel->close_effect_direction_y = 2.f;
+	return true;
+}
+
+static bool host_window_close_effect(shady_window window,
+		struct shady_close_effect *effect, bool *overridden) {
+	struct shady_toplevel *toplevel = WINDOW(window);
+	if (!toplevel || !effect) return false;
+	shady_close_animation_get_effect(toplevel, &effect->style, &effect->duration,
+		&effect->strength, &effect->direction_x, &effect->direction_y);
+	if (overridden) *overridden = toplevel->close_effect_override;
+	return true;
+}
+
+static bool host_window_reset_close_effect(shady_host host, shady_window window) {
+	if (!host_window_valid(host, window)) return false;
+	WINDOW(window)->close_effect_override = false;
+	return true;
+}
+
 static void host_terminate(shady_host host) {
 	struct shady_server *server = HOST(host);
 	if (server->wl_display) wl_display_terminate(server->wl_display);
@@ -508,6 +550,9 @@ static const struct shady_plugin_api_v1 plugin_api = {
 	.window_set_border = host_window_set_border,
 	.window_border = host_window_border,
 	.window_reset_border = host_window_reset_border,
+	.window_set_close_effect = host_window_set_close_effect,
+	.window_close_effect = host_window_close_effect,
+	.window_reset_close_effect = host_window_reset_close_effect,
 	.event_name = host_event_name,
 	.subscribe_event = host_subscribe_event,
 	.subscribe_event_handle = host_subscribe_event_handle,

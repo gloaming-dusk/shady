@@ -24,6 +24,7 @@ struct shady_gl_pipeline {
 	GLint u_border_color_2d;
 	GLint u_border_width_2d;
 	GLint u_close_progress_2d;
+	GLint u_close_effect_2d;
 	GLint u_model_2d;
 	GLint u_light_dir_2d;
 	GLint u_effect_strength_2d;
@@ -40,6 +41,7 @@ struct shady_gl_pipeline {
 	GLint u_border_color_ext;
 	GLint u_border_width_ext;
 	GLint u_close_progress_ext;
+	GLint u_close_effect_ext;
 	GLint u_model_ext;
 	GLint u_light_dir_ext;
 	GLint u_effect_strength_ext;
@@ -129,6 +131,7 @@ void shady_gl_pipeline_draw_window(
 	const float border_color[4],
 	const float border_width[2],
 	float close_progress,
+	const float close_effect[4],
 	const float tint[4],
 	float effect_strength,
 	float brightness

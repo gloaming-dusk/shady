@@ -22,6 +22,7 @@
 #include "../fps/fps.h"
 #include "../fps/state.h"
 #include "../spatial/state.h"
+#include "../close_animation/close_animation.h"
 #include "../workspace/workspace.h"
 #include "../workspace/state.h"
 #include <string.h>
@@ -229,7 +230,7 @@ static bool lua_output_live(struct shady_output *needle){struct shady_output*o;w
 static bool lua_module_registered(const struct shady_module *needle,size_t *index){for(size_t i=0;i<lua_server->modules.count;i++)if(lua_server->modules.modules[i]==needle){if(index)*index=i;return true;}return false;}
 
 static int l_window_focus(lua_State *L){struct lua_window_handle*h=luaL_checkudata(L,1,SHADY_LUA_WINDOW_MT);if(!h->ptr||!lua_window_live(h->ptr)||!h->ptr->scene_tree||!h->ptr->scene_tree->node.enabled){lua_pushboolean(L,0);return 1;}focus_toplevel(h->ptr);lua_pushboolean(L,1);return 1;}
-static int l_window_close(lua_State *L){struct lua_window_handle*h=luaL_checkudata(L,1,SHADY_LUA_WINDOW_MT);if(!h->ptr||!lua_window_live(h->ptr)||!h->ptr->xdg_toplevel){lua_pushboolean(L,0);return 1;}wlr_xdg_toplevel_send_close(h->ptr->xdg_toplevel);lua_pushboolean(L,1);return 1;}
+static int l_window_close(lua_State *L){struct lua_window_handle*h=luaL_checkudata(L,1,SHADY_LUA_WINDOW_MT);if(!h->ptr||!lua_window_live(h->ptr)||!h->ptr->xdg_toplevel){lua_pushboolean(L,0);return 1;}shady_close_animation_begin_window(lua_server,h->ptr);lua_pushboolean(L,1);return 1;}
 static int l_window_maximize(lua_State *L){struct lua_window_handle*h=luaL_checkudata(L,1,SHADY_LUA_WINDOW_MT);if(!h->ptr||!lua_window_live(h->ptr)){lua_pushboolean(L,0);return 1;}bool enabled=lua_gettop(L)>=2?lua_toboolean(L,2):!h->ptr->maximized;shady_toplevel_set_maximized(h->ptr,enabled);lua_pushboolean(L,1);return 1;}
 static int l_window_fullscreen(lua_State *L){struct lua_window_handle*h=luaL_checkudata(L,1,SHADY_LUA_WINDOW_MT);if(!h->ptr||!lua_window_live(h->ptr)){lua_pushboolean(L,0);return 1;}bool enabled=lua_gettop(L)>=2?lua_toboolean(L,2):!h->ptr->fullscreen;shady_toplevel_set_fullscreen(h->ptr,enabled);lua_pushboolean(L,1);return 1;}
 static int l_window_move_workspace(lua_State *L){struct lua_window_handle*h=luaL_checkudata(L,1,SHADY_LUA_WINDOW_MT);const char*name=luaL_checkstring(L,2);lua_pushboolean(L,h->ptr&&lua_window_live(h->ptr)&&shady_workspace_move_toplevel(h->ptr,name));return 1;}

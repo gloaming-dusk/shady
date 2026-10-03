@@ -14,6 +14,7 @@ uniform float u_time;
  * 1.0 = completely crumpled
  */
 uniform float u_close_progress;
+uniform vec4 u_close_effect; /* style, strength, direction_x, direction_y */
 
 varying vec2 v_uv;
 varying vec3 v_normal;
@@ -120,12 +121,12 @@ void main() {
 	 * ------------------------------------------------------------
 	 */
 
-	float p =
-		clamp(
-			u_close_progress,
-			0.0,
-			1.0
-		);
+	float raw_close = clamp(u_close_progress, 0.0, 1.0);
+	float close_style = u_close_effect.x;
+	float close_strength = clamp(u_close_effect.y, 0.0, 2.0);
+	float crumple_mask = 1.0 - step(0.5, abs(close_style - 0.0));
+	float slide_mask = 1.0 - step(0.5, abs(close_style - 1.0));
+	float p = clamp(raw_close * crumple_mask * close_strength, 0.0, 1.0);
 
 	/*
 	 * Ease-in.
@@ -298,6 +299,16 @@ void main() {
 		p *
 		p *
 		0.08;
+
+	/* Plugin-selectable slide/fade close style. Geometry motion stays simple
+	 * and readable; alpha fading is completed in the fragment shader. */
+	float slide_p = clamp(smoothstep(0.0, 1.0, raw_close) * slide_mask * close_strength, 0.0, 1.0);
+	vec2 slide_center = pos.xy - vec2(0.5);
+	slide_center *= 1.0 - min(slide_p * 0.14, 0.28);
+	pos.xy = slide_center + vec2(0.5);
+	pos.x += u_close_effect.z * slide_p * 0.32;
+	pos.y += u_close_effect.w * slide_p * 0.32;
+	pos.z += slide_p * 0.045;
 
 	/*
 	 * Reconstruct the deformed surface normal from the same local

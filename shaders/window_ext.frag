@@ -12,6 +12,8 @@ uniform vec4 u_water; /* amplitude, frequency, speed, phase */
 uniform vec4 u_water_surface; /* fresnel, specular, caustic, tint */
 uniform vec4 u_border_color;
 uniform vec2 u_border_width; /* normalized x/y thickness */
+uniform float u_close_progress;
+uniform vec4 u_close_effect; /* style, strength, direction_x, direction_y */
 
 varying vec2 v_uv;
 varying vec3 v_normal;
@@ -167,6 +169,12 @@ void main() {
 	float border_alpha = clamp(border_mask * u_border_color.a, 0.0, 1.0);
 	color.rgb = color.rgb * (1.0 - border_alpha) + u_border_color.rgb * border_alpha;
 	color.a = color.a + border_alpha * (1.0 - color.a);
+
+	float slide_close = 1.0 - step(0.5, abs(u_close_effect.x - 1.0));
+	float close_p = clamp(u_close_progress * clamp(u_close_effect.y, 0.0, 2.0), 0.0, 1.0);
+	float close_fade = mix(1.0, 1.0 - smoothstep(0.08, 1.0, close_p), slide_close);
+	color.rgb *= close_fade;
+	color.a *= close_fade;
 
 	gl_FragColor = color;
 }

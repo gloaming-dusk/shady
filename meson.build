@@ -280,6 +280,12 @@ shared_module('shady-plugin-border-accent',
   build_by_default: true,
   install: false)
 
+shared_module('shady-plugin-close-slide-fade',
+  'examples/plugins/close_slide_fade.c',
+  include_directories: include_directories('include'),
+  build_by_default: true,
+  install: false)
+
 module_resolver_test = executable('module-resolver-test',
   [
     'tests/module-resolver.c',

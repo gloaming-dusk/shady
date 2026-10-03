@@ -292,6 +292,21 @@ shady.plugin("/absolute/path/to/my-plugin.so")
 
 Because plugin loading happens before capability resolution, external plugins participate in the same dependency graph as built-in modules.
 
+Close animations are plugin-selectable as well. The public API exposes `window_set_close_effect()`, `window_close_effect()`, and `window_reset_close_effect()`. A plugin selects a built-in render style plus timing/strength/direction per window; `window_close()` then runs that effect instead of bypassing the compositor animation. The default remains `SHADY_CLOSE_EFFECT_CRUMPLE`, while `examples/plugins/close_slide_fade.c` demonstrates `SHADY_CLOSE_EFFECT_SLIDE_FADE`:
+
+```c
+struct shady_close_effect effect = {
+    .style = SHADY_CLOSE_EFFECT_SLIDE_FADE,
+    .duration = 0.52f,
+    .strength = 1.0f,
+    .direction_x = 0.95f,
+    .direction_y = 0.22f,
+};
+api->window_set_close_effect(host, window, &effect);
+```
+
+Load the example with `shady.plugin("/path/to/libshady-plugin-close-slide-fade.so")` to replace the close style for mapped windows; unloading/resetting the plugin returns them to the default crumple effect.
+
 ### Runtime Lua
 
 When the `lua` runtime module is enabled, Shady then looks for `$XDG_CONFIG_HOME/shady/init.lua` (or `~/.config/shady/init.lua`). `SHADY_LUA_INIT` can select another runtime script. Runtime Lua is intended for callbacks, live window inspection, bindings, and orchestration rather than rendering or physics hot loops.

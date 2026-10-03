@@ -70,6 +70,13 @@ if os.getenv("SHADY_NEON_WATER") ~= "0" then
         (root .. "/build/libshady-plugin-water-windows.so"))
 end
 
+-- Close style stays on the built-in crumple by default. Opt into the example
+-- native close-effect plugin with SHADY_NEON_CLOSE_STYLE=slide.
+if os.getenv("SHADY_NEON_CLOSE_STYLE") == "slide" then
+    shady.plugin(os.getenv("SHADY_CLOSE_PLUGIN") or
+        (root .. "/build/libshady-plugin-close-slide-fade.so"))
+end
+
 shady.bind("quit", "Super+Shift+Escape")
 shady.bind("cycle_windows", "Super+Tab")
 shady.bind("close_window", "Super+q")

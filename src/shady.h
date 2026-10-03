@@ -231,6 +231,12 @@ struct shady_toplevel {
 	bool border_override;
 	float border_width;
 	float border_color[4];
+	bool close_effect_override;
+	uint32_t close_effect_style;
+	float close_effect_duration;
+	float close_effect_strength;
+	float close_effect_direction_x;
+	float close_effect_direction_y;
 	/* Opaque per-module extension state. The core toplevel does not know
 	 * which optional modules attach data here. */
 	void *module_state[SHADY_MAX_MODULES];

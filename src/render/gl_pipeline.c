@@ -756,6 +756,8 @@ bool shady_gl_pipeline_init(
 
 	pipeline->u_close_progress_2d =
 		glGetUniformLocation(pipeline->prog_2d, "u_close_progress");
+	pipeline->u_close_effect_2d =
+		glGetUniformLocation(pipeline->prog_2d, "u_close_effect");
 	pipeline->u_model_2d = glGetUniformLocation(pipeline->prog_2d, "u_model");
 	pipeline->u_light_dir_2d = glGetUniformLocation(pipeline->prog_2d, "u_light_dir");
 	pipeline->u_effect_strength_2d = glGetUniformLocation(pipeline->prog_2d, "u_effect_strength");
@@ -806,6 +808,8 @@ bool shady_gl_pipeline_init(
 
 	pipeline->u_close_progress_ext =
 		glGetUniformLocation(pipeline->prog_ext, "u_close_progress");
+	pipeline->u_close_effect_ext =
+		glGetUniformLocation(pipeline->prog_ext, "u_close_effect");
 	pipeline->u_model_ext = glGetUniformLocation(pipeline->prog_ext, "u_model");
 	pipeline->u_light_dir_ext = glGetUniformLocation(pipeline->prog_ext, "u_light_dir");
 	pipeline->u_effect_strength_ext = glGetUniformLocation(pipeline->prog_ext, "u_effect_strength");
@@ -1025,6 +1029,7 @@ void shady_gl_pipeline_draw_window(
 	const float border_color[4],
 	const float border_width[2],
 	float close_progress,
+	const float close_effect[4],
 	const float tint[4],
 	float effect_strength,
 	float brightness
@@ -1072,6 +1077,7 @@ void shady_gl_pipeline_draw_window(
 	GLint u_border_color = external ? pipeline->u_border_color_ext : pipeline->u_border_color_2d;
 	GLint u_border_width = external ? pipeline->u_border_width_ext : pipeline->u_border_width_2d;
 	GLint u_close_progress = external ? pipeline->u_close_progress_ext : pipeline->u_close_progress_2d;
+	GLint u_close_effect = external ? pipeline->u_close_effect_ext : pipeline->u_close_effect_2d;
 	GLint u_model = external ? pipeline->u_model_ext : pipeline->u_model_2d;
 	GLint u_light_dir = external ? pipeline->u_light_dir_ext : pipeline->u_light_dir_2d;
 	GLint u_effect_strength = external ? pipeline->u_effect_strength_ext : pipeline->u_effect_strength_2d;
@@ -1115,6 +1121,7 @@ void shady_gl_pipeline_draw_window(
 		u_close_progress,
 		close_progress
 	);
+	glUniform4fv(u_close_effect, 1, close_effect);
 
 	glUniform1i(
 		u_tex,

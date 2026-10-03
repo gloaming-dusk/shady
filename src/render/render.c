@@ -96,6 +96,11 @@ struct shady_close_snapshot {
 	bool animating;
 
 	float progress;
+	uint32_t close_style;
+	float close_duration;
+	float close_strength;
+	float close_direction_x;
+	float close_direction_y;
 };
 
 static struct shady_close_snapshot *
@@ -588,6 +593,14 @@ static void render_spatial_subsurface_buffer(struct wlr_scene_buffer *buffer,
 	};
 	const float no_border_color[4] = {0.f, 0.f, 0.f, 0.f};
 	const float no_border_width[2] = {0.f, 0.f};
+	const struct shady_close_animation_state *close_state =
+		shady_close_state_for_const(ctx->toplevel);
+	const float close_effect[4] = {
+		(float)close_state->style,
+		close_state->strength > 0.f ? close_state->strength : 1.f,
+		close_state->direction_x,
+		close_state->direction_y,
+	};
 	shady_gl_pipeline_draw_window(&pipeline,
 		attribs.target, attribs.tex, attribs.has_alpha,
 		mvp, model, ctx->time_seconds,
@@ -598,6 +611,7 @@ static void render_spatial_subsurface_buffer(struct wlr_scene_buffer *buffer,
 		no_border_color,
 		no_border_width,
 		shady_close_state_for_const(ctx->toplevel)->progress,
+		close_effect,
 		tint, server->config.window_effect_strength,
 		server->config.window_brightness * (focused ? 1.08f : 1.0f));
 }
@@ -990,6 +1004,13 @@ void shady_render_output_frame(
 					snapshot->wobble_x = shady_window_motion_state_for_const(toplevel)->wobble_x;
 					snapshot->wobble_y = shady_window_motion_state_for_const(toplevel)->wobble_y;
 					snapshot->has_alpha = attribs.has_alpha;
+					const struct shady_close_animation_state *close_state =
+						shady_close_state_for_const(toplevel);
+					snapshot->close_style = close_state->style;
+					snapshot->close_duration = close_state->duration;
+					snapshot->close_strength = close_state->strength;
+					snapshot->close_direction_x = close_state->direction_x;
+					snapshot->close_direction_y = close_state->direction_y;
 					snapshot->dirty = false;
 				}
 			}
@@ -1060,6 +1081,14 @@ void shady_render_output_frame(
 			tw > 0.f ? border_px / tw : 0.f,
 			th > 0.f ? border_px / th : 0.f,
 		};
+		const struct shady_close_animation_state *close_state =
+			shady_close_state_for_const(toplevel);
+		const float close_effect[4] = {
+			(float)close_state->style,
+			close_state->strength > 0.f ? close_state->strength : 1.f,
+			close_state->direction_x,
+			close_state->direction_y,
+		};
 		shady_gl_pipeline_draw_window(
 			&pipeline,
 			attribs.target,
@@ -1075,6 +1104,7 @@ void shady_render_output_frame(
 			border_color,
 			border_width,
 			shady_close_state_for_const(toplevel)->progress,
+			close_effect,
 			focused_tint,
 			server->config.window_effect_strength,
 			server->config.window_brightness * (focused ? 1.08f : 1.0f)
@@ -1090,17 +1120,43 @@ void shady_render_output_frame(
 			wlr_gles2_texture_get_attribs(toplevel->titlebar_texture, &title_attribs);
 			if (title_attribs.target == GL_TEXTURE_2D) {
 				float title_model[16], title_mvp[16];
+				float title_x = layout_x;
 				float title_y = toplevel->maximized
 					? layout_y
 					: layout_y - (float)toplevel->titlebar_height;
+				float title_w = tw;
+				float title_h = (float)toplevel->titlebar_height;
+				float title_opacity = server->config.window_opacity;
+				float close_p = fminf(fmaxf(close_state->progress, 0.f), 1.f);
+				if (close_p > 0.f) {
+					if (close_state->style == 1) {
+						float slide_p = close_p * fminf(fmaxf(close_state->strength, 0.f), 2.f);
+						if (slide_p > 1.f) slide_p = 1.f;
+						float scale = 1.f - slide_p * .14f;
+						float old_w = title_w, old_h = title_h;
+						title_w *= scale;
+						title_h *= scale;
+						title_x += (old_w - title_w) * .5f +
+							close_state->direction_x * slide_p * tw * .32f;
+						title_y += (old_h - title_h) * .5f +
+							close_state->direction_y * slide_p * th * .32f;
+						float fade_t = (slide_p - .08f) / .92f;
+						if (fade_t < 0.f) fade_t = 0.f;
+						if (fade_t > 1.f) fade_t = 1.f;
+						float fade = fade_t * fade_t * (3.f - 2.f * fade_t);
+						title_opacity *= 1.f - fade;
+					} else {
+						title_opacity *= 1.f - fminf(close_p * 2.2f, 1.f);
+					}
+				}
 				if (screen_space) {
 					shady_mat4_identity(title_model);
-					shady_screen_space_model(title_mvp, layout_x, title_y,
-						tw, (float)toplevel->titlebar_height,
+					shady_screen_space_model(title_mvp, title_x, title_y,
+						title_w, title_h,
 						logical_w, logical_h);
 				} else {
 					shady_window_model(title_model,
-						layout_x, title_y, tw, (float)toplevel->titlebar_height,
+						title_x, title_y, title_w, title_h,
 						logical_w, logical_h,
 						shady_spatial_toplevel_state(toplevel)->z,
 						shady_window_motion_state_for_const(toplevel)->tilt_x,
@@ -1108,7 +1164,7 @@ void shady_render_output_frame(
 					shady_mat4_multiply(title_mvp, vp, title_model);
 				}
 				shady_gl_pipeline_draw_titlebar(&pipeline, title_attribs.tex,
-					title_mvp, server->config.window_opacity);
+					title_mvp, title_opacity);
 			}
 		}
 
@@ -1183,6 +1239,12 @@ void shady_render_output_frame(
 		const float no_water_surface[4] = {0.f, 0.f, 0.f, 0.f};
 		const float no_border_color[4] = {0.f, 0.f, 0.f, 0.f};
 		const float no_border_width[2] = {0.f, 0.f};
+		const float close_effect[4] = {
+			(float)snapshot->close_style,
+			snapshot->close_strength > 0.f ? snapshot->close_strength : 1.f,
+			snapshot->close_direction_x,
+			snapshot->close_direction_y,
+		};
 		shady_gl_pipeline_draw_window(
 			&pipeline,
 			GL_TEXTURE_2D,
@@ -1198,6 +1260,7 @@ void shady_render_output_frame(
 			no_border_color,
 			no_border_width,
 			snapshot->progress,
+			close_effect,
 			window_tint,
 			server->config.window_effect_strength,
 			server->config.window_brightness

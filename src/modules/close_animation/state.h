@@ -17,6 +17,11 @@ struct shady_close_animation_state {
 	enum shady_close_state state;
 	float progress;
 	float wait_time;
+	uint32_t style;
+	float duration;
+	float strength;
+	float direction_x;
+	float direction_y;
 };
 
 static inline struct shady_close_animation_state *shady_close_state_for(

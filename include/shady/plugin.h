@@ -36,6 +36,19 @@ enum shady_plugin_log_level {
 	SHADY_PLUGIN_LOG_ERROR = 2,
 };
 
+enum shady_close_effect_style {
+	SHADY_CLOSE_EFFECT_CRUMPLE = 0,
+	SHADY_CLOSE_EFFECT_SLIDE_FADE = 1,
+};
+
+struct shady_close_effect {
+	uint32_t style;
+	float duration;
+	float strength;
+	float direction_x;
+	float direction_y;
+};
+
 struct shady_plugin_api_v1 {
 	uint32_t abi_version;
 	uint32_t struct_size;
@@ -112,6 +125,11 @@ struct shady_plugin_api_v1 {
 	bool (*window_border)(shady_window window,
 		float *width, float color[4], bool *overridden);
 	bool (*window_reset_border)(shady_host host, shady_window window);
+	bool (*window_set_close_effect)(shady_host host, shady_window window,
+		const struct shady_close_effect *effect);
+	bool (*window_close_effect)(shady_window window,
+		struct shady_close_effect *effect, bool *overridden);
+	bool (*window_reset_close_effect)(shady_host host, shady_window window);
 };
 
 typedef const struct shady_module *(*shady_plugin_entry_v1_fn)(

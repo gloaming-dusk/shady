@@ -21,7 +21,8 @@ nix develop -c ninja -C "$BUILD_DIR" \
   physics-collision-test \
   libshady-plugin-focus-depth.so \
   libshady-plugin-spatial-overview.so \
-  libshady-plugin-water-windows.so
+  libshady-plugin-water-windows.so \
+  libshady-plugin-close-slide-fade.so
 
 nix develop -c meson test -C "$BUILD_DIR" \
   math3d physics-collision --print-errorlogs
@@ -37,6 +38,9 @@ SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
 
 SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
   nix develop -c bash ./tests/headless-water-windows.sh
+
+SHADY_CLOSE_TEST_BUILD_DIR="$BUILD_DIR" \
+  nix develop -c bash ./tests/headless-close-effect-plugin.sh
 
 SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
   nix develop -c bash ./tests/headless-neon-water.sh
