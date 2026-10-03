@@ -2,7 +2,7 @@
 
 ![Shady Neon Transit desktop with native 3D overview and water-window effects](screenshots/Screenshot.png)
 
-*Neon Transit rice: standalone shell, native 3D overview, translucent windows, and shader-backed liquid surfaces.*
+*Neon Transit rice: standalone shell, native 3D overview, compositor title bars and borders, translucent windows, and shader-backed liquid surfaces.*
 
 Shady is an experimental **3D Wayland compositor** built on wlroots 0.20.2 and inspired by TinyWL. It can run as a conventional compositor through its wlroots scene-graph path, or turn normal xdg-shell applications into objects inside a shared perspective 3D world.
 
