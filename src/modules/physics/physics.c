@@ -9,6 +9,7 @@
 #include <wlr/types/wlr_output.h>
 #include "../../render/render.h"
 #include "../window_motion/window_motion.h"
+#include "../window_motion/state.h"
 #include "../fps/fps.h"
 #include "../../world/floor.h"
 #include "../../world/collider.h"
@@ -58,17 +59,50 @@ void shady_physics_update(struct shady_server *server,float dt,float logical_w,f
 		if(!surface->mapped || !t->scene_tree->node.enabled)continue;
 		float tw=(float)surface->current.width,th=(float)surface->current.height;
 		if(tw<=0.f||th<=0.f)continue;
-		/* Folded FPS representations share one authoritative axis-aligned box
-		 * with rendering and picking. If no plugin representation is installed,
-		 * fall back to the normal thin window body. */
-		float representation_size[3] = {0.f, 0.f, 0.f};
+		/* Folded FPS representations share one authoritative provider contract
+		 * with rendering and picking. Provider model/collision callbacks may alter
+		 * the visible transform and collision extents while preserving the base
+		 * window center as the compositor's persistent position. */
+		float base_center_x=((float)t->scene_tree->node.x+tw*.5f-logical_w*.5f)/logical_h;
+		float base_center_y=.5f-((float)t->scene_tree->node.y+th*.5f)/logical_h;
+		float base_center_z=shady_spatial_toplevel_state(t)->z;
 		float half[3] = {0.f, 0.f, 0.f};
-		bool has_representation = !shady_fps_is_expanded(server, t) &&
-			shady_toplevel_box_representation(t, representation_size, NULL);
+		float model_offset[3] = {0.f, 0.f, 0.f};
+		float collision_offset[3] = {0.f, 0.f, 0.f};
+		float center_x=base_center_x, center_y=base_center_y, center_z=base_center_z;
+		struct shady_representation_context representation_context = {
+			.struct_size = sizeof(representation_context),
+			.logical_width = logical_w, .logical_height = logical_h,
+			.window_width = tw, .window_height = th,
+			.center_x = base_center_x, .center_y = base_center_y,
+			.center_z = base_center_z,
+			.tilt_x = shady_window_motion_state_for_const(t)->tilt_x,
+			.tilt_y = shady_window_motion_state_for_const(t)->tilt_y,
+			.first_person = true, .folded = !shady_fps_is_expanded(server, t),
+			.held = false,
+			.focused = !wl_list_empty(&server->toplevels) &&
+				server->toplevels.next == &t->link,
+		};
+		struct shady_representation_model representation_model;
+		bool has_representation = representation_context.folded &&
+			shady_toplevel_representation_model(t, &representation_context,
+				&representation_model);
 		if (has_representation) {
-			half[0] = representation_size[0] * .5f;
-			half[1] = representation_size[1] * .5f;
-			half[2] = representation_size[2] * .5f;
+			struct shady_collision_box collision;
+			shady_toplevel_representation_collision(t, &representation_context,
+				&representation_model, &collision);
+			half[0] = collision.half[0];
+			half[1] = collision.half[1];
+			half[2] = collision.half[2];
+			model_offset[0] = representation_model.center_x - base_center_x;
+			model_offset[1] = representation_model.center_y - base_center_y;
+			model_offset[2] = representation_model.center_z - base_center_z;
+			collision_offset[0] = collision.center[0] - representation_model.center_x;
+			collision_offset[1] = collision.center[1] - representation_model.center_y;
+			collision_offset[2] = collision.center[2] - representation_model.center_z;
+			center_x = collision.center[0];
+			center_y = collision.center[1];
+			center_z = collision.center[2];
 		} else {
 			struct shady_window_body body;
 			if (!shady_physics_window_body(t, logical_w, logical_h, &body)) continue;
@@ -76,9 +110,7 @@ void shady_physics_update(struct shady_server *server,float dt,float logical_w,f
 			half[1] = body.half[1];
 			half[2] = body.half[2];
 		}
-		float center_x=((float)t->scene_tree->node.x+tw*.5f-logical_w*.5f)/logical_h;
-		float center_y=.5f-((float)t->scene_tree->node.y+th*.5f)/logical_h;
-		if(center_y < WINDOW_RESPAWN_Y || fabsf(shady_spatial_toplevel_state(t)->z) > WINDOW_RESPAWN_Z_LIMIT){
+		if(center_y < WINDOW_RESPAWN_Y || fabsf(center_z) > WINDOW_RESPAWN_Z_LIMIT){
 			shady_physics_respawn_window(server,t);continue;
 		}
 		float previous_bottom=center_y-half[1];
@@ -89,7 +121,7 @@ void shady_physics_update(struct shady_server *server,float dt,float logical_w,f
 		 * an edge when another coordinate enters a collider during the same
 		 * frame (for example wall + floor). Keep each substep below a quarter
 		 * cube so every face gets a chance to become the active contact. */
-		float center[3]={center_x,center_y,shady_spatial_toplevel_state(t)->z};
+		float center[3]={center_x,center_y,center_z};
 		float max_move=fmaxf(fabsf(shady_physics_toplevel_state(t)->vx*dt),
 			fmaxf(fabsf(shady_physics_toplevel_state(t)->vy*dt),fabsf(shady_physics_toplevel_state(t)->vz*dt)));
 		float min_half=fminf(half[0],fminf(half[1],half[2]));
@@ -107,7 +139,7 @@ void shady_physics_update(struct shady_server *server,float dt,float logical_w,f
 			hit_z|=shady_physics_sweep_cube_axis(&shady_spatial_state(server)->runtime.world,center,half,2,
 				shady_physics_toplevel_state(t)->vz*step_dt,&shady_physics_toplevel_state(t)->vz,restitution);
 		}
-		center_x=center[0];center_y=center[1];shady_spatial_toplevel_state(t)->z=center[2];
+		center_x=center[0];center_y=center[1];center_z=center[2];
 
 		if(hit_x)shady_window_motion_add_impulse(server,t,
 			shady_physics_toplevel_state(t)->vx>=0.f?.018f:-.018f,0.f,0.f,
@@ -128,7 +160,7 @@ void shady_physics_update(struct shady_server *server,float dt,float logical_w,f
 		struct shady_box_collider body={
 			center_x-half[0],center_x+half[0],
 			center_y-half[1],center_y+half[1],
-			shady_spatial_toplevel_state(t)->z-half[2],shady_spatial_toplevel_state(t)->z+half[2]
+			center_z-half[2],center_z+half[2]
 		};
 		float support_y=0.f; bool supported=false;
 		/* Keep resting windows attached to a support despite tiny frame-to-frame
@@ -170,8 +202,13 @@ void shady_physics_update(struct shady_server *server,float dt,float logical_w,f
 			if(fabsf(shady_physics_toplevel_state(t)->vz)<WINDOW_REST_SPEED_EPSILON)
 				shady_physics_toplevel_state(t)->vz=0.f;
 		}
-		int x=(int)(center_x*logical_h+logical_w*.5f-tw*.5f);int y=(int)((.5f-center_y)*logical_h-th*.5f);
+		float resolved_base_x = center_x - collision_offset[0] - model_offset[0];
+		float resolved_base_y = center_y - collision_offset[1] - model_offset[1];
+		float resolved_base_z = center_z - collision_offset[2] - model_offset[2];
+		int x=(int)(resolved_base_x*logical_h+logical_w*.5f-tw*.5f);
+		int y=(int)((.5f-resolved_base_y)*logical_h-th*.5f);
 		wlr_scene_node_set_position(&t->scene_tree->node,x,y);
+		shady_spatial_toplevel_state(t)->z=resolved_base_z;
 	}
 }
 

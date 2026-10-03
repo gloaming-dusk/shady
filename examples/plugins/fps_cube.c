@@ -6,20 +6,46 @@
 
 static const struct shady_plugin_api_v1 *api;
 static shady_host host;
+static bool collision_logged;
 
-static const struct shady_window_representation cube = {
-    .struct_size = sizeof(struct shady_window_representation),
-    .kind = SHADY_WINDOW_REPRESENTATION_BOX,
-    .width = 0.16f,
-    .height = 0.16f,
-    .depth = 0.16f,
-    .hide_titlebar = true,
+static bool cube_collision(shady_host callback_host, shady_window window,
+        const struct shady_representation_context *context,
+        struct shady_collision_box *box, void *state, void *user_data) {
+    (void)callback_host;
+    (void)window;
+    (void)context;
+    (void)state;
+    (void)user_data;
+    /* Explicitly keep the physical cube equal to the visible cube. This
+     * callback demonstrates that collision policy can live in the plugin. */
+    if (!collision_logged) {
+        collision_logged = true;
+        api->log(SHADY_PLUGIN_LOG_INFO,
+            "fps-cube: collision provider callback active");
+    }
+    box->half[0] = 0.08f;
+    box->half[1] = 0.08f;
+    box->half[2] = 0.08f;
+    return true;
+}
+
+static const struct shady_window_representation_provider cube_provider = {
+    .struct_size = sizeof(struct shady_window_representation_provider),
+    .base = {
+        .struct_size = sizeof(struct shady_window_representation),
+        .kind = SHADY_WINDOW_REPRESENTATION_BOX,
+        .width = 0.16f,
+        .height = 0.16f,
+        .depth = 0.16f,
+        .hide_titlebar = true,
+    },
+    .collision = cube_collision,
 };
 
 static void apply_window(shady_window window) {
     if (!window || !api->window_valid(host, window))
         return;
-    api->window_set_representation(host, window, &cube);
+    api->window_set_representation_provider(host, window, &cube_provider);
 }
 
 static void apply_all(void) {
@@ -41,7 +67,7 @@ static void start(struct shady_server *server) {
     (void)server;
     apply_all();
     api->log(SHADY_PLUGIN_LOG_INFO,
-        "fps-cube: folded FPS windows use plugin-owned cube representation");
+        "fps-cube: provider owns folded model and collision cube");
 }
 
 static void stop(struct shady_server *server) {
@@ -49,7 +75,7 @@ static void stop(struct shady_server *server) {
     for (size_t i = 0; i < api->window_count(host); i++) {
         shady_window window = api->window_at(host, i);
         if (api->window_valid(host, window))
-            api->window_reset_representation(host, window);
+            api->window_reset_representation_provider(host, window, &cube_provider);
     }
 }
 
@@ -79,11 +105,12 @@ const struct shady_module *shady_plugin_entry_v1(
             !host_api ||
             host_api->abi_version != SHADY_PLUGIN_ABI_V1 ||
             host_api->struct_size <
-                offsetof(struct shady_plugin_api_v1, window_representation) +
-                sizeof(host_api->window_representation) ||
-            !host_api->window_set_representation ||
-            !host_api->window_reset_representation ||
-            !host_api->window_representation)
+                offsetof(struct shady_plugin_api_v1,
+                    window_representation_state) +
+                sizeof(host_api->window_representation_state) ||
+            !host_api->window_set_representation_provider ||
+            !host_api->window_reset_representation_provider ||
+            !host_api->window_representation_state)
         return NULL;
 
     api = host_api;

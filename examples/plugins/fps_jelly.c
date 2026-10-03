@@ -6,120 +6,110 @@
 
 static const struct shady_plugin_api_v1 *api;
 static shady_host host;
-static bool model_logged;
 static bool update_logged;
+static bool model_logged;
 
-struct squash_state {
-    unsigned model_calls;
-    unsigned update_calls;
-    float elapsed;
+struct jelly_state {
+    float compression;
+    float velocity;
+    float target;
 };
 
-static bool squash_state_init(shady_host callback_host, shady_window window,
+static bool jelly_state_init(shady_host callback_host, shady_window window,
         void *state, void *user_data) {
     (void)callback_host;
     (void)window;
     (void)user_data;
-    struct squash_state *s = state;
-    if (s) {
-        s->model_calls = 0;
-        s->update_calls = 0;
-        s->elapsed = 0.f;
-    }
+    struct jelly_state *s = state;
+    if (!s) return false;
+    s->compression = 0.18f;
+    s->velocity = 0.f;
+    s->target = 0.f;
     return true;
 }
 
-static void squash_state_destroy(shady_host callback_host, shady_window window,
-        void *state, void *user_data) {
-    (void)callback_host;
-    (void)window;
-    (void)user_data;
-    struct squash_state *s = state;
-    if (s && s->model_calls > 0)
-        api->log(SHADY_PLUGIN_LOG_DEBUG,
-            "fps-squash: per-window provider state destroyed");
-}
-
-static bool squash_update(shady_host callback_host, shady_window window,
+static bool jelly_update(shady_host callback_host, shady_window window,
         float dt, void *state, void *user_data) {
     (void)callback_host;
     (void)window;
     (void)user_data;
-    struct squash_state *s = state;
+    struct jelly_state *s = state;
     if (!s) return false;
-    s->update_calls++;
-    s->elapsed += dt;
+
     if (!update_logged) {
         update_logged = true;
         api->log(SHADY_PLUGIN_LOG_INFO,
-            "fps-squash: provider update callback active");
-    }
-    /* Keep frames alive briefly to demonstrate host-driven representation
-     * animation without a plugin timer/render hook. */
-    return s->elapsed < 0.25f;
-}
-
-static bool squash_model(shady_host callback_host, shady_window window,
-        const struct shady_representation_context *context,
-        struct shady_representation_model *model,
-        void *state, void *user_data) {
-    (void)callback_host;
-    (void)window;
-    (void)user_data;
-
-    struct squash_state *s = state;
-    if (s) s->model_calls++;
-
-    if (!model_logged) {
-        model_logged = true;
-        api->log(SHADY_PLUGIN_LOG_INFO,
-            "fps-squash: model provider callback active");
+            "fps-jelly: spring update callback active");
     }
 
-    /* The representation itself decides how interaction state changes shape.
-     * A held tile becomes slightly thinner/wider without FPS knowing why. */
-    if (s && s->elapsed < 0.25f)
-        model->height += (0.25f - s->elapsed) * 0.018f;
+    float diff = s->target - s->compression;
+    float acceleration = diff * 72.f - s->velocity * 13.f;
+    s->velocity += acceleration * dt;
+    s->compression += s->velocity * dt;
 
-    if (context->held) {
-        model->width = 0.27f;
-        model->height = 0.052f;
-        model->depth = 0.115f;
-    } else if (context->focused) {
-        model->height = 0.072f;
+    if (s->compression < -0.20f) s->compression = -0.20f;
+    if (s->compression > 1.20f) s->compression = 1.20f;
+
+    float abs_diff = diff < 0.f ? -diff : diff;
+    float abs_velocity = s->velocity < 0.f ? -s->velocity : s->velocity;
+    if (abs_diff < 0.0015f && abs_velocity < 0.002f) {
+        s->compression = s->target;
+        s->velocity = 0.f;
+        return false;
     }
     return true;
 }
 
-static const struct shady_window_representation_provider squash_provider = {
+static bool jelly_model(shady_host callback_host, shady_window window,
+        const struct shady_representation_context *context,
+        struct shady_representation_model *model,
+        void *state, void *user_data) {
+    (void)window;
+    (void)user_data;
+    struct jelly_state *s = state;
+    if (!s) return false;
+
+    if (!model_logged) {
+        model_logged = true;
+        api->log(SHADY_PLUGIN_LOG_INFO,
+            "fps-jelly: deforming model callback active");
+    }
+
+    float target = context->held ? 1.0f : (context->focused ? 0.28f : 0.f);
+    if (target != s->target) {
+        s->target = target;
+        api->schedule_render(callback_host);
+    }
+
+    float q = s->compression;
+    model->width *= 1.f + q * 0.34f;
+    model->height *= 1.f - q * 0.43f;
+    model->depth *= 1.f + q * 0.20f;
+
+    if (model->height < 0.035f) model->height = 0.035f;
+    if (model->depth < 0.050f) model->depth = 0.050f;
+    return true;
+}
+
+static const struct shady_window_representation_provider jelly_provider = {
     .struct_size = sizeof(struct shady_window_representation_provider),
     .base = {
         .struct_size = sizeof(struct shady_window_representation),
         .kind = SHADY_WINDOW_REPRESENTATION_BOX,
-        .width = 0.24f,
-        .height = 0.065f,
-        .depth = 0.13f,
+        .width = 0.17f,
+        .height = 0.15f,
+        .depth = 0.15f,
         .hide_titlebar = true,
     },
-    .state_size = sizeof(struct squash_state),
-    .state_init = squash_state_init,
-    .state_destroy = squash_state_destroy,
-    .update = squash_update,
-    .model = squash_model,
+    .state_size = sizeof(struct jelly_state),
+    .state_init = jelly_state_init,
+    .update = jelly_update,
+    .model = jelly_model,
 };
 
 static void apply_window(shady_window window) {
-    if (!window || !api->window_valid(host, window))
-        return;
-    if (!api->window_set_representation_provider(host, window, &squash_provider))
-        return;
-
-    size_t state_size = 0;
-    void *state = api->window_representation_state(
-        host, window, &squash_provider, &state_size);
-    if (!state || state_size != sizeof(struct squash_state))
-        api->log(SHADY_PLUGIN_LOG_ERROR,
-            "fps-squash: provider state unavailable after attach");
+    if (window && api->window_valid(host, window))
+        api->window_set_representation_provider(host, window, &jelly_provider);
 }
 
 static void apply_all(void) {
@@ -141,7 +131,7 @@ static void start(struct shady_server *server) {
     (void)server;
     apply_all();
     api->log(SHADY_PLUGIN_LOG_INFO,
-        "fps-squash: provider dynamically shapes folded FPS windows");
+        "fps-jelly: spring-driven folded window representation active");
 }
 
 static void stop(struct shady_server *server) {
@@ -149,12 +139,12 @@ static void stop(struct shady_server *server) {
     for (size_t i = 0; i < api->window_count(host); i++) {
         shady_window window = api->window_at(host, i);
         if (api->window_valid(host, window))
-            api->window_reset_representation_provider(host, window, &squash_provider);
+            api->window_reset_representation_provider(host, window, &jelly_provider);
     }
 }
 
 static const char *const provides[] = {
-    "spatial.window-representation.squash",
+    "spatial.window-representation.jelly",
     NULL,
 };
 
@@ -164,7 +154,7 @@ static const char *const requires[] = {
 };
 
 static const struct shady_module module = {
-    .name = "fps-squash",
+    .name = "fps-jelly",
     .provides = provides,
     .requires = requires,
     .start = start,

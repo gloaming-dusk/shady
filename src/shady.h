@@ -243,6 +243,12 @@ struct shady_toplevel {
 	bool plugin_representation_override;
 	struct shady_window_representation plugin_representation;
 	void *plugin_representation_owner;
+	bool plugin_representation_provider_active;
+	struct shady_window_representation_provider plugin_representation_provider;
+	const struct shady_window_representation_provider *plugin_representation_provider_anchor;
+	void *plugin_representation_provider_owner;
+	void *plugin_representation_state;
+	size_t plugin_representation_state_size;
 	/* Opaque per-module extension state. The core toplevel does not know
 	 * which optional modules attach data here. */
 	void *module_state[SHADY_MAX_MODULES];
@@ -356,18 +362,14 @@ void server_new_layer_surface(struct wl_listener *listener, void *data);
 void shady_output_work_area(struct shady_server *server,
 	struct wlr_output *output, struct wlr_box *box);
 
-static inline bool shady_toplevel_box_representation(
-		const struct shady_toplevel *toplevel, float size[3], bool *hide_titlebar) {
-	if (!toplevel || !toplevel->plugin_representation_override ||
-			toplevel->plugin_representation.kind != SHADY_WINDOW_REPRESENTATION_BOX)
-		return false;
-	if (size) {
-		size[0] = toplevel->plugin_representation.width;
-		size[1] = toplevel->plugin_representation.height;
-		size[2] = toplevel->plugin_representation.depth;
-	}
-	if (hide_titlebar) *hide_titlebar = toplevel->plugin_representation.hide_titlebar;
-	return true;
-}
+bool shady_toplevel_representation_base(const struct shady_toplevel *toplevel,
+	struct shady_window_representation *representation);
+bool shady_toplevel_representation_model(const struct shady_toplevel *toplevel,
+	const struct shady_representation_context *context,
+	struct shady_representation_model *model);
+bool shady_toplevel_representation_collision(const struct shady_toplevel *toplevel,
+	const struct shady_representation_context *context,
+	const struct shady_representation_model *model,
+	struct shady_collision_box *box);
 
 #endif

@@ -1,6 +1,7 @@
 #include "render.h"
 
 #include <time.h>
+#include <string.h>
 #include <wayland-server-core.h>
 #include <wlr/types/wlr_output.h>
 #include <wlr/types/wlr_scene.h>
@@ -72,7 +73,20 @@ bool shady_render_plugin_hook_remove(struct shady_server *server, void *owner,
 	(void)server; (void)owner; (void)hook; return false;
 }
 void shady_render_plugin_cleanup_owner(struct shady_server *server, void *owner) {
-	(void)server; (void)owner;
+	if (!server || !owner) return;
+	struct shady_toplevel *toplevel;
+	wl_list_for_each(toplevel, &server->all_toplevels, all_link) {
+		if (toplevel->plugin_shader_owner == owner) {
+			toplevel->plugin_shader_program = 0;
+			toplevel->plugin_shader_owner = NULL;
+		}
+		if (toplevel->plugin_representation_owner == owner) {
+			toplevel->plugin_representation_override = false;
+			memset(&toplevel->plugin_representation, 0,
+				sizeof(toplevel->plugin_representation));
+			toplevel->plugin_representation_owner = NULL;
+		}
+	}
 }
 
 void shady_render_schedule_all_outputs(struct shady_server *server) {

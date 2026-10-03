@@ -6,6 +6,7 @@
 #include "../shady.h"
 #include "../modules/spatial/state.h"
 #include "../module/module.h"
+#include "../plugin/plugin.h"
 
 bool shady_experimental_update(struct shady_server *server,
 		float logical_w, float logical_h) {
@@ -37,5 +38,6 @@ bool shady_experimental_update(struct shady_server *server,
 	}
 
 	shady_modules_tick(server, dt, logical_w, logical_h);
+	shady_plugin_representation_tick(server, dt);
 	return true;
 }

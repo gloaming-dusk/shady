@@ -1465,14 +1465,33 @@ void shady_render_output_frame(
 			}
 		}
 
-		float representation_size[3] = {0.f, 0.f, 0.f};
-		bool representation_hide_titlebar = false;
-		bool folded_representation = shady_spatial_state(server)->runtime.camera.first_person &&
-			!shady_fps_toplevel_state_const(toplevel)->expanded &&
-			shady_toplevel_box_representation(toplevel, representation_size,
-				&representation_hide_titlebar);
+		bool focused = !wl_list_empty(&server->toplevels) &&
+			server->toplevels.next == &toplevel->link;
+		float center_x = (layout_x + tw * .5f - logical_w * .5f) / logical_h;
+		float center_y = .5f - (layout_y + th * .5f) / logical_h;
+		struct shady_representation_context representation_context = {
+			.struct_size = sizeof(representation_context),
+			.logical_width = logical_w,
+			.logical_height = logical_h,
+			.window_width = tw,
+			.window_height = th,
+			.center_x = center_x,
+			.center_y = center_y,
+			.center_z = shady_spatial_toplevel_state(toplevel)->z,
+			.tilt_x = shady_window_motion_state_for_const(toplevel)->tilt_x,
+			.tilt_y = shady_window_motion_state_for_const(toplevel)->tilt_y,
+			.first_person = shady_spatial_state(server)->runtime.camera.first_person,
+			.folded = shady_spatial_state(server)->runtime.camera.first_person &&
+				!shady_fps_toplevel_state_const(toplevel)->expanded,
+			.held = shady_fps_is_holding(server, toplevel),
+			.focused = focused,
+		};
+		struct shady_representation_model representation_model;
+		bool folded_representation = representation_context.folded &&
+			shady_toplevel_representation_model(toplevel,
+				&representation_context, &representation_model);
 		bool frame_has_titlebar = !toplevel->fullscreen &&
-			!(folded_representation && representation_hide_titlebar) &&
+			!(folded_representation && representation_model.hide_titlebar) &&
 			server->config.window_titlebar && toplevel->titlebar_texture &&
 			wlr_texture_is_gles2(toplevel->titlebar_texture) &&
 			toplevel->titlebar_height > 0;
@@ -1501,12 +1520,12 @@ void shady_render_output_frame(
 			wobble_y = 0.f;
 		} else {
 			if (folded_representation) {
-				float cx=(layout_x+tw*.5f-logical_w*.5f)/logical_h;
-				float cy=.5f-(layout_y+th*.5f)/logical_h;
-				shady_window_box_model(model,cx,cy,shady_spatial_toplevel_state(toplevel)->z,
-					representation_size[0], representation_size[1], representation_size[2],
-					shady_window_motion_state_for_const(toplevel)->tilt_x,
-					shady_window_motion_state_for_const(toplevel)->tilt_y);
+				shady_window_box_model(model,
+					representation_model.center_x, representation_model.center_y,
+					representation_model.center_z,
+					representation_model.width, representation_model.height,
+					representation_model.depth,
+					representation_model.tilt_x, representation_model.tilt_y);
 			}else{
 				shady_window_model(
 				model,
@@ -1530,8 +1549,6 @@ void shady_render_output_frame(
 		}
 
 		if (screen_space) glDisable(GL_DEPTH_TEST);
-		bool focused = !wl_list_empty(&server->toplevels) &&
-			server->toplevels.next == &toplevel->link;
 		float focused_tint[4] = {
 			window_tint[0] * (focused ? 0.92f : 1.0f),
 			window_tint[1] * (focused ? 1.06f : 1.0f),
@@ -1810,24 +1827,40 @@ void shady_render_output_frame(
 			if(!ds->mapped||!debug_t->scene_tree->node.enabled)continue;
 			float dw=(float)ds->current.width,dh=(float)ds->current.height;
 			if(dw<=0.f||dh<=0.f)continue;
-			float debug_representation[3] = {0.f, 0.f, 0.f};
-			bool debug_folded = shady_spatial_state(server)->runtime.camera.first_person &&
-				!shady_fps_toplevel_state_const(debug_t)->expanded &&
-				shady_toplevel_box_representation(debug_t, debug_representation, NULL);
+			float dx=(float)debug_t->scene_tree->node.x+ox;
+			float dy=(float)debug_t->scene_tree->node.y+oy;
+			float dcx=(dx+dw*.5f-logical_w*.5f)/logical_h;
+			float dcy=.5f-(dy+dh*.5f)/logical_h;
+			struct shady_representation_context debug_context = {
+				.struct_size = sizeof(debug_context),
+				.logical_width = logical_w, .logical_height = logical_h,
+				.window_width = dw, .window_height = dh,
+				.center_x = dcx, .center_y = dcy,
+				.center_z = shady_spatial_toplevel_state(debug_t)->z,
+				.tilt_x = shady_window_motion_state_for_const(debug_t)->tilt_x,
+				.tilt_y = shady_window_motion_state_for_const(debug_t)->tilt_y,
+				.first_person = shady_spatial_state(server)->runtime.camera.first_person,
+				.folded = shady_spatial_state(server)->runtime.camera.first_person &&
+					!shady_fps_toplevel_state_const(debug_t)->expanded,
+				.held = shady_fps_is_holding(server, debug_t),
+				.focused = !wl_list_empty(&server->toplevels) &&
+					server->toplevels.next == &debug_t->link,
+			};
+			struct shady_representation_model debug_model;
+			bool debug_folded = debug_context.folded &&
+				shady_toplevel_representation_model(debug_t, &debug_context, &debug_model);
 			if (debug_folded) {
-				/* Debug the authoritative plugin-selected box, not only the textured
-				 * window face. This keeps visible and collision geometry comparable. */
-				float dx=(float)debug_t->scene_tree->node.x+ox;
-				float dy=(float)debug_t->scene_tree->node.y+oy;
-				float dcx=(dx+dw*.5f-logical_w*.5f)/logical_h;
-				float dcy=.5f-(dy+dh*.5f)/logical_h;
-				float hx=debug_representation[0]*.5f;
-				float hy=debug_representation[1]*.5f;
-				float hz=debug_representation[2]*.5f;
+				/* Draw the exact authoritative collision box selected by the plugin. */
+				struct shady_collision_box collision;
+				shady_toplevel_representation_collision(debug_t, &debug_context,
+					&debug_model, &collision);
 				struct shady_box_collider box={
-					dcx-hx,dcx+hx,dcy-hy,dcy+hy,
-					shady_spatial_toplevel_state(debug_t)->z-hz,
-					shady_spatial_toplevel_state(debug_t)->z+hz
+					collision.center[0]-collision.half[0],
+					collision.center[0]+collision.half[0],
+					collision.center[1]-collision.half[1],
+					collision.center[1]+collision.half[1],
+					collision.center[2]-collision.half[2],
+					collision.center[2]+collision.half[2]
 				};
 				shady_gl_pipeline_draw_debug_box(&pipeline,vp,&box,false);
 			}else{

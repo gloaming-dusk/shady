@@ -17,6 +17,7 @@
 #include "../../render/render.h"
 #include "../physics/physics.h"
 #include "../window_motion/window_motion.h"
+#include "../window_motion/state.h"
 #include "../../world/world.h"
 #define LOOK_SENS .0032f
 #define HOLD_MIN .28f
@@ -179,19 +180,49 @@ void shady_fps_update_held_window(struct shady_server*s,float lw,float lh){
 		.5f-((float)t->scene_tree->node.y+th*.5f)/lh,
 		shady_spatial_toplevel_state(t)->z
 	};
-	/* Held windows use the same plugin-selected representation as rendering and
-	 * picking. Without an override, fall back to the normal thin window body. */
-	float representation_size[3] = {0.f, 0.f, 0.f};
+	/* Held windows resolve the same provider model/collision contract used by
+	 * rendering, picking and free physics. Preserve callback offsets while the
+	 * compositor moves the underlying window center toward the hold target. */
 	float half[3] = {tw/lh*.5f, th/lh*.5f, .006f};
-	if (shady_toplevel_box_representation(t, representation_size, NULL)) {
-		half[0] = representation_size[0] * .5f;
-		half[1] = representation_size[1] * .5f;
-		half[2] = representation_size[2] * .5f;
+	float model_offset[3] = {0.f, 0.f, 0.f};
+	float collision_offset[3] = {0.f, 0.f, 0.f};
+	struct shady_representation_context representation_context = {
+		.struct_size = sizeof(representation_context),
+		.logical_width = lw, .logical_height = lh,
+		.window_width = tw, .window_height = th,
+		.center_x = current[0], .center_y = current[1], .center_z = current[2],
+		.tilt_x = shady_window_motion_state_for_const(t)->tilt_x,
+		.tilt_y = shady_window_motion_state_for_const(t)->tilt_y,
+		.first_person = true, .folded = true, .held = true,
+		.focused = !wl_list_empty(&s->toplevels) && s->toplevels.next == &t->link,
+	};
+	struct shady_representation_model representation_model;
+	if (shady_toplevel_representation_model(t, &representation_context,
+			&representation_model)) {
+		struct shady_collision_box collision;
+		shady_toplevel_representation_collision(t, &representation_context,
+			&representation_model, &collision);
+		half[0] = collision.half[0]; half[1] = collision.half[1];
+		half[2] = collision.half[2];
+		model_offset[0] = representation_model.center_x - current[0];
+		model_offset[1] = representation_model.center_y - current[1];
+		model_offset[2] = representation_model.center_z - current[2];
+		collision_offset[0] = collision.center[0] - representation_model.center_x;
+		collision_offset[1] = collision.center[1] - representation_model.center_y;
+		collision_offset[2] = collision.center[2] - representation_model.center_z;
+		current[0] = collision.center[0]; current[1] = collision.center[1];
+		current[2] = collision.center[2];
+		target[0] += model_offset[0] + collision_offset[0];
+		target[1] += model_offset[1] + collision_offset[1];
+		target[2] += model_offset[2] + collision_offset[2];
 	}
 	shady_physics_move_box(&shady_spatial_state(s)->runtime.world,current,target,half);
-	int x=(int)(current[0]*lh+lw*.5f-tw*.5f);
-	int y=(int)((.5f-current[1])*lh-th*.5f);
-	wlr_scene_node_set_position(&t->scene_tree->node,x,y);shady_spatial_toplevel_state(t)->z=current[2];
+	float base_x=current[0]-collision_offset[0]-model_offset[0];
+	float base_y=current[1]-collision_offset[1]-model_offset[1];
+	float base_z=current[2]-collision_offset[2]-model_offset[2];
+	int x=(int)(base_x*lh+lw*.5f-tw*.5f);
+	int y=(int)((.5f-base_y)*lh-th*.5f);
+	wlr_scene_node_set_position(&t->scene_tree->node,x,y);shady_spatial_toplevel_state(t)->z=base_z;
 	/* Keep the visual representation axis-aligned while held so rendering and
 	 * collision/debug geometry cannot diverge as the camera rotates. */
 	shady_window_motion_reset(t);

@@ -57,6 +57,76 @@ struct shady_window_representation {
 	bool hide_titlebar;
 };
 
+struct shady_representation_context {
+	uint32_t struct_size;
+	float logical_width;
+	float logical_height;
+	float window_width;
+	float window_height;
+	float center_x;
+	float center_y;
+	float center_z;
+	float tilt_x;
+	float tilt_y;
+	bool first_person;
+	bool folded;
+	bool held;
+	bool focused;
+};
+
+struct shady_representation_model {
+	uint32_t struct_size;
+	float center_x;
+	float center_y;
+	float center_z;
+	float width;
+	float height;
+	float depth;
+	float tilt_x;
+	float tilt_y;
+	bool hide_titlebar;
+};
+
+struct shady_collision_box {
+	uint32_t struct_size;
+	float center[3];
+	float half[3];
+};
+
+typedef bool (*shady_representation_state_init_callback)(
+	shady_host host, shady_window window, void *state, void *user_data);
+
+typedef void (*shady_representation_state_destroy_callback)(
+	shady_host host, shady_window window, void *state, void *user_data);
+
+typedef bool (*shady_representation_update_callback)(
+	shady_host host, shady_window window, float dt,
+	void *state, void *user_data);
+
+typedef bool (*shady_representation_model_callback)(
+	shady_host host, shady_window window,
+	const struct shady_representation_context *context,
+	struct shady_representation_model *model,
+	void *state, void *user_data);
+
+typedef bool (*shady_representation_collision_callback)(
+	shady_host host, shady_window window,
+	const struct shady_representation_context *context,
+	struct shady_collision_box *box,
+	void *state, void *user_data);
+
+struct shady_window_representation_provider {
+	uint32_t struct_size;
+	struct shady_window_representation base;
+	size_t state_size;
+	shady_representation_state_init_callback state_init;
+	shady_representation_state_destroy_callback state_destroy;
+	shady_representation_update_callback update;
+	shady_representation_model_callback model;
+	shady_representation_collision_callback collision;
+	void *user_data;
+};
+
 enum shady_render_stage {
 	SHADY_RENDER_STAGE_AFTER_BACKGROUND = 0,
 	SHADY_RENDER_STAGE_BEFORE_WINDOWS = 1,
@@ -207,6 +277,20 @@ struct shady_plugin_api_v1 {
 	bool (*window_reset_representation)(shady_host host, shady_window window);
 	bool (*window_representation)(shady_window window,
 		struct shady_window_representation *representation, bool *overridden);
+
+	/* Dynamic representation provider. The base field is the validated fallback
+	 * shape. model may change the visible box transform per frame; collision may
+	 * override the authoritative axis-aligned collision box. Providers are
+	 * cleared automatically when their owning plugin unloads. */
+	bool (*window_set_representation_provider)(shady_host host,
+		shady_window window,
+		const struct shady_window_representation_provider *provider);
+	bool (*window_reset_representation_provider)(shady_host host,
+		shady_window window,
+		const struct shady_window_representation_provider *provider);
+	void *(*window_representation_state)(shady_host host, shady_window window,
+		const struct shady_window_representation_provider *provider,
+		size_t *state_size);
 };
 
 typedef const struct shady_module *(*shady_plugin_entry_v1_fn)(

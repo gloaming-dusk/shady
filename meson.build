@@ -265,6 +265,12 @@ shared_module('shady-plugin-fps-squash',
   build_by_default: true,
   install: false)
 
+shared_module('shady-plugin-fps-jelly',
+  'examples/plugins/fps_jelly.c',
+  include_directories: include_directories('include'),
+  build_by_default: true,
+  install: false)
+
 shared_module('shady-plugin-focus-depth',
   'examples/plugins/focus_depth.c',
   include_directories: include_directories('include'),

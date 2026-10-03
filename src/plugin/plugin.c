@@ -29,6 +29,7 @@
 #define OUTPUT(o) ((struct shady_output *)(o))
 #define SEAT(s) ((struct wlr_seat *)(s))
 #define MODULE(m) ((const struct shady_module *)(m))
+#define SHADY_MAX_REPRESENTATION_STATE (1024u * 1024u)
 
 static void host_log(enum shady_plugin_log_level level, const char *message) {
 	enum wlr_log_importance importance = WLR_INFO;
@@ -504,6 +505,158 @@ static void *plugin_owner_from_address(void *address) {
 	return address && dladdr(address, &info) != 0 ? info.dli_fbase : NULL;
 }
 
+static bool plugin_callback_owned_by(void *owner, void *callback) {
+	return owner && callback && plugin_owner_from_address(callback) == owner;
+}
+
+static bool plugin_representation_provider_callbacks_valid(
+		void *owner, const struct shady_window_representation_provider *provider) {
+	if (!owner || !provider) return false;
+	if (provider->state_init &&
+			!plugin_callback_owned_by(owner, (void *)provider->state_init)) return false;
+	if (provider->state_destroy &&
+			!plugin_callback_owned_by(owner, (void *)provider->state_destroy)) return false;
+	if (provider->update &&
+			!plugin_callback_owned_by(owner, (void *)provider->update)) return false;
+	if (provider->model &&
+			!plugin_callback_owned_by(owner, (void *)provider->model)) return false;
+	if (provider->collision &&
+			!plugin_callback_owned_by(owner, (void *)provider->collision)) return false;
+	return true;
+}
+
+static void plugin_representation_provider_detach(struct shady_toplevel *toplevel) {
+	if (!toplevel || !toplevel->plugin_representation_provider_active) return;
+	struct shady_window_representation_provider provider =
+		toplevel->plugin_representation_provider;
+	void *owner = toplevel->plugin_representation_provider_owner;
+	void *state = toplevel->plugin_representation_state;
+	if (provider.state_destroy &&
+			plugin_callback_owned_by(owner, (void *)provider.state_destroy)) {
+		provider.state_destroy((shady_host)toplevel->server, (shady_window)toplevel,
+			state, provider.user_data);
+	}
+	free(state);
+	memset(&toplevel->plugin_representation_provider, 0,
+		sizeof(toplevel->plugin_representation_provider));
+	toplevel->plugin_representation_provider_active = false;
+	toplevel->plugin_representation_provider_anchor = NULL;
+	toplevel->plugin_representation_provider_owner = NULL;
+	toplevel->plugin_representation_state = NULL;
+	toplevel->plugin_representation_state_size = 0;
+}
+
+void shady_plugin_representation_cleanup_owner(struct shady_server *server, void *owner) {
+	if (!server || !owner) return;
+	struct shady_toplevel *toplevel;
+	wl_list_for_each(toplevel, &server->all_toplevels, all_link) {
+		if (toplevel->plugin_representation_provider_owner == owner)
+			plugin_representation_provider_detach(toplevel);
+	}
+}
+
+void shady_plugin_window_cleanup(struct shady_toplevel *toplevel) {
+	plugin_representation_provider_detach(toplevel);
+}
+
+void shady_plugin_representation_tick(struct shady_server *server, float dt) {
+	if (!server || dt <= 0.f) return;
+	bool needs_render = false;
+	struct shady_toplevel *toplevel;
+	wl_list_for_each(toplevel, &server->all_toplevels, all_link) {
+		if (!toplevel->mapped || !toplevel->plugin_representation_provider_active)
+			continue;
+		shady_representation_update_callback callback =
+			toplevel->plugin_representation_provider.update;
+		if (!callback || !plugin_callback_owned_by(
+				toplevel->plugin_representation_provider_owner, (void *)callback))
+			continue;
+		if (callback((shady_host)server, (shady_window)toplevel, dt,
+				toplevel->plugin_representation_state,
+				toplevel->plugin_representation_provider.user_data))
+			needs_render = true;
+	}
+	if (needs_render && server->renderer)
+		shady_render_schedule_all_outputs(server);
+}
+
+static void plugin_cleanup_owner_resources(struct shady_server *server, void *owner) {
+	shady_plugin_representation_cleanup_owner(server, owner);
+	shady_render_plugin_cleanup_owner(server, owner);
+}
+
+bool shady_toplevel_representation_base(const struct shady_toplevel *toplevel,
+		struct shady_window_representation *representation) {
+	if (!toplevel || !representation) return false;
+	if (toplevel->plugin_representation_provider_active) {
+		*representation = toplevel->plugin_representation_provider.base;
+		return representation->kind == SHADY_WINDOW_REPRESENTATION_BOX;
+	}
+	if (!toplevel->plugin_representation_override) return false;
+	*representation = toplevel->plugin_representation;
+	return representation->kind == SHADY_WINDOW_REPRESENTATION_BOX;
+}
+
+bool shady_toplevel_representation_model(const struct shady_toplevel *toplevel,
+		const struct shady_representation_context *context,
+		struct shady_representation_model *model) {
+	if (!toplevel || !context || !model) return false;
+	struct shady_window_representation base;
+	if (!shady_toplevel_representation_base(toplevel, &base)) return false;
+	*model = (struct shady_representation_model){
+		.struct_size = sizeof(*model),
+		.center_x = context->center_x,
+		.center_y = context->center_y,
+		.center_z = context->center_z,
+		.width = base.width,
+		.height = base.height,
+		.depth = base.depth,
+		.tilt_x = context->tilt_x,
+		.tilt_y = context->tilt_y,
+		.hide_titlebar = base.hide_titlebar,
+	};
+	shady_representation_model_callback callback =
+		toplevel->plugin_representation_provider.model;
+	if (toplevel->plugin_representation_provider_active && callback &&
+			plugin_callback_owned_by(toplevel->plugin_representation_provider_owner,
+				(void *)callback)) {
+		struct shady_representation_model custom = *model;
+		if (callback((shady_host)toplevel->server, (shady_window)toplevel,
+				context, &custom, toplevel->plugin_representation_state,
+				toplevel->plugin_representation_provider.user_data) &&
+				custom.struct_size >= sizeof(custom) && custom.width > 0.f &&
+				custom.height > 0.f && custom.depth > 0.f)
+			*model = custom;
+	}
+	return true;
+}
+
+bool shady_toplevel_representation_collision(const struct shady_toplevel *toplevel,
+		const struct shady_representation_context *context,
+		const struct shady_representation_model *model,
+		struct shady_collision_box *box) {
+	if (!toplevel || !context || !model || !box) return false;
+	*box = (struct shady_collision_box){
+		.struct_size = sizeof(*box),
+		.center = {model->center_x, model->center_y, model->center_z},
+		.half = {model->width * .5f, model->height * .5f, model->depth * .5f},
+	};
+	shady_representation_collision_callback callback =
+		toplevel->plugin_representation_provider.collision;
+	if (toplevel->plugin_representation_provider_active && callback &&
+			plugin_callback_owned_by(toplevel->plugin_representation_provider_owner,
+				(void *)callback)) {
+		struct shady_collision_box custom = *box;
+		if (callback((shady_host)toplevel->server, (shady_window)toplevel,
+				context, &custom, toplevel->plugin_representation_state,
+				toplevel->plugin_representation_provider.user_data) &&
+				custom.struct_size >= sizeof(custom) && custom.half[0] > 0.f &&
+				custom.half[1] > 0.f && custom.half[2] > 0.f)
+			*box = custom;
+	}
+	return true;
+}
+
 static shady_shader_program host_shader_program_create(shady_host host,
 		const char *vertex_path, const char *fragment_path) {
 	return shady_render_plugin_shader_create(HOST(host), plugin_owner_from_address(__builtin_return_address(0)),
@@ -596,6 +749,11 @@ static bool host_window_set_representation(shady_host host, shady_window window,
 	void *owner = plugin_owner_from_address(__builtin_return_address(0));
 	if (!owner) return false;
 	struct shady_toplevel *toplevel = WINDOW(window);
+	if (toplevel->plugin_representation_provider_active &&
+			toplevel->plugin_representation_provider_owner != owner)
+		return false;
+	if (toplevel->plugin_representation_provider_owner == owner)
+		plugin_representation_provider_detach(toplevel);
 	toplevel->plugin_representation = *representation;
 	toplevel->plugin_representation_override = true;
 	toplevel->plugin_representation_owner = owner;
@@ -618,18 +776,99 @@ static bool host_window_reset_representation(shady_host host, shady_window windo
 	return true;
 }
 
+static bool host_window_set_representation_provider(shady_host host,
+		shady_window window,
+		const struct shady_window_representation_provider *provider) {
+	if (!host_window_valid(host, window) || !provider ||
+			provider->struct_size < sizeof(*provider) ||
+			provider->base.struct_size < sizeof(provider->base) ||
+			provider->base.kind != SHADY_WINDOW_REPRESENTATION_BOX ||
+			provider->base.width <= 0.f || provider->base.height <= 0.f ||
+			provider->base.depth <= 0.f)
+		return false;
+	void *owner = plugin_owner_from_address((void *)provider);
+	if (!owner || provider->state_size > SHADY_MAX_REPRESENTATION_STATE ||
+			!plugin_representation_provider_callbacks_valid(owner, provider))
+		return false;
+	struct shady_toplevel *toplevel = WINDOW(window);
+	if (toplevel->plugin_representation_override &&
+			toplevel->plugin_representation_owner != owner)
+		return false;
+	if (toplevel->plugin_representation_provider_active &&
+			toplevel->plugin_representation_provider_owner != owner)
+		return false;
+	void *state = provider->state_size > 0 ? calloc(1, provider->state_size) : NULL;
+	if (provider->state_size > 0 && !state) return false;
+	if (provider->state_init &&
+			!provider->state_init(host, window, state, provider->user_data)) {
+		free(state);
+		return false;
+	}
+	if (toplevel->plugin_representation_provider_active)
+		plugin_representation_provider_detach(toplevel);
+	if (toplevel->plugin_representation_owner == owner) {
+		memset(&toplevel->plugin_representation, 0,
+			sizeof(toplevel->plugin_representation));
+		toplevel->plugin_representation_override = false;
+		toplevel->plugin_representation_owner = NULL;
+	}
+	toplevel->plugin_representation_provider = *provider;
+	toplevel->plugin_representation_provider_active = true;
+	toplevel->plugin_representation_provider_anchor = provider;
+	toplevel->plugin_representation_provider_owner = owner;
+	toplevel->plugin_representation_state = state;
+	toplevel->plugin_representation_state_size = provider->state_size;
+	if (HOST(host)->renderer) shady_render_schedule_all_outputs(HOST(host));
+	return true;
+}
+
+static bool host_window_reset_representation_provider(shady_host host,
+		shady_window window,
+		const struct shady_window_representation_provider *provider) {
+	if (!host_window_valid(host, window) || !provider) return false;
+	void *owner = plugin_owner_from_address((void *)provider);
+	if (!owner) return false;
+	struct shady_toplevel *toplevel = WINDOW(window);
+	if (!toplevel->plugin_representation_provider_active ||
+			toplevel->plugin_representation_provider_owner != owner ||
+			toplevel->plugin_representation_provider_anchor != provider)
+		return false;
+	plugin_representation_provider_detach(toplevel);
+	if (HOST(host)->renderer) shady_render_schedule_all_outputs(HOST(host));
+	return true;
+}
+
+static void *host_window_representation_state(shady_host host, shady_window window,
+		const struct shady_window_representation_provider *provider,
+		size_t *state_size) {
+	if (state_size) *state_size = 0;
+	if (!host_window_valid(host, window) || !provider) return NULL;
+	void *owner = plugin_owner_from_address((void *)provider);
+	if (!owner) return NULL;
+	struct shady_toplevel *toplevel = WINDOW(window);
+	if (!toplevel->plugin_representation_provider_active ||
+			toplevel->plugin_representation_provider_owner != owner ||
+			toplevel->plugin_representation_provider_anchor != provider)
+		return NULL;
+	if (state_size) *state_size = toplevel->plugin_representation_state_size;
+	return toplevel->plugin_representation_state;
+}
+
 static bool host_window_representation(shady_window window,
 		struct shady_window_representation *representation, bool *overridden) {
 	struct shady_toplevel *toplevel = WINDOW(window);
 	if (!toplevel || !representation) return false;
-	if (toplevel->plugin_representation_override)
+	if (toplevel->plugin_representation_provider_active)
+		*representation = toplevel->plugin_representation_provider.base;
+	else if (toplevel->plugin_representation_override)
 		*representation = toplevel->plugin_representation;
 	else
 		*representation = (struct shady_window_representation){
 			.struct_size = sizeof(*representation),
 			.kind = SHADY_WINDOW_REPRESENTATION_DEFAULT,
 		};
-	if (overridden) *overridden = toplevel->plugin_representation_override;
+	if (overridden) *overridden = toplevel->plugin_representation_override ||
+		toplevel->plugin_representation_provider_active;
 	return true;
 }
 
@@ -708,6 +947,9 @@ static const struct shady_plugin_api_v1 plugin_api = {
 	.window_set_representation = host_window_set_representation,
 	.window_reset_representation = host_window_reset_representation,
 	.window_representation = host_window_representation,
+	.window_set_representation_provider = host_window_set_representation_provider,
+	.window_reset_representation_provider = host_window_reset_representation_provider,
+	.window_representation_state = host_window_representation_state,
 };
 
 static bool list_contains(const char *const *items, const char *value) {
@@ -779,7 +1021,7 @@ static bool plugin_open(struct shady_server *server, const char *path,
 				!descriptor->module || !descriptor->module->name) {
 			wlr_log(WLR_ERROR, "plugin: %s rejected ABI v%u", path, SHADY_PLUGIN_ABI_V2);
 			shady_event_unsubscribe_owner(server, base);
-			shady_render_plugin_cleanup_owner(server, base);
+			plugin_cleanup_owner_resources(server, base);
 			dlclose(handle);
 			return false;
 		}
@@ -808,7 +1050,7 @@ static bool plugin_open(struct shady_server *server, const char *path,
 	if (!module || !module->name) {
 		wlr_log(WLR_ERROR, "plugin: %s rejected ABI v%u", path, SHADY_PLUGIN_ABI_V1);
 		shady_event_unsubscribe_owner(server, base);
-		shady_render_plugin_cleanup_owner(server, base);
+		plugin_cleanup_owner_resources(server, base);
 		dlclose(handle);
 		return false;
 	}
@@ -1023,7 +1265,7 @@ bool shady_plugin_load(struct shady_server *server, const char *path) {
 		free(name_copy);
 		wlr_log(WLR_ERROR, "plugin: failed to retain metadata for %s", module->name);
 		shady_event_unsubscribe_owner(server, base);
-		shady_render_plugin_cleanup_owner(server, base);
+		plugin_cleanup_owner_resources(server, base);
 		dlclose(handle);
 		return false;
 	}
@@ -1032,7 +1274,7 @@ bool shady_plugin_load(struct shady_server *server, const char *path) {
 		free(path_copy);
 		free(name_copy);
 		shady_event_unsubscribe_owner(server, base);
-		shady_render_plugin_cleanup_owner(server, base);
+		plugin_cleanup_owner_resources(server, base);
 		dlclose(handle);
 		return false;
 	}
@@ -1072,7 +1314,7 @@ static bool plugin_unload_now(struct shady_server *server, const char *name) {
 		manager->active[index] = false;
 	}
 	shady_event_unsubscribe_owner(server, manager->plugin_base[index]);
-	shady_render_plugin_cleanup_owner(server, manager->plugin_base[index]);
+	plugin_cleanup_owner_resources(server, manager->plugin_base[index]);
 	dlclose(manager->plugin_handle[index]);
 	manager->plugin_handle[index] = NULL;
 	manager->plugin_base[index] = NULL;
@@ -1140,7 +1382,7 @@ static bool plugin_reload_now(struct shady_server *server, const char *name) {
 			!plugin_provides_compatible(old_module, new_module)) {
 		wlr_log(WLR_ERROR, "plugin: reload contract rejected for %s", name);
 		shady_event_unsubscribe_owner(server, new_base);
-		shady_render_plugin_cleanup_owner(server, new_base);
+		plugin_cleanup_owner_resources(server, new_base);
 		dlclose(new_handle);
 		return false;
 	}
@@ -1150,21 +1392,21 @@ static bool plugin_reload_now(struct shady_server *server, const char *name) {
 			!old_v2 || !new_v2)) {
 		wlr_log(WLR_ERROR, "plugin: stateful reload requires ABI v2 on both sides: %s", name);
 		shady_event_unsubscribe_owner(server, new_base);
-		shady_render_plugin_cleanup_owner(server, new_base);
+		plugin_cleanup_owner_resources(server, new_base);
 		dlclose(new_handle);
 		return false;
 	}
 	if (was_active && old_module->state_size > 0 && new_module->state_size == 0) {
 		wlr_log(WLR_ERROR, "plugin: %s cannot drop module state during hot reload", name);
 		shady_event_unsubscribe_owner(server, new_base);
-		shady_render_plugin_cleanup_owner(server, new_base);
+		plugin_cleanup_owner_resources(server, new_base);
 		dlclose(new_handle);
 		return false;
 	}
 	if (was_active && old_module->toplevel_state_size > 0 && new_module->toplevel_state_size == 0) {
 		wlr_log(WLR_ERROR, "plugin: %s cannot drop window state during hot reload", name);
 		shady_event_unsubscribe_owner(server, new_base);
-		shady_render_plugin_cleanup_owner(server, new_base);
+		plugin_cleanup_owner_resources(server, new_base);
 		dlclose(new_handle);
 		return false;
 	}
@@ -1172,7 +1414,7 @@ static bool plugin_reload_now(struct shady_server *server, const char *name) {
 	struct plugin_reload_snapshot snapshot;
 	if (!plugin_snapshot_capture(server, index, &snapshot)) {
 		shady_event_unsubscribe_owner(server, new_base);
-		shady_render_plugin_cleanup_owner(server, new_base);
+		plugin_cleanup_owner_resources(server, new_base);
 		dlclose(new_handle);
 		return false;
 	}
@@ -1185,7 +1427,7 @@ static bool plugin_reload_now(struct shady_server *server, const char *name) {
 	if (window_count > 0 && !swaps) {
 		plugin_snapshot_finish(&snapshot);
 		shady_event_unsubscribe_owner(server, new_base);
-		shady_render_plugin_cleanup_owner(server, new_base);
+		plugin_cleanup_owner_resources(server, new_base);
 		dlclose(new_handle);
 		return false;
 	}
@@ -1195,7 +1437,7 @@ static bool plugin_reload_now(struct shady_server *server, const char *name) {
 		free(swaps);
 		plugin_snapshot_finish(&snapshot);
 		shady_event_unsubscribe_owner(server, new_base);
-		shady_render_plugin_cleanup_owner(server, new_base);
+		plugin_cleanup_owner_resources(server, new_base);
 		dlclose(new_handle);
 		return false;
 	}
@@ -1211,7 +1453,7 @@ static bool plugin_reload_now(struct shady_server *server, const char *name) {
 				free(swaps);
 				plugin_snapshot_finish(&snapshot);
 				shady_event_unsubscribe_owner(server, new_base);
-				shady_render_plugin_cleanup_owner(server, new_base);
+				plugin_cleanup_owner_resources(server, new_base);
 				dlclose(new_handle);
 				return false;
 			}
@@ -1251,7 +1493,7 @@ static bool plugin_reload_now(struct shady_server *server, const char *name) {
 		if (manager->active[index] && new_module->destroy) new_module->destroy(server);
 		manager->active[index] = false;
 		shady_event_unsubscribe_owner(server, new_base);
-		shady_render_plugin_cleanup_owner(server, new_base);
+		plugin_cleanup_owner_resources(server, new_base);
 		dlclose(new_handle);
 		free(manager->state[index]);
 		for (size_t i = 0; i < window_count; i++) free(swaps[i].window->module_state[index]);
@@ -1283,7 +1525,7 @@ static bool plugin_reload_now(struct shady_server *server, const char *name) {
 	}
 
 	shady_event_unsubscribe_owner(server, old_base);
-	shady_render_plugin_cleanup_owner(server, old_base);
+	plugin_cleanup_owner_resources(server, old_base);
 	dlclose(old_handle);
 	free(old_module_state);
 	for (size_t i = 0; i < window_count; i++) free(swaps[i].old_state);

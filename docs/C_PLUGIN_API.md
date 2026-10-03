@@ -205,9 +205,9 @@ api->window_set_representation(host, window, &rep);
 
 The representation is used while the window is folded in first-person mode. Rendering,
 ray picking, debug geometry, held-window movement and physics collision all consume the
-same dimensions.
+same representation contract.
 
-Available functions:
+For a static shape use:
 
 - `window_set_representation`
 - `window_reset_representation`
@@ -217,13 +217,135 @@ Available functions:
 one possible box; a plugin can use a flattened or stretched box without changing FPS
 input code.
 
-The repository includes two examples:
+### Dynamic provider API
 
-- `examples/plugins/fps_cube.c` — 0.16 × 0.16 × 0.16 cube.
-- `examples/plugins/fps_squash.c` — flattened 0.24 × 0.065 × 0.13 body.
+For state-dependent geometry or custom collision policy, install a provider:
+
+```c
+static bool model(shady_host host, shady_window window,
+        const struct shady_representation_context *ctx,
+        struct shady_representation_model *model,
+        void *state, void *data) {
+    if (ctx->held) {
+        model->width *= 1.1f;
+        model->height *= 0.8f;
+    }
+    return true;
+}
+
+static const struct shady_window_representation_provider provider = {
+    .struct_size = sizeof(provider),
+    .base = {
+        .struct_size = sizeof(provider.base),
+        .kind = SHADY_WINDOW_REPRESENTATION_BOX,
+        .width = 0.24f,
+        .height = 0.065f,
+        .depth = 0.13f,
+        .hide_titlebar = true,
+    },
+    .model = model,
+};
+
+api->window_set_representation_provider(host, window, &provider);
+```
+
+`shady_representation_context` supplies logical output size, client size, the default
+world-space center and tilt, plus interaction state (`first_person`, `folded`, `held`,
+`focused`). The callback must not retain pointers to the context or output structures.
+
+The model callback receives a valid base-derived model first. It may modify center,
+width/height/depth, tilt, and titlebar visibility. Returning `false`, returning invalid
+sizes, or omitting the callback falls back to the provider's base representation.
+
+A collision callback can override the axis-aligned physical body:
+
+```c
+static bool collision(shady_host host, shady_window window,
+        const struct shady_representation_context *ctx,
+        struct shady_collision_box *box,
+        void *state, void *data) {
+    box->half[1] *= 0.9f;
+    return true;
+}
+```
+
+If no collision callback is supplied, Shady derives the collision box directly from
+the resolved model. Provider collision is authoritative for free physics, held-window
+sweeps and collision debug rendering. Renderer and ray picking use the resolved model.
+
+### Per-window provider state and animation
+
+Providers can ask Shady to allocate zeroed state independently for every window:
+
+```c
+struct spring_state {
+    float value;
+    float velocity;
+};
+
+static bool state_init(shady_host host, shady_window window,
+        void *state, void *data) {
+    struct spring_state *s = state;
+    s->value = 0.2f;
+    return true;
+}
+
+static bool update(shady_host host, shady_window window, float dt,
+        void *state, void *data) {
+    struct spring_state *s = state;
+    s->velocity += (0.0f - s->value) * 50.0f * dt;
+    s->velocity *= 0.85f;
+    s->value += s->velocity * dt;
+    return true; /* request another frame */
+}
+
+static const struct shady_window_representation_provider provider = {
+    .struct_size = sizeof(provider),
+    .base = { /* ... */ },
+    .state_size = sizeof(struct spring_state),
+    .state_init = state_init,
+    .update = update,
+    .model = model,
+};
+```
+
+`state_size` may be zero. When non-zero, Shady allocates and zeroes the memory before
+`state_init`. `state_init` returning `false` rejects the provider attachment. Optional
+`state_destroy` runs before the window disappears, the provider is reset/replaced, or
+the owning plugin DSO is unloaded/reloaded, after which the host frees the state.
+
+`update(dt)` is called at most once per compositor simulation tick for each mapped
+window. Returning `true` asks Shady to schedule another frame; returning `false` allows
+the compositor to become idle when nothing else is animating. Geometry and collision
+callbacks may read or modify the same state, but time integration belongs in `update`
+because model/picking/collision resolution can happen multiple times per frame.
+
+An event callback can access the provider's host-owned state with
+`window_representation_state(host, window, &provider, &size)`. The same provider
+descriptor pointer used for installation is required.
+
+Provider callbacks run synchronously on Shady's compositor thread. They should be fast,
+non-blocking, and must not call OpenGL directly. Render shaders remain a separate API.
+The provider descriptor itself is also the ownership anchor: keep it in plugin-owned
+static/storage for as long as it is installed, and pass the same descriptor pointer to
+`window_reset_representation_provider`. Shady verifies that the descriptor and callbacks
+belong to the same loaded DSO. Provider callbacks and user data are detached before the
+owning shared object is unloaded or replaced during hot reload.
+
+Only one plugin may own a representation/provider for a window at a time. Replacing a
+static representation with a provider (or vice versa) is allowed for the same plugin;
+a different plugin's active representation is not overwritten.
+
+The repository includes three provider examples:
+
+- `examples/plugins/fps_cube.c` — fixed 0.16 × 0.16 × 0.16 model with an explicit collision callback.
+- `examples/plugins/fps_squash.c` — flattened body with host-owned per-window state and dynamic model/update callbacks.
+- `examples/plugins/fps_jelly.c` — spring state integrated in `update(dt)` and used to deform both the visible model and its derived collision body.
 
 This API is plugin-owned. The FPS module itself no longer decides that folded windows
-must be cubes.
+must be cubes. The current provider contract intentionally remains box-based; arbitrary
+mesh/deformable representations can be added later without changing FPS interaction
+semantics.
 
 ## Per-window shader replacement
 

@@ -171,16 +171,34 @@ struct shady_toplevel *shady_toplevel_at_3d(struct shady_server *server,
 
 		float model[16];
 		float client_fraction = 1.f;
-		float representation_size[3] = {0.f, 0.f, 0.f};
-		bool folded_representation = shady_spatial_state(server)->runtime.camera.first_person &&
-			!shady_fps_toplevel_state_const(toplevel)->expanded &&
-			shady_toplevel_box_representation(toplevel, representation_size, NULL);
+		float cx=(layout_x+tw*.5f-logical_w*.5f)/logical_h;
+		float cy=.5f-(layout_y+th*.5f)/logical_h;
+		struct shady_representation_context representation_context = {
+			.struct_size = sizeof(representation_context),
+			.logical_width = logical_w, .logical_height = logical_h,
+			.window_width = tw, .window_height = th,
+			.center_x = cx, .center_y = cy,
+			.center_z = shady_spatial_toplevel_state(toplevel)->z,
+			.tilt_x = shady_window_motion_state_for_const(toplevel)->tilt_x,
+			.tilt_y = shady_window_motion_state_for_const(toplevel)->tilt_y,
+			.first_person = shady_spatial_state(server)->runtime.camera.first_person,
+			.folded = shady_spatial_state(server)->runtime.camera.first_person &&
+				!shady_fps_toplevel_state_const(toplevel)->expanded,
+			.held = shady_fps_is_holding(server, toplevel),
+			.focused = !wl_list_empty(&server->toplevels) &&
+				server->toplevels.next == &toplevel->link,
+		};
+		struct shady_representation_model representation_model;
+		bool folded_representation = representation_context.folded &&
+			shady_toplevel_representation_model(toplevel,
+				&representation_context, &representation_model);
 		if (folded_representation) {
-			float cx=(layout_x+tw*.5f-logical_w*.5f)/logical_h,cy=.5f-(layout_y+th*.5f)/logical_h;
-			shady_window_box_model(model,cx,cy,shady_spatial_toplevel_state(toplevel)->z,
-				representation_size[0], representation_size[1], representation_size[2],
-				shady_window_motion_state_for_const(toplevel)->tilt_x,
-				shady_window_motion_state_for_const(toplevel)->tilt_y);
+			shady_window_box_model(model,
+				representation_model.center_x, representation_model.center_y,
+				representation_model.center_z,
+				representation_model.width, representation_model.height,
+				representation_model.depth,
+				representation_model.tilt_x, representation_model.tilt_y);
 		}else{
 			float title_h = (!toplevel->fullscreen && server->config.window_titlebar &&
 				toplevel->titlebar_height > 0) ? (float)toplevel->titlebar_height : 0.f;
@@ -273,20 +291,36 @@ struct shady_toplevel *shady_toplevel_at_camera_center_hit_output(
 			if (tw <= 0.f || th <= 0.f) continue;
 
 			float model[16];
-			float representation_size[3] = {0.f, 0.f, 0.f};
-			bool folded_representation = shady_spatial_state(server)->runtime.camera.first_person &&
-				!shady_fps_toplevel_state_const(toplevel)->expanded &&
-				shady_toplevel_box_representation(toplevel, representation_size, NULL);
+			float lx = (float)(toplevel->scene_tree->node.x + ox);
+			float ly = (float)(toplevel->scene_tree->node.y + oy);
+			float cx = (lx + tw * .5f - logical_w * .5f) / logical_h;
+			float cy = .5f - (ly + th * .5f) / logical_h;
+			struct shady_representation_context representation_context = {
+				.struct_size = sizeof(representation_context),
+				.logical_width = logical_w, .logical_height = logical_h,
+				.window_width = tw, .window_height = th,
+				.center_x = cx, .center_y = cy,
+				.center_z = shady_spatial_toplevel_state(toplevel)->z,
+				.tilt_x = shady_window_motion_state_for_const(toplevel)->tilt_x,
+				.tilt_y = shady_window_motion_state_for_const(toplevel)->tilt_y,
+				.first_person = shady_spatial_state(server)->runtime.camera.first_person,
+				.folded = shady_spatial_state(server)->runtime.camera.first_person &&
+					!shady_fps_toplevel_state_const(toplevel)->expanded,
+				.held = shady_fps_is_holding(server, toplevel),
+				.focused = !wl_list_empty(&server->toplevels) &&
+					server->toplevels.next == &toplevel->link,
+			};
+			struct shady_representation_model representation_model;
+			bool folded_representation = representation_context.folded &&
+				shady_toplevel_representation_model(toplevel,
+					&representation_context, &representation_model);
 			if (folded_representation) {
-				float lx = (float)(toplevel->scene_tree->node.x + ox);
-				float ly = (float)(toplevel->scene_tree->node.y + oy);
-				float cx = (lx + tw * .5f - logical_w * .5f) / logical_h;
-				float cy = .5f - (ly + th * .5f) / logical_h;
-				shady_window_box_model(model, cx, cy,
-					shady_spatial_toplevel_state(toplevel)->z,
-					representation_size[0], representation_size[1], representation_size[2],
-					shady_window_motion_state_for_const(toplevel)->tilt_x,
-					shady_window_motion_state_for_const(toplevel)->tilt_y);
+				shady_window_box_model(model,
+					representation_model.center_x, representation_model.center_y,
+					representation_model.center_z,
+					representation_model.width, representation_model.height,
+					representation_model.depth,
+					representation_model.tilt_x, representation_model.tilt_y);
 			} else {
 				shady_window_model(model,
 					(float)(toplevel->scene_tree->node.x + ox),

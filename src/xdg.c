@@ -14,6 +14,7 @@
 #include "shady.h"
 #include "module/module.h"
 #include "render/render.h"
+#include "plugin/plugin.h"
 #include "titlebar.h"
 
 static void set_scene_buffer_opacity(struct wlr_scene_buffer *buffer,
@@ -508,6 +509,7 @@ static void xdg_toplevel_destroy(struct wl_listener *listener, void *data) {
 	}
 	shady_event_emit_window(toplevel->server, SHADY_EVENT_WINDOW_DESTROYED, toplevel);
 	shady_modules_toplevel_destroy(toplevel);
+	shady_plugin_window_cleanup(toplevel);
 
 	/* Normally xdg-surface unmap runs before destroy and removes this node from
 	 * server->toplevels. Keep the destroy path safe even if that ordering is
