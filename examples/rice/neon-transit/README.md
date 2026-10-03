@@ -2,7 +2,7 @@
 
 A high-contrast Shady rice built around a near-black world, violet horizon, electric-cyan floor grid and a closer workstation-style camera.
 
-Compared with **Night Observatory**, Neon Transit deliberately keeps physics and wobble off by default. It is meant to feel like a sharp futuristic desktop first and a 3D playground second.
+Compared with **Night Observatory**, Neon Transit deliberately keeps physics and wobble off by default. It is meant to feel like a sharp futuristic desktop first and a 3D playground second. A native C `focus-depth` plugin keeps the focused window slightly forward in Z and smoothly pushes background windows into a depth stack.
 
 ## Run
 
@@ -41,6 +41,7 @@ Both launchers start `shady-shell` plus one terminal when no extra Shady argumen
 | Super + 0 | Reset camera |
 | Super + +/- | Zoom |
 | Super + Q | Close focused window |
+| Super + Shift + Escape | Quit Shady |
 
 ## Palette
 
@@ -50,4 +51,4 @@ Both launchers start `shady-shell` plus one terminal when no extra Shady argumen
 - window tint: `#F8F5FF`
 - shell accents remain cyan, which intentionally ties the standalone shell into the world palette.
 
-The floor has a stronger minor/major grid than Night Observatory and fades farther into depth. Application textures stay bright while Shady's spatial effect is present but restrained.
+The floor has a stronger minor/major grid than Night Observatory and fades farther into depth. Application textures stay bright while Shady's spatial effect is present but restrained. The `focus-depth` behavior lives in `examples/plugins/focus_depth.c` and uses the native plugin API (`focused_window`, `window_position`, `window_set_position`, event subscriptions, and module `tick`) rather than Lua animation code.

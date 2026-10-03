@@ -70,13 +70,24 @@ static shady_window host_window_at(shady_host host, size_t index) {
 static shady_window host_focused_window(shady_host host) {
 	struct shady_server *server = HOST(host);
 	struct wlr_surface *surface = server->seat->keyboard_state.focused_surface;
-	if (!surface) return NULL;
-	struct wlr_surface *root = wlr_surface_get_root_surface(surface);
-	struct wlr_xdg_toplevel *xdg = wlr_xdg_toplevel_try_from_wlr_surface(root);
-	if (!xdg) return NULL;
+	if (surface) {
+		struct wlr_surface *root = wlr_surface_get_root_surface(surface);
+		struct wlr_xdg_toplevel *xdg = wlr_xdg_toplevel_try_from_wlr_surface(root);
+		if (xdg) {
+			struct shady_toplevel *toplevel;
+			wl_list_for_each(toplevel, &server->all_toplevels, all_link) {
+				if (toplevel->xdg_toplevel == xdg) return (shady_window)toplevel;
+			}
+		}
+	}
+
+	/* Logical focus is tracked by server->toplevels even when no physical
+	 * keyboard exists (notably headless/spatial automation). */
 	struct shady_toplevel *toplevel;
-	wl_list_for_each(toplevel, &server->all_toplevels, all_link) {
-		if (toplevel->xdg_toplevel == xdg) return (shady_window)toplevel;
+	wl_list_for_each(toplevel, &server->toplevels, link) {
+		if (toplevel->mapped && toplevel->scene_tree &&
+				toplevel->scene_tree->node.enabled)
+			return (shady_window)toplevel;
 	}
 	return NULL;
 }

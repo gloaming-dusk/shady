@@ -92,6 +92,100 @@ static void test_center_ray(void) {
 		fail("center ray follows camera forward");
 }
 
+static void test_wobble_hit(void) {
+	float model[16];
+	shady_mat4_identity(model);
+	struct shady_ray ray = {
+		.origin = {0.5f, 0.5f, 1.0f},
+		.dir = {0.0f, 0.0f, -1.0f},
+	};
+	float t = 0.f, u = 0.f, v = 0.f;
+	if (!shady_ray_wobble_hit(&ray, model, 0.18f, -0.12f, &t, &u, &v)) {
+		fail("wobble mesh center hit");
+		return;
+	}
+	if (!(t > 0.f)) fail("wobble hit positive distance");
+	if (u < 0.f || u > 1.f || v < 0.f || v > 1.f)
+		fail("wobble hit uv bounds");
+
+	ray.origin.x = 2.0f;
+	if (shady_ray_wobble_hit(&ray, model, 0.18f, -0.12f, &t, &u, &v))
+		fail("wobble mesh miss outside bounds");
+}
+
+static void test_window_shell_hit(void) {
+	float model[16];
+	shady_mat4_identity(model);
+	float t = 0.f, u = 0.f, v = 0.f;
+	bool front = false;
+
+	struct shady_ray front_ray = {
+		.origin = {0.5f, 0.5f, 1.0f},
+		.dir = {0.0f, 0.0f, -1.0f},
+	};
+	if (!shady_ray_window_shell_hit(&front_ray, model, 0.f, 0.f,
+			&t, &u, &v, &front)) {
+		fail("window shell front hit");
+	} else if (!front) {
+		fail("window shell front classified front");
+	}
+
+	struct shady_ray back_ray = {
+		.origin = {0.5f, 0.5f, -2.0f},
+		.dir = {0.0f, 0.0f, 1.0f},
+	};
+	if (!shady_ray_window_shell_hit(&back_ray, model, 0.f, 0.f,
+			&t, &u, &v, &front)) {
+		fail("window shell back hit");
+	} else if (front) {
+		fail("window shell back classified non-front");
+	}
+
+	struct shady_ray side_ray = {
+		.origin = {-1.0f, 0.5f, -0.25f},
+		.dir = {1.0f, 0.0f, 0.0f},
+	};
+	if (!shady_ray_window_shell_hit(&side_ray, model, 0.f, 0.f,
+			&t, &u, &v, &front)) {
+		fail("window shell side hit");
+	} else if (front) {
+		fail("window shell side classified non-front");
+	}
+
+	struct shady_ray miss = {
+		.origin = {2.0f, 2.0f, 1.0f},
+		.dir = {0.0f, 0.0f, -1.0f},
+	};
+	if (shady_ray_window_shell_hit(&miss, model, 0.f, 0.f,
+			&t, &u, &v, &front))
+		fail("window shell miss outside bounds");
+}
+
+static void test_transformed_shell_hit(void) {
+	float tmat[16], ry[16], model[16];
+	shady_mat4_translate(tmat, 0.4f, -0.2f, -0.7f);
+	shady_mat4_rotate_y(ry, 0.25f);
+	shady_mat4_multiply(model, tmat, ry);
+
+	/* Shoot through the transformed local center from well in front. */
+	float center[3];
+	mul_point(model, 0.5f, 0.5f, 0.0f, center);
+	struct shady_ray ray = {
+		.origin = {center[0], center[1], center[2] + 2.0f},
+		.dir = {0.0f, 0.0f, -1.0f},
+	};
+	float t = 0.f, u = 0.f, v = 0.f;
+	bool front = false;
+	if (!shady_ray_window_shell_hit(&ray, model, 0.08f, 0.03f,
+			&t, &u, &v, &front)) {
+		fail("transformed window shell hit");
+		return;
+	}
+	if (!(t > 0.f)) fail("transformed shell positive distance");
+	if (u < 0.f || u > 1.f || v < 0.f || v > 1.f)
+		fail("transformed shell uv bounds");
+}
+
 static void test_quad_hit(void) {
 	float model[16];
 	shady_mat4_identity(model);
@@ -118,6 +212,9 @@ int main(void) {
 	test_cube_center();
 	test_center_ray();
 	test_quad_hit();
+	test_wobble_hit();
+	test_window_shell_hit();
+	test_transformed_shell_hit();
 
 	if (failures) {
 		fprintf(stderr, "math3d: %d failure(s)\n", failures);

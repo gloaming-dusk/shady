@@ -197,6 +197,16 @@ submit/commit), and the reason any continuous frames were requested. The profile
 the 2D/pixman path so failures in basic desktop lifecycle handling are isolated
 from the spatial renderer and physics stack.
 
+### Spatial sanitizer regression suite
+
+The 3D stack has a separate GLES2/headless sanitizer suite. It covers matrix and ray math (including wobble and full window-shell hits), physics collision/sweeps, entering and leaving FPS mode with live windows, the native `focus-depth` plugin, and Neon Transit shutdown:
+
+```sh
+./tests/spatial-suite.sh
+```
+
+This suite uses an AddressSanitizer/UndefinedBehaviorSanitizer spatial build and software GLES2 so renderer/module regressions can be exercised without a physical display.
+
 For a more opinionated ricing demo, the repository includes **Night Observatory**:
 
 ```sh
@@ -212,6 +222,8 @@ nix develop
 ```
 
 It combines a Lua bootstrap config, runtime Lua events/keybindings, the spatial stack, and the hot-reloadable `orbit-layout` native plugin to arrange windows as a loose 3D constellation. The demo starts a terminal automatically when launched without extra arguments; `Super+Return` opens another terminal and `Super+D` opens an available launcher. See `examples/rice/night-observatory/README.md` for controls and details.
+
+A second rice, **Neon Transit**, demonstrates a different native-plugin approach: `focus-depth` leaves screen-space x/y placement alone but animates focused/background windows along Z using the C plugin API and module tick callback.
 
 Shady requires the **GLES2** renderer for its custom shaders. The compositor prints the allocated `WAYLAND_DISPLAY` so more clients can be launched from another terminal.
 

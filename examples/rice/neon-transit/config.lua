@@ -1,6 +1,8 @@
 -- Neon Transit
 -- A crisp, high-contrast Shady rice inspired by night trains, terminals and neon signage.
 
+local root = os.getenv("SHADY_ROOT") or "."
+
 shady.log("loading rice: Neon Transit")
 
 shady.set("spatial_mode", true)
@@ -39,6 +41,10 @@ shady.modules({
     ["scene-effects"] = true,
     ["lua"] = true,
 })
+
+-- Native C plugin: smooth focus-driven Z-depth without Lua animation logic.
+shady.plugin(os.getenv("SHADY_FOCUS_DEPTH_PLUGIN") or
+    (root .. "/build/libshady-plugin-focus-depth.so"))
 
 shady.bind("quit", "Super+Shift+Escape")
 shady.bind("cycle_windows", "Super+Tab")

@@ -243,6 +243,12 @@ shared_module('shady-plugin-orbit-layout',
   build_by_default: false,
   install: false)
 
+shared_module('shady-plugin-focus-depth',
+  'examples/plugins/focus_depth.c',
+  include_directories: include_directories('include'),
+  build_by_default: true,
+  install: false)
+
 module_resolver_test = executable('module-resolver-test',
   [
     'tests/module-resolver.c',
