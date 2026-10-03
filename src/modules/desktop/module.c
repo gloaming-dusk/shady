@@ -1,6 +1,7 @@
 #include "../../module/module.h"
 
 #include <wayland-server-core.h>
+#include <stdlib.h>
 #include <wlr/types/wlr_cursor.h>
 #include <wlr/types/wlr_cursor_shape_v1.h>
 #include <wlr/types/wlr_data_control_v1.h>
@@ -14,8 +15,10 @@
 #include <wlr/types/wlr_screencopy_v1.h>
 #include <wlr/types/wlr_session_lock_v1.h>
 #include <wlr/types/wlr_viewporter.h>
+#include <wlr/types/wlr_virtual_keyboard_v1.h>
 #include <wlr/types/wlr_xdg_activation_v1.h>
 #include <wlr/types/wlr_xdg_decoration_v1.h>
+#include <wlr/types/wlr_xdg_output_v1.h>
 
 #include "../../shady.h"
 #include "../../shell_protocol.h"
@@ -54,10 +57,64 @@ static void xdg_activation_request(struct wl_listener *listener, void *data) {
 	}
 }
 
+struct pending_virtual_keyboard {
+	struct wl_list link;
+	struct shady_desktop_state *state;
+	struct wlr_virtual_keyboard_v1 *virtual_keyboard;
+	struct wl_listener keymap;
+	struct wl_listener destroy;
+};
+
+static void pending_virtual_keyboard_destroy(struct pending_virtual_keyboard *pending) {
+	wl_list_remove(&pending->keymap.link);
+	wl_list_remove(&pending->destroy.link);
+	wl_list_remove(&pending->link);
+	free(pending);
+}
+
+static void pending_virtual_keyboard_keymap(struct wl_listener *listener, void *data) {
+	(void)data;
+	struct pending_virtual_keyboard *pending =
+		wl_container_of(listener, pending, keymap);
+	struct shady_server *server = pending->state->server;
+	struct wlr_input_device *device = &pending->virtual_keyboard->keyboard.base;
+	pending_virtual_keyboard_destroy(pending);
+	shady_input_add_keyboard(server, device);
+}
+
+static void pending_virtual_keyboard_gone(struct wl_listener *listener, void *data) {
+	(void)data;
+	struct pending_virtual_keyboard *pending =
+		wl_container_of(listener, pending, destroy);
+	pending_virtual_keyboard_destroy(pending);
+}
+
+static void new_virtual_keyboard(struct wl_listener *listener, void *data) {
+	struct shady_desktop_state *state =
+		wl_container_of(listener, state, new_virtual_keyboard);
+	struct wlr_virtual_keyboard_v1 *virtual_keyboard = data;
+	if (!virtual_keyboard || virtual_keyboard->seat != state->server->seat) return;
+	if (virtual_keyboard->has_keymap) {
+		shady_input_add_keyboard(state->server, &virtual_keyboard->keyboard.base);
+		return;
+	}
+
+	struct pending_virtual_keyboard *pending = calloc(1, sizeof(*pending));
+	if (!pending) return;
+	pending->state = state;
+	pending->virtual_keyboard = virtual_keyboard;
+	pending->keymap.notify = pending_virtual_keyboard_keymap;
+	wl_signal_add(&virtual_keyboard->keyboard.events.keymap, &pending->keymap);
+	pending->destroy.notify = pending_virtual_keyboard_gone;
+	wl_signal_add(&virtual_keyboard->keyboard.base.events.destroy, &pending->destroy);
+	wl_list_insert(&state->pending_virtual_keyboards, &pending->link);
+}
+
 static bool desktop_protocols_init(struct shady_server *server) {
 	struct shady_desktop_state *state = shady_desktop_state(server);
 	state->server = server;
 	wl_list_init(&state->layer_surfaces);
+	wl_list_init(&state->pending_virtual_keyboards);
 	state->layer_shell = wlr_layer_shell_v1_create(server->wl_display, 4);
 	if (!state->layer_shell) return false;
 	state->new_layer_surface.notify = server_new_layer_surface;
@@ -79,6 +136,8 @@ static bool desktop_protocols_init(struct shady_server *server) {
 		wlr_data_control_manager_v1_create(server->wl_display);
 	state->xdg_decoration_manager =
 		wlr_xdg_decoration_manager_v1_create(server->wl_display);
+	state->xdg_output_manager =
+		wlr_xdg_output_manager_v1_create(server->wl_display, server->output_layout);
 	state->xdg_activation = wlr_xdg_activation_v1_create(server->wl_display);
 	if (!state->xdg_activation) return false;
 	state->xdg_activation_request.notify = xdg_activation_request;
@@ -89,11 +148,16 @@ static bool desktop_protocols_init(struct shady_server *server) {
 	state->viewporter = wlr_viewporter_create(server->wl_display);
 	state->cursor_shape_manager =
 		wlr_cursor_shape_manager_v1_create(server->wl_display, 1);
+	state->virtual_keyboard_manager =
+		wlr_virtual_keyboard_manager_v1_create(server->wl_display);
 	if (!state->fractional_scale_manager || !state->viewporter ||
-			!state->cursor_shape_manager) return false;
+			!state->cursor_shape_manager || !state->virtual_keyboard_manager) return false;
 	state->cursor_shape_request.notify = cursor_shape_request;
 	wl_signal_add(&state->cursor_shape_manager->events.request_set_shape,
 		&state->cursor_shape_request);
+	state->new_virtual_keyboard.notify = new_virtual_keyboard;
+	wl_signal_add(&state->virtual_keyboard_manager->events.new_virtual_keyboard,
+		&state->new_virtual_keyboard);
 	if (!shady_ime_init(server)) return false;
 
 	state->output_manager =
@@ -120,6 +184,7 @@ static bool desktop_protocols_init(struct shady_server *server) {
 		state->primary_selection_manager &&
 		state->data_control_manager &&
 		state->xdg_decoration_manager &&
+		state->xdg_output_manager &&
 		state->xdg_activation &&
 		state->fractional_scale_manager &&
 		state->viewporter &&
@@ -132,6 +197,13 @@ static void desktop_protocols_destroy(struct shady_server *server) {
 	shady_shell_protocol_finish(server);
 	if (state->cursor_shape_request.link.prev)
 		wl_list_remove(&state->cursor_shape_request.link);
+	if (state->new_virtual_keyboard.link.prev)
+		wl_list_remove(&state->new_virtual_keyboard.link);
+	struct pending_virtual_keyboard *pending, *pending_tmp;
+	wl_list_for_each_safe(pending, pending_tmp,
+			&state->pending_virtual_keyboards, link) {
+		pending_virtual_keyboard_destroy(pending);
+	}
 	if (state->xdg_activation_request.link.prev)
 		wl_list_remove(&state->xdg_activation_request.link);
 	if (state->new_layer_surface.link.prev)

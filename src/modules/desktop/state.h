@@ -14,6 +14,8 @@ struct wlr_idle_notifier_v1;
 struct wlr_primary_selection_v1_device_manager;
 struct wlr_data_control_manager_v1;
 struct wlr_xdg_decoration_manager_v1;
+struct wlr_xdg_output_manager_v1;
+struct wlr_virtual_keyboard_manager_v1;
 struct wlr_xdg_activation_v1;
 struct wlr_fractional_scale_manager_v1;
 struct wlr_viewporter;
@@ -42,12 +44,16 @@ struct shady_desktop_state {
 	struct wlr_primary_selection_v1_device_manager *primary_selection_manager;
 	struct wlr_data_control_manager_v1 *data_control_manager;
 	struct wlr_xdg_decoration_manager_v1 *xdg_decoration_manager;
+	struct wlr_xdg_output_manager_v1 *xdg_output_manager;
 	struct wlr_xdg_activation_v1 *xdg_activation;
 	struct wl_listener xdg_activation_request;
 	struct wlr_fractional_scale_manager_v1 *fractional_scale_manager;
 	struct wlr_viewporter *viewporter;
 	struct wlr_cursor_shape_manager_v1 *cursor_shape_manager;
 	struct wl_listener cursor_shape_request;
+	struct wlr_virtual_keyboard_manager_v1 *virtual_keyboard_manager;
+	struct wl_listener new_virtual_keyboard;
+	struct wl_list pending_virtual_keyboards;
 	struct shady_ime_state *ime;
 
 	struct wlr_output_manager_v1 *output_manager;

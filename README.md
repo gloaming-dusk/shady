@@ -308,7 +308,7 @@ shady.off(token)
 
 Current event names are `window.created`, `window.mapped`, `window.unmapped`, `window.focused`, `window.resized`, `window.state_changed`, `window.destroyed`, `output.added`, `output.removed`, `workspace.changed`, `module.started`, and `module.stopped`. Window lifecycle ordering is `created -> mapped -> focused` and shutdown normally follows `unmapped -> destroyed`.
 
-Window callbacks receive `Window` userdata rather than plain tables. Properties include `title`, `app_id`, `mapped`, `visible`, `workspace`, `maximized`, `fullscreen`, and spatial `z`. Methods include `window:focus()`, `window:close()`, `window:maximize([enabled])`, `window:set_fullscreen([enabled])`, and `window:move_to_workspace(name)`. Handles validate liveness before dereferencing so stale Lua references degrade to `nil`/`false` instead of touching freed compositor state.
+Window callbacks receive `Window` userdata rather than plain tables. Properties include `title`, `app_id`, `mapped`, `x`, `y`, `width`, `height`, `visible`, `workspace`, `maximized`, `fullscreen`, and spatial `z`. Methods include `window:focus()`, `window:close()`, `window:maximize([enabled])`, `window:set_fullscreen([enabled])`, and `window:move_to_workspace(name)`. Handles validate liveness before dereferencing so stale Lua references degrade to `nil`/`false` instead of touching freed compositor state.
 
 ### Runtime API
 
@@ -340,6 +340,30 @@ shady.camera("target_z", -1.0)
 ```
 
 `shady.spawn(command)` launches a command asynchronously through `sh -lc` and returns whether the child process was created successfully. Shady reaps exited children through the Wayland event loop.
+
+### Headless automation API
+
+Runtime Lua also exposes `shady.automation` for deterministic headless UI tests. It can synthesize compositor shortcuts and pointer input, schedule non-blocking follow-up steps, and capture the current output through the screencopy protocol:
+
+```lua
+shady.automation.key("Ctrl+F12")
+shady.automation.key_down("F10")
+shady.automation.key_up("F10")
+shady.automation.move_pointer(320, 240)
+shady.automation.click("left")
+shady.automation.drag(100, 100, 400, 260, "left", 8)
+shady.automation.scroll(1, 0)
+shady.automation.type_text("hello from headless")
+
+shady.automation.after(100, function()
+    shady.automation.screenshot("/tmp/shady.png", function(ok, path)
+        assert(ok)
+        shady.log("captured " .. path)
+    end)
+end)
+```
+
+`automation.key(spec)` sends a press/release pair through Shady's normal module/keybinding path. `key_down(spec)` and `key_up(spec)` expose the same compositor/module input path separately, which is useful for testing stateful module controls. `type_text(text)` uses the virtual-keyboard protocol through `wtype` to type into the focused Wayland client. `move_pointer(x, y)` uses output-layout coordinates. `click(button)` accepts `left`, `middle`, `right`, or a Linux button code. `drag(x1, y1, x2, y2[, button[, steps]])` holds a pointer button while moving between two layout coordinates. `scroll(vertical[, horizontal])` injects wheel-axis events. `after(ms, fn)` schedules a one-shot callback on the Wayland event loop, so automation never blocks compositor progress. `screenshot(path[, callback])` captures through `grim` and Shady's screencopy protocol, returns the capture process PID, and invokes `callback(ok, path)` only after the capture process has finished. The development shell includes both `grim` and `wtype`; Shady also advertises xdg-output metadata and a keyboard capability in headless mode so capture and virtual-keyboard automation work without physical devices.
 
 `shady.rule({...})` installs an ordered window rule. A rule matches exact `app_id` and/or `title` fields and can set `workspace`, `maximized`, and `fullscreen`. The first matching rule wins and is applied during the map lifecycle before focus. Workspaces also retain a per-workspace last-focused window and restore it when switching back.
 

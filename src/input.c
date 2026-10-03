@@ -3,6 +3,8 @@
 #include <libinput.h>
 #include <math.h>
 #include <stdlib.h>
+#include <string.h>
+#include <time.h>
 #include <wayland-server-core.h>
 #include <wlr/backend/libinput.h>
 #include <wlr/types/wlr_cursor.h>
@@ -14,6 +16,7 @@
 #include <wlr/types/wlr_input_device.h>
 #include <wlr/types/wlr_keyboard.h>
 #include <wlr/types/wlr_pointer.h>
+#include <wlr/types/wlr_virtual_keyboard_v1.h>
 #include <wlr/types/wlr_scene.h>
 #include <wlr/types/wlr_seat.h>
 #include <wlr/types/wlr_xcursor_manager.h>
@@ -269,11 +272,21 @@ static void keyboard_handle_key(
 	}
 }
 
+void shady_input_update_seat_capabilities(struct shady_server *server) {
+	uint32_t caps = WL_SEAT_CAPABILITY_POINTER;
+	const char *backends = getenv("WLR_BACKENDS");
+	bool headless = backends && strstr(backends, "headless");
+	if (headless || !wl_list_empty(&server->keyboards))
+		caps |= WL_SEAT_CAPABILITY_KEYBOARD;
+	wlr_seat_set_capabilities(server->seat, caps);
+}
+
 static void keyboard_handle_destroy(struct wl_listener *listener, void *data) {
 	(void)data;
 	struct shady_keyboard *keyboard =
 		wl_container_of(listener, keyboard, destroy);
 	struct shady_server *server = keyboard->server;
+	bool was_current = wlr_seat_get_keyboard(server->seat) == keyboard->wlr_keyboard;
 	wl_list_remove(&keyboard->modifiers.link);
 	wl_list_remove(&keyboard->key.link);
 	wl_list_remove(&keyboard->destroy.link);
@@ -281,14 +294,20 @@ static void keyboard_handle_destroy(struct wl_listener *listener, void *data) {
 	if (keyboard->binding_state) xkb_state_unref(keyboard->binding_state);
 	free(keyboard);
 
-	uint32_t caps = WL_SEAT_CAPABILITY_POINTER;
-	if (!wl_list_empty(&server->keyboards)) {
-		caps |= WL_SEAT_CAPABILITY_KEYBOARD;
+	if (was_current) {
+		if (!wl_list_empty(&server->keyboards)) {
+			struct shady_keyboard *next = wl_container_of(
+				server->keyboards.next, next, link);
+			wlr_seat_set_keyboard(server->seat, next->wlr_keyboard);
+		} else {
+			wlr_seat_set_keyboard(server->seat, NULL);
+		}
 	}
-	wlr_seat_set_capabilities(server->seat, caps);
+
+	shady_input_update_seat_capabilities(server);
 }
 
-static void server_new_keyboard(struct shady_server *server,
+void shady_input_add_keyboard(struct shady_server *server,
 		struct wlr_input_device *device) {
 	struct wlr_keyboard *wlr_keyboard = wlr_keyboard_from_input_device(device);
 
@@ -296,15 +315,17 @@ static void server_new_keyboard(struct shady_server *server,
 	keyboard->server = server;
 	keyboard->wlr_keyboard = wlr_keyboard;
 
-	struct xkb_context *context = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
-	struct xkb_keymap *keymap = xkb_keymap_new_from_names(context, NULL,
-		XKB_KEYMAP_COMPILE_NO_FLAGS);
-
-	keyboard->binding_state = xkb_state_new(keymap);
-	wlr_keyboard_set_keymap(wlr_keyboard, keymap);
-	xkb_keymap_unref(keymap);
-	xkb_context_unref(context);
-	wlr_keyboard_set_repeat_info(wlr_keyboard, 25, 600);
+	bool is_virtual = wlr_input_device_get_virtual_keyboard(device) != NULL;
+	if (!is_virtual) {
+		struct xkb_context *context = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
+		struct xkb_keymap *keymap = xkb_keymap_new_from_names(context, NULL,
+			XKB_KEYMAP_COMPILE_NO_FLAGS);
+		keyboard->binding_state = xkb_state_new(keymap);
+		wlr_keyboard_set_keymap(wlr_keyboard, keymap);
+		xkb_keymap_unref(keymap);
+		xkb_context_unref(context);
+		wlr_keyboard_set_repeat_info(wlr_keyboard, 25, 600);
+	}
 
 	keyboard->modifiers.notify = keyboard_handle_modifiers;
 	wl_signal_add(&wlr_keyboard->events.modifiers, &keyboard->modifiers);
@@ -315,6 +336,23 @@ static void server_new_keyboard(struct shady_server *server,
 
 	wlr_seat_set_keyboard(server->seat, keyboard->wlr_keyboard);
 	wl_list_insert(&server->keyboards, &keyboard->link);
+
+	/* A headless compositor can gain its first keyboard after a window was
+	 * already focused (for example via zwp_virtual_keyboard_v1). Restore
+	 * keyboard focus to the topmost visible mapped toplevel in that case. */
+	if (!server->seat->keyboard_state.focused_surface) {
+		struct shady_toplevel *toplevel;
+		wl_list_for_each(toplevel, &server->toplevels, link) {
+			if (!toplevel->mapped || !toplevel->scene_tree ||
+					!toplevel->scene_tree->node.enabled) continue;
+			struct wlr_surface *surface = toplevel->xdg_toplevel->base->surface;
+			wlr_seat_keyboard_notify_enter(server->seat, surface,
+				keyboard->wlr_keyboard->keycodes,
+				keyboard->wlr_keyboard->num_keycodes,
+				&keyboard->wlr_keyboard->modifiers);
+			break;
+		}
+	}
 }
 
 static void configure_libinput_pointer(struct wlr_input_device *device) {
@@ -350,7 +388,7 @@ void server_new_input(struct wl_listener *listener, void *data) {
 	struct wlr_input_device *device = data;
 	switch (device->type) {
 	case WLR_INPUT_DEVICE_KEYBOARD:
-		server_new_keyboard(server, device);
+		shady_input_add_keyboard(server, device);
 		break;
 	case WLR_INPUT_DEVICE_POINTER:
 		server_new_pointer(server, device);
@@ -358,11 +396,7 @@ void server_new_input(struct wl_listener *listener, void *data) {
 	default:
 		break;
 	}
-	uint32_t caps = WL_SEAT_CAPABILITY_POINTER;
-	if (!wl_list_empty(&server->keyboards)) {
-		caps |= WL_SEAT_CAPABILITY_KEYBOARD;
-	}
-	wlr_seat_set_capabilities(server->seat, caps);
+	shady_input_update_seat_capabilities(server);
 }
 
 void seat_request_cursor(struct wl_listener *listener, void *data) {
@@ -512,4 +546,74 @@ void server_cursor_frame(struct wl_listener *listener, void *data) {
 	struct shady_server *server =
 		wl_container_of(listener, server, cursor_frame);
 	wlr_seat_pointer_notify_frame(server->seat);
+}
+
+static uint32_t automation_time_msec(void) {
+	struct timespec ts;
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	return (uint32_t)((uint64_t)ts.tv_sec * 1000u + (uint64_t)ts.tv_nsec / 1000000u);
+}
+
+bool shady_input_automation_key(struct shady_server *server, xkb_keysym_t sym,
+		uint32_t modifiers, bool pressed) {
+	uint32_t state = pressed ? WL_KEYBOARD_KEY_STATE_PRESSED :
+		WL_KEYBOARD_KEY_STATE_RELEASED;
+	bool handled = false;
+	if (!shady_desktop_state(server)->session_locked) {
+		handled = shady_modules_key(server, &sym, 1, state, modifiers);
+		if (!handled && pressed) handled = handle_keybinding(server, sym, modifiers);
+	}
+	return handled;
+}
+
+void shady_input_automation_pointer_move(struct shady_server *server,
+		double x, double y) {
+	if (!wlr_cursor_warp(server->cursor, NULL, x, y)) {
+		wlr_cursor_warp_closest(server->cursor, NULL, x, y);
+	}
+	process_cursor_motion(server, automation_time_msec());
+}
+
+void shady_input_automation_pointer_button(struct shady_server *server,
+		uint32_t button, bool pressed) {
+	struct wlr_pointer_button_event event = {0};
+	event.time_msec = automation_time_msec();
+	event.button = button;
+	event.state = pressed ? WL_POINTER_BUTTON_STATE_PRESSED :
+		WL_POINTER_BUTTON_STATE_RELEASED;
+
+	uint32_t mods = seat_modifiers(server);
+	if (!shady_modules_pointer_button(server, &event, mods)) {
+		wlr_seat_pointer_notify_button(server->seat,
+			event.time_msec, event.button, event.state);
+		if (!pressed) {
+			reset_cursor_mode(server);
+		} else {
+			double sx, sy;
+			struct wlr_surface *surface = NULL;
+			struct shady_toplevel *toplevel = toplevel_at_cursor(server,
+				server->cursor->x, server->cursor->y, &surface, &sx, &sy);
+			focus_toplevel(toplevel);
+		}
+	}
+	wlr_seat_pointer_notify_frame(server->seat);
+}
+
+void shady_input_automation_pointer_axis(struct shady_server *server,
+		enum wl_pointer_axis orientation, double delta, int32_t discrete) {
+	struct wlr_pointer_axis_event event = {0};
+	event.time_msec = automation_time_msec();
+	event.orientation = orientation;
+	event.delta = delta;
+	event.delta_discrete = discrete;
+	event.source = WL_POINTER_AXIS_SOURCE_WHEEL;
+	event.relative_direction = WL_POINTER_AXIS_RELATIVE_DIRECTION_IDENTICAL;
+
+	uint32_t mods = seat_modifiers(server);
+	if (!shady_modules_pointer_axis(server, &event, mods)) {
+		wlr_seat_pointer_notify_axis(server->seat,
+			event.time_msec, event.orientation, event.delta,
+			event.delta_discrete, event.source, event.relative_direction);
+		wlr_seat_pointer_notify_frame(server->seat);
+	}
 }

@@ -262,6 +262,9 @@ void reset_cursor_mode(struct shady_server *server);
 
 /* input.c */
 void server_new_input(struct wl_listener *listener, void *data);
+void shady_input_add_keyboard(struct shady_server *server,
+	struct wlr_input_device *device);
+void shady_input_update_seat_capabilities(struct shady_server *server);
 void seat_request_cursor(struct wl_listener *listener, void *data);
 void seat_pointer_focus_change(struct wl_listener *listener, void *data);
 void seat_request_set_selection(struct wl_listener *listener, void *data);
@@ -271,6 +274,14 @@ void server_cursor_motion_absolute(struct wl_listener *listener, void *data);
 void server_cursor_button(struct wl_listener *listener, void *data);
 void server_cursor_axis(struct wl_listener *listener, void *data);
 void server_cursor_frame(struct wl_listener *listener, void *data);
+bool shady_input_automation_key(struct shady_server *server, xkb_keysym_t sym,
+	uint32_t modifiers, bool pressed);
+void shady_input_automation_pointer_move(struct shady_server *server,
+	double x, double y);
+void shady_input_automation_pointer_button(struct shady_server *server,
+	uint32_t button, bool pressed);
+void shady_input_automation_pointer_axis(struct shady_server *server,
+	enum wl_pointer_axis orientation, double delta, int32_t discrete);
 
 /* output.c */
 void server_new_output(struct wl_listener *listener, void *data);

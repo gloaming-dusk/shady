@@ -1,8 +1,14 @@
 #include "lua.h"
 #include "state.h"
 #include <stdbool.h>
+#include <errno.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <linux/input-event-codes.h>
 #include <lua.h>
 #include <lauxlib.h>
 #include <lualib.h>
@@ -22,10 +28,30 @@
 #include <wlr/types/wlr_keyboard.h>
 #include <wlr/types/wlr_xdg_shell.h>
 #include <wlr/types/wlr_output.h>
+#include <wlr/types/wlr_output_layout.h>
 #include <wlr/types/wlr_seat.h>
 
 static struct shady_server *lua_server;
 static uint64_t lua_next_handler_id = 1;
+
+struct lua_timer {
+	struct wl_list link;
+	lua_State *L;
+	int callback_ref;
+	struct wl_event_source *source;
+};
+static struct wl_list lua_timers;
+
+struct lua_child_watch {
+	struct wl_list link;
+	lua_State *L;
+	pid_t pid;
+	int fd;
+	int callback_ref;
+	char path[4096];
+	struct wl_event_source *source;
+};
+static struct wl_list lua_child_watches;
 
 #define SHADY_LUA_WINDOW_MT "shady.window"
 #define SHADY_LUA_OUTPUT_MT "shady.output"
@@ -207,7 +233,7 @@ static int l_window_close(lua_State *L){struct lua_window_handle*h=luaL_checkuda
 static int l_window_maximize(lua_State *L){struct lua_window_handle*h=luaL_checkudata(L,1,SHADY_LUA_WINDOW_MT);if(!h->ptr||!lua_window_live(h->ptr)){lua_pushboolean(L,0);return 1;}bool enabled=lua_gettop(L)>=2?lua_toboolean(L,2):!h->ptr->maximized;shady_toplevel_set_maximized(h->ptr,enabled);lua_pushboolean(L,1);return 1;}
 static int l_window_fullscreen(lua_State *L){struct lua_window_handle*h=luaL_checkudata(L,1,SHADY_LUA_WINDOW_MT);if(!h->ptr||!lua_window_live(h->ptr)){lua_pushboolean(L,0);return 1;}bool enabled=lua_gettop(L)>=2?lua_toboolean(L,2):!h->ptr->fullscreen;shady_toplevel_set_fullscreen(h->ptr,enabled);lua_pushboolean(L,1);return 1;}
 static int l_window_move_workspace(lua_State *L){struct lua_window_handle*h=luaL_checkudata(L,1,SHADY_LUA_WINDOW_MT);const char*name=luaL_checkstring(L,2);lua_pushboolean(L,h->ptr&&lua_window_live(h->ptr)&&shady_workspace_move_toplevel(h->ptr,name));return 1;}
-static int l_window_index(lua_State *L){struct lua_window_handle*h=luaL_checkudata(L,1,SHADY_LUA_WINDOW_MT);const char*k=luaL_checkstring(L,2);if(!h->ptr||!lua_window_live(h->ptr)){lua_pushnil(L);return 1;}struct shady_toplevel*t=h->ptr;if(!strcmp(k,"title")){lua_pushstring(L,t->xdg_toplevel->title?t->xdg_toplevel->title:"");return 1;}if(!strcmp(k,"app_id")){lua_pushstring(L,t->xdg_toplevel->app_id?t->xdg_toplevel->app_id:"");return 1;}if(!strcmp(k,"mapped")){lua_pushboolean(L,t->xdg_toplevel->base->surface->mapped);return 1;}if(!strcmp(k,"visible")){lua_pushboolean(L,t->scene_tree&&t->scene_tree->node.enabled);return 1;}if(!strcmp(k,"workspace")){lua_pushstring(L,shady_workspace_toplevel_name(t));return 1;}if(!strcmp(k,"maximized")){lua_pushboolean(L,t->maximized);return 1;}if(!strcmp(k,"fullscreen")){lua_pushboolean(L,t->fullscreen);return 1;}if(!strcmp(k,"z")){const struct shady_toplevel_experimental_state*s=shady_spatial_toplevel_state_const(t);if(s)lua_pushnumber(L,s->z);else lua_pushnil(L);return 1;}if(!strcmp(k,"focus")){lua_pushcfunction(L,l_window_focus);return 1;}if(!strcmp(k,"close")){lua_pushcfunction(L,l_window_close);return 1;}if(!strcmp(k,"maximize")){lua_pushcfunction(L,l_window_maximize);return 1;}if(!strcmp(k,"set_fullscreen")){lua_pushcfunction(L,l_window_fullscreen);return 1;}if(!strcmp(k,"move_to_workspace")){lua_pushcfunction(L,l_window_move_workspace);return 1;}lua_pushnil(L);return 1;}
+static int l_window_index(lua_State *L){struct lua_window_handle*h=luaL_checkudata(L,1,SHADY_LUA_WINDOW_MT);const char*k=luaL_checkstring(L,2);if(!h->ptr||!lua_window_live(h->ptr)){lua_pushnil(L);return 1;}struct shady_toplevel*t=h->ptr;if(!strcmp(k,"title")){lua_pushstring(L,t->xdg_toplevel->title?t->xdg_toplevel->title:"");return 1;}if(!strcmp(k,"app_id")){lua_pushstring(L,t->xdg_toplevel->app_id?t->xdg_toplevel->app_id:"");return 1;}if(!strcmp(k,"mapped")){lua_pushboolean(L,t->xdg_toplevel->base->surface->mapped);return 1;}if(!strcmp(k,"x")){lua_pushinteger(L,t->scene_tree?t->scene_tree->node.x:0);return 1;}if(!strcmp(k,"y")){lua_pushinteger(L,t->scene_tree?t->scene_tree->node.y:0);return 1;}if(!strcmp(k,"width")){lua_pushinteger(L,t->xdg_toplevel->base->surface->current.width);return 1;}if(!strcmp(k,"height")){lua_pushinteger(L,t->xdg_toplevel->base->surface->current.height);return 1;}if(!strcmp(k,"visible")){lua_pushboolean(L,t->scene_tree&&t->scene_tree->node.enabled);return 1;}if(!strcmp(k,"workspace")){lua_pushstring(L,shady_workspace_toplevel_name(t));return 1;}if(!strcmp(k,"maximized")){lua_pushboolean(L,t->maximized);return 1;}if(!strcmp(k,"fullscreen")){lua_pushboolean(L,t->fullscreen);return 1;}if(!strcmp(k,"z")){const struct shady_toplevel_experimental_state*s=shady_spatial_toplevel_state_const(t);if(s)lua_pushnumber(L,s->z);else lua_pushnil(L);return 1;}if(!strcmp(k,"focus")){lua_pushcfunction(L,l_window_focus);return 1;}if(!strcmp(k,"close")){lua_pushcfunction(L,l_window_close);return 1;}if(!strcmp(k,"maximize")){lua_pushcfunction(L,l_window_maximize);return 1;}if(!strcmp(k,"set_fullscreen")){lua_pushcfunction(L,l_window_fullscreen);return 1;}if(!strcmp(k,"move_to_workspace")){lua_pushcfunction(L,l_window_move_workspace);return 1;}lua_pushnil(L);return 1;}
 static int l_window_tostring(lua_State *L){struct lua_window_handle*h=luaL_checkudata(L,1,SHADY_LUA_WINDOW_MT);if(!h->ptr||!lua_window_live(h->ptr)){lua_pushliteral(L,"Window<dead>");return 1;}lua_pushfstring(L,"Window<%s>",h->ptr->xdg_toplevel->app_id?h->ptr->xdg_toplevel->app_id:"");return 1;}
 
 static int l_output_index(lua_State *L){struct lua_output_handle*h=luaL_checkudata(L,1,SHADY_LUA_OUTPUT_MT);const char*k=luaL_checkstring(L,2);if(!h->ptr||!lua_output_live(h->ptr)){lua_pushnil(L);return 1;}struct wlr_output*o=h->ptr->wlr_output;if(!strcmp(k,"name")){lua_pushstring(L,o->name?o->name:"");return 1;}if(!strcmp(k,"scale")){lua_pushnumber(L,o->scale);return 1;}if(!strcmp(k,"width")||!strcmp(k,"height")){int w=0,hg=0;wlr_output_effective_resolution(o,&w,&hg);lua_pushinteger(L,!strcmp(k,"width")?w:hg);return 1;}lua_pushnil(L);return 1;}
@@ -264,6 +290,251 @@ static int l_shady_has_capability(lua_State *L){
 	lua_pushboolean(L,shady_module_has_capability(lua_server,capability));
 	return 1;
 }
+
+static int lua_timer_fire(void *data) {
+	struct lua_timer *timer = data;
+	wl_list_remove(&timer->link);
+	if (timer->source) wl_event_source_remove(timer->source);
+	lua_rawgeti(timer->L, LUA_REGISTRYINDEX, timer->callback_ref);
+	luaL_unref(timer->L, LUA_REGISTRYINDEX, timer->callback_ref);
+	if (lua_pcall(timer->L, 0, 0, 0) != LUA_OK) {
+		wlr_log(WLR_ERROR, "[SHADY LUA] automation timer: %s",
+			lua_tostring(timer->L, -1));
+		lua_pop(timer->L, 1);
+	}
+	free(timer);
+	return 0;
+}
+
+static int l_automation_after(lua_State *L) {
+	int ms = (int)luaL_checkinteger(L, 1);
+	luaL_checktype(L, 2, LUA_TFUNCTION);
+	if (ms < 0) return luaL_error(L, "delay must be >= 0");
+	struct lua_timer *timer = calloc(1, sizeof(*timer));
+	if (!timer) return luaL_error(L, "out of memory");
+	timer->L = L;
+	lua_pushvalue(L, 2);
+	timer->callback_ref = luaL_ref(L, LUA_REGISTRYINDEX);
+	timer->source = wl_event_loop_add_timer(
+		wl_display_get_event_loop(lua_server->wl_display), lua_timer_fire, timer);
+	if (!timer->source) {
+		luaL_unref(L, LUA_REGISTRYINDEX, timer->callback_ref);
+		free(timer);
+		return luaL_error(L, "failed to create timer");
+	}
+	wl_list_insert(&lua_timers, &timer->link);
+	wl_event_source_timer_update(timer->source, ms);
+	return 0;
+}
+
+static int l_automation_key(lua_State *L) {
+	const char *spec = luaL_checkstring(L, 1);
+	xkb_keysym_t sym;
+	uint32_t mods;
+	if (!parse_lua_bind(spec, &sym, &mods))
+		return luaL_error(L, "invalid shortcut: %s", spec);
+	bool press = shady_input_automation_key(lua_server, sym, mods, true);
+	bool release = shady_input_automation_key(lua_server, sym, mods, false);
+	lua_pushboolean(L, press || release);
+	return 1;
+}
+
+static pid_t automation_spawn_wtype(const char *option, const char *value) {
+	pid_t pid = fork();
+	if (pid != 0) return pid;
+	if (option) execlp("wtype", "wtype", option, value, (char *)NULL);
+	else execlp("wtype", "wtype", value, (char *)NULL);
+	_exit(127);
+}
+
+static int l_automation_type_text(lua_State *L) {
+	const char *text = luaL_checkstring(L, 1);
+	pid_t pid = automation_spawn_wtype(NULL, text);
+	if (pid < 0) { lua_pushnil(L); lua_pushstring(L, "fork failed"); return 2; }
+	lua_pushinteger(L, (lua_Integer)pid);
+	return 1;
+}
+
+static int l_automation_key_state(lua_State *L, bool pressed) {
+	const char *spec = luaL_checkstring(L, 1);
+	xkb_keysym_t sym;
+	uint32_t mods;
+	if (!parse_lua_bind(spec, &sym, &mods))
+		return luaL_error(L, "invalid shortcut: %s", spec);
+	lua_pushboolean(L,
+		shady_input_automation_key(lua_server, sym, mods, pressed));
+	return 1;
+}
+
+static int l_automation_key_down(lua_State *L) {
+	return l_automation_key_state(L, true);
+}
+
+static int l_automation_key_up(lua_State *L) {
+	return l_automation_key_state(L, false);
+}
+
+static int l_automation_move_pointer(lua_State *L) {
+	double x = luaL_checknumber(L, 1);
+	double y = luaL_checknumber(L, 2);
+	shady_input_automation_pointer_move(lua_server, x, y);
+	return 0;
+}
+
+static uint32_t automation_button(lua_State *L, int index) {
+	if (lua_isinteger(L, index)) return (uint32_t)lua_tointeger(L, index);
+	const char *name = luaL_checkstring(L, index);
+	if (!strcmp(name, "left")) return BTN_LEFT;
+	if (!strcmp(name, "right")) return BTN_RIGHT;
+	if (!strcmp(name, "middle")) return BTN_MIDDLE;
+	luaL_error(L, "unknown mouse button: %s", name);
+	return 0;
+}
+
+static int l_automation_click(lua_State *L) {
+	uint32_t button = automation_button(L, 1);
+	shady_input_automation_pointer_button(lua_server, button, true);
+	shady_input_automation_pointer_button(lua_server, button, false);
+	return 0;
+}
+
+static int l_automation_drag(lua_State *L) {
+	double x1 = luaL_checknumber(L, 1);
+	double y1 = luaL_checknumber(L, 2);
+	double x2 = luaL_checknumber(L, 3);
+	double y2 = luaL_checknumber(L, 4);
+	uint32_t button = lua_gettop(L) >= 5 ? automation_button(L, 5) : BTN_LEFT;
+	int steps = lua_gettop(L) >= 6 ? (int)luaL_checkinteger(L, 6) : 8;
+	if (steps < 1 || steps > 256) return luaL_error(L, "drag steps must be 1..256");
+
+	shady_input_automation_pointer_move(lua_server, x1, y1);
+	shady_input_automation_pointer_button(lua_server, button, true);
+	for (int i = 1; i <= steps; i++) {
+		double t = (double)i / (double)steps;
+		shady_input_automation_pointer_move(lua_server,
+			x1 + (x2 - x1) * t, y1 + (y2 - y1) * t);
+	}
+	shady_input_automation_pointer_button(lua_server, button, false);
+	return 0;
+}
+
+static int l_automation_scroll(lua_State *L) {
+	double vertical = luaL_optnumber(L, 1, 0.0);
+	double horizontal = luaL_optnumber(L, 2, 0.0);
+	if (vertical != 0.0)
+		shady_input_automation_pointer_axis(lua_server,
+			WL_POINTER_AXIS_VERTICAL_SCROLL, vertical, (int32_t)vertical);
+	if (horizontal != 0.0)
+		shady_input_automation_pointer_axis(lua_server,
+			WL_POINTER_AXIS_HORIZONTAL_SCROLL, horizontal, (int32_t)horizontal);
+	return 0;
+}
+
+static int lua_child_watch_ready(int fd, uint32_t mask, void *data) {
+	struct lua_child_watch *watch = data;
+	if (!(mask & (WL_EVENT_HANGUP | WL_EVENT_ERROR))) return 0;
+	if (watch->source) wl_event_source_remove(watch->source);
+	close(fd);
+	waitpid(watch->pid, NULL, WNOHANG);
+
+	struct stat st;
+	bool ok = stat(watch->path, &st) == 0 && st.st_size > 0;
+	lua_rawgeti(watch->L, LUA_REGISTRYINDEX, watch->callback_ref);
+	luaL_unref(watch->L, LUA_REGISTRYINDEX, watch->callback_ref);
+	lua_pushboolean(watch->L, ok);
+	lua_pushstring(watch->L, watch->path);
+	if (lua_pcall(watch->L, 2, 0, 0) != LUA_OK) {
+		wlr_log(WLR_ERROR, "[SHADY LUA] screenshot callback: %s",
+			lua_tostring(watch->L, -1));
+		lua_pop(watch->L, 1);
+	}
+	wl_list_remove(&watch->link);
+	free(watch);
+	return 0;
+}
+
+static int l_automation_screenshot(lua_State *L) {
+	const char *path = luaL_checkstring(L, 1);
+	bool has_callback = lua_gettop(L) >= 2 && !lua_isnil(L, 2);
+	if (has_callback) luaL_checktype(L, 2, LUA_TFUNCTION);
+	struct shady_output *output = NULL;
+	if (!wl_list_empty(&lua_server->outputs))
+		output = wl_container_of(lua_server->outputs.next, output, link);
+	if (!output || !output->wlr_output) {
+		lua_pushnil(L);
+		lua_pushstring(L, "no output available");
+		return 2;
+	}
+	struct wlr_box box = {0};
+	wlr_output_layout_get_box(lua_server->output_layout, output->wlr_output, &box);
+	if (box.width <= 0 || box.height <= 0) {
+		lua_pushnil(L);
+		lua_pushstring(L, "output has no layout geometry");
+		return 2;
+	}
+	char geometry[128];
+	snprintf(geometry, sizeof(geometry), "%d,%d %dx%d",
+		box.x, box.y, box.width, box.height);
+
+	int pipefd[2] = {-1, -1};
+	if (has_callback && pipe(pipefd) != 0) {
+		lua_pushnil(L);
+		lua_pushstring(L, "pipe failed");
+		return 2;
+	}
+	shady_render_schedule_all_outputs(lua_server);
+	pid_t pid = fork();
+	if (pid < 0) {
+		if (pipefd[0] >= 0) { close(pipefd[0]); close(pipefd[1]); }
+		lua_pushnil(L);
+		lua_pushstring(L, "fork failed");
+		return 2;
+	}
+	if (pid == 0) {
+		if (!has_callback) {
+			execlp("grim", "grim", "-g", geometry, path, (char *)NULL);
+			_exit(127);
+		}
+		close(pipefd[0]);
+		pid_t worker = fork();
+		if (worker < 0) _exit(127);
+		if (worker == 0) {
+			close(pipefd[1]);
+			execlp("grim", "grim", "-g", geometry, path, (char *)NULL);
+			_exit(127);
+		}
+		int status = 0;
+		while (waitpid(worker, &status, 0) < 0) {
+			if (errno != EINTR) _exit(127);
+		}
+		_exit(WIFEXITED(status) ? WEXITSTATUS(status) : 128);
+	}
+
+	if (has_callback) {
+		close(pipefd[1]);
+		fcntl(pipefd[0], F_SETFL, fcntl(pipefd[0], F_GETFL) | O_NONBLOCK);
+		struct lua_child_watch *watch = calloc(1, sizeof(*watch));
+		if (!watch) { close(pipefd[0]); return luaL_error(L, "out of memory"); }
+		watch->L = L;
+		watch->pid = pid;
+		watch->fd = pipefd[0];
+		snprintf(watch->path, sizeof(watch->path), "%s", path);
+		lua_pushvalue(L, 2);
+		watch->callback_ref = luaL_ref(L, LUA_REGISTRYINDEX);
+		watch->source = wl_event_loop_add_fd(
+			wl_display_get_event_loop(lua_server->wl_display), watch->fd,
+			WL_EVENT_HANGUP | WL_EVENT_ERROR, lua_child_watch_ready, watch);
+		if (!watch->source) {
+			luaL_unref(L, LUA_REGISTRYINDEX, watch->callback_ref);
+			close(watch->fd);
+			free(watch);
+			return luaL_error(L, "failed to watch screenshot process");
+		}
+		wl_list_insert(&lua_child_watches, &watch->link);
+	}
+	lua_pushinteger(L, (lua_Integer)pid);
+	return 1;
+}
 static void install_api(lua_State *L){
 	register_object_types(L);
 	lua_newtable(L);
@@ -284,6 +555,18 @@ static void install_api(lua_State *L){
 	lua_pushcfunction(L,l_shady_current_workspace);lua_setfield(L,-2,"current_workspace");
 	lua_pushcfunction(L,l_shady_workspace);lua_setfield(L,-2,"workspace");
 	lua_pushcfunction(L,l_shady_has_capability);lua_setfield(L,-2,"has_capability");
+	lua_newtable(L);
+	lua_pushcfunction(L,l_automation_after);lua_setfield(L,-2,"after");
+	lua_pushcfunction(L,l_automation_key);lua_setfield(L,-2,"key");
+	lua_pushcfunction(L,l_automation_key_down);lua_setfield(L,-2,"key_down");
+	lua_pushcfunction(L,l_automation_key_up);lua_setfield(L,-2,"key_up");
+	lua_pushcfunction(L,l_automation_type_text);lua_setfield(L,-2,"type_text");
+	lua_pushcfunction(L,l_automation_move_pointer);lua_setfield(L,-2,"move_pointer");
+	lua_pushcfunction(L,l_automation_click);lua_setfield(L,-2,"click");
+	lua_pushcfunction(L,l_automation_drag);lua_setfield(L,-2,"drag");
+	lua_pushcfunction(L,l_automation_scroll);lua_setfield(L,-2,"scroll");
+	lua_pushcfunction(L,l_automation_screenshot);lua_setfield(L,-2,"screenshot");
+	lua_setfield(L,-2,"automation");
 	lua_pushcfunction(L,l_shady_on);lua_setfield(L,-2,"on");
 	lua_pushcfunction(L,l_shady_off);lua_setfield(L,-2,"off");
 	lua_pushcfunction(L,l_shady_reload_plugin);lua_setfield(L,-2,"reload_plugin");
@@ -311,6 +594,8 @@ static void default_script_path(char *buf,size_t size){
 	else snprintf(buf,size,"init.lua");
 }
 bool shady_lua_init(struct shady_server *server){
+	wl_list_init(&lua_timers);
+	wl_list_init(&lua_child_watches);
 	lua_State *L=luaL_newstate();if(!L){wlr_log(WLR_ERROR,"[SHADY LUA] failed to create Lua state");return false;}
 	shady_lua_state_for(server)->L=L;lua_server=server;luaL_openlibs(L);install_api(L);for(uint32_t type=SHADY_EVENT_WINDOW_CREATED;type<SHADY_EVENT_COUNT;type++){if(!shady_event_subscribe(server,type,lua_event_callback,NULL))return false;}return true;
 }
@@ -333,5 +618,21 @@ bool shady_lua_handle_key(struct shady_server *server,xkb_keysym_t sym,uint32_t 
 		lua_rawgeti(L,LUA_REGISTRYINDEX,lua_binds[i].ref);if(lua_pcall(L,0,0,0)!=LUA_OK){wlr_log(WLR_ERROR,"[SHADY LUA] keybind: %s",lua_tostring(L,-1));lua_pop(L,1);}return true;}return false;
 }
 void shady_lua_fini(struct shady_server *server){
-	if(shady_lua_state_for(server)->L){lua_close(shady_lua_state_for(server)->L);shady_lua_state_for(server)->L=NULL;}lua_bind_count=0;lua_rule_count=0;lua_next_handler_id=1;
+	lua_State *L=shady_lua_state_for(server)->L;
+	struct lua_timer *timer,*tmp;
+	wl_list_for_each_safe(timer,tmp,&lua_timers,link){
+		wl_list_remove(&timer->link);
+		if(timer->source)wl_event_source_remove(timer->source);
+		if(L)luaL_unref(L,LUA_REGISTRYINDEX,timer->callback_ref);
+		free(timer);
+	}
+	struct lua_child_watch *watch,*watch_tmp;
+	wl_list_for_each_safe(watch,watch_tmp,&lua_child_watches,link){
+		wl_list_remove(&watch->link);
+		if(watch->source)wl_event_source_remove(watch->source);
+		if(watch->fd>=0)close(watch->fd);
+		if(L)luaL_unref(L,LUA_REGISTRYINDEX,watch->callback_ref);
+		free(watch);
+	}
+	if(L){lua_close(L);shady_lua_state_for(server)->L=NULL;}lua_bind_count=0;lua_rule_count=0;lua_next_handler_id=1;
 }

@@ -37,7 +37,7 @@ configure() {
 build() {
   configure
   ninja -C "$BUILD_DIR"
-  ninja -C "$BUILD_DIR" libshady-plugin-counter.so libshady-plugin-counter-bad.so
+  ninja -C "$BUILD_DIR" libshady-plugin-counter.so libshady-plugin-counter-bad.so headless-automation-probe
 }
 
 test_daily() {
@@ -47,6 +47,7 @@ test_daily() {
   SHADY_DAILY_BUILD_DIR="$BUILD_DIR" bash ./tests/startup-cleanup.sh
   SHADY_DAILY_BUILD_DIR="$BUILD_DIR" bash ./tests/plugin-reload.sh
   SHADY_DAILY_BUILD_DIR="$BUILD_DIR" bash ./tests/plugin-rollback.sh
+  SHADY_DAILY_BUILD_DIR="$BUILD_DIR" bash ./tests/headless-automation.sh
 }
 
 case "${1:-all}" in

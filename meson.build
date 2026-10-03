@@ -158,6 +158,12 @@ shell_enabled = wayland_client.found() and cairo.found() and pangocairo.found() 
 if shell_enabled
   wayland_protocols_dir = wayland_protocols.get_variable(pkgconfig: 'pkgdatadir')
   xdg_shell_xml = join_paths(wayland_protocols_dir, 'stable/xdg-shell/xdg-shell.xml')
+  xdg_shell_client_header = custom_target(
+    'xdg-shell-client-protocol.h',
+    input: xdg_shell_xml,
+    output: 'xdg-shell-client-protocol.h',
+    command: [wayland_scanner, 'client-header', '@INPUT@', '@OUTPUT@'],
+  )
   xdg_shell_protocol_code = custom_target(
     'xdg-shell-protocol.c',
     input: xdg_shell_xml,
@@ -176,6 +182,17 @@ if shell_enabled
     include_directories: include_directories('.'),
     dependencies: [wayland_client, cairo, pangocairo, shell_xkbcommon],
     install: true)
+
+  executable('headless-automation-probe',
+    [
+      xdg_shell_client_header,
+      xdg_shell_protocol_code,
+      'tests/headless-automation-probe.c',
+    ],
+    include_directories: include_directories('.'),
+    dependencies: [wayland_client],
+    build_by_default: false,
+    install: false)
 endif
 
 executable('shady',
