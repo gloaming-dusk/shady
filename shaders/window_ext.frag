@@ -9,6 +9,7 @@ uniform vec3 u_light_dir;
 uniform float u_effect_strength;
 uniform float u_brightness;
 uniform vec4 u_water; /* amplitude, frequency, speed, phase */
+uniform vec4 u_water_surface; /* fresnel, specular, caustic, tint */
 
 varying vec2 v_uv;
 varying vec3 v_normal;
@@ -96,6 +97,27 @@ void main() {
 	float grazing = (1.0 - facing) * 0.055;
 	color.rgb *= mix(1.0, surface_light, u_effect_strength);
 	color.rgb += vec3(0.08, 0.16, 0.28) * grazing * u_effect_strength;
+
+	/* Liquid surface shading. The deformed normal comes from window.vert,
+	 * so highlights travel over the same waves that bend the application
+	 * texture instead of looking like a flat post-process overlay. */
+	float water_active = step(0.0001, u_water.x);
+	vec3 view_dir = normalize(vec3(0.16, -0.10, 1.0));
+	float water_fresnel = pow(1.0 - clamp(abs(dot(n, view_dir)), 0.0, 1.0), 2.2);
+	vec3 reflected = reflect(-l, n);
+	float water_spec = pow(max(dot(reflected, view_dir), 0.0), 12.0);
+	float caustic_a = sin(uv.x * 31.0 + uv.y * 17.0 + water_phase * 1.45);
+	float caustic_b = sin(uv.x * 19.0 - uv.y * 29.0 - water_phase * 1.08);
+	float water_caustic = pow(clamp(0.5 + 0.25 * caustic_a + 0.25 * caustic_b, 0.0, 1.0), 3.0);
+	vec3 water_tint = vec3(0.02, 0.48, 0.72);
+	vec3 water_glint = vec3(0.55, 0.92, 1.0);
+	color.rgb = mix(color.rgb,
+		color.rgb * (1.0 - 0.13 * u_water_surface.w) + water_tint * 0.40,
+		water_active * u_water_surface.w * (0.22 + water_fresnel * 0.42));
+	color.rgb += water_tint * water_fresnel * u_water_surface.x * 0.44 * water_active;
+	color.rgb += water_glint * water_spec * u_water_surface.y * 0.68 * water_active;
+	color.rgb += water_glint * water_caustic * u_water_surface.z * 0.11 *
+		water_edge * water_active;
 
 	gl_FragColor = color;
 }

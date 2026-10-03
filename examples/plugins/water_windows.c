@@ -36,6 +36,7 @@ static void apply_window(shady_window window, size_t rank) {
 
 	if (!s->enabled) {
 		api->window_set_water_effect(host, window, 0.f, 8.f, 1.f, 0.f);
+		api->window_set_water_surface(host, window, 0.f, 0.f, 0.f, 0.f);
 		return;
 	}
 
@@ -50,6 +51,12 @@ static void apply_window(shady_window window, size_t rank) {
 	float phase = (float)rank * 1.73f;
 	api->window_set_water_effect(host, window,
 		amplitude, frequency, speed, phase);
+	float fresnel = (window == focused ? 1.28f : 1.00f) * s->strength;
+	float specular = (window == focused ? 1.42f : 1.08f) * s->strength;
+	float caustic = 1.10f * s->strength;
+	float tint = 0.92f * s->strength;
+	api->window_set_water_surface(host, window,
+		fresnel, specular, caustic, tint);
 }
 
 static void apply_all(void) {
@@ -124,8 +131,10 @@ static void stop(struct shady_server *server) {
 	if (s) s->enabled = false;
 	for (size_t i = 0; i < api->window_count(host); i++) {
 		shady_window window = api->window_at(host, i);
-		if (api->window_valid(host, window))
+		if (api->window_valid(host, window)) {
 			api->window_set_water_effect(host, window, 0.f, 8.f, 1.f, 0.f);
+			api->window_set_water_surface(host, window, 0.f, 0.f, 0.f, 0.f);
+		}
 	}
 }
 
@@ -158,7 +167,9 @@ const struct shady_module *shady_plugin_entry_v1(
 			host_api->abi_version != SHADY_PLUGIN_ABI_V1 ||
 			host_api->struct_size < sizeof(*host_api) ||
 			!host_api->window_set_water_effect ||
-			!host_api->window_water_effect)
+			!host_api->window_water_effect ||
+			!host_api->window_set_water_surface ||
+			!host_api->window_water_surface)
 		return NULL;
 
 	api = host_api;

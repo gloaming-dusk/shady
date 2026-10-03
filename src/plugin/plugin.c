@@ -373,6 +373,37 @@ static bool host_window_water_effect(shady_window window,
 	return true;
 }
 
+static bool host_window_set_water_surface(shady_host host, shady_window window,
+		float fresnel, float specular, float caustic, float tint) {
+	if (!host_window_valid(host, window)) return false;
+	struct shady_toplevel *toplevel = WINDOW(window);
+	if (fresnel < 0.f) fresnel = 0.f;
+	if (fresnel > 2.f) fresnel = 2.f;
+	if (specular < 0.f) specular = 0.f;
+	if (specular > 2.f) specular = 2.f;
+	if (caustic < 0.f) caustic = 0.f;
+	if (caustic > 2.f) caustic = 2.f;
+	if (tint < 0.f) tint = 0.f;
+	if (tint > 1.f) tint = 1.f;
+	toplevel->water_fresnel = fresnel;
+	toplevel->water_specular = specular;
+	toplevel->water_caustic = caustic;
+	toplevel->water_tint = tint;
+	if (HOST(host)->renderer) shady_render_schedule_all_outputs(HOST(host));
+	return true;
+}
+
+static bool host_window_water_surface(shady_window window,
+		float *fresnel, float *specular, float *caustic, float *tint) {
+	struct shady_toplevel *toplevel = WINDOW(window);
+	if (!toplevel) return false;
+	if (fresnel) *fresnel = toplevel->water_fresnel;
+	if (specular) *specular = toplevel->water_specular;
+	if (caustic) *caustic = toplevel->water_caustic;
+	if (tint) *tint = toplevel->water_tint;
+	return true;
+}
+
 static void host_terminate(shady_host host) {
 	struct shady_server *server = HOST(host);
 	if (server->wl_display) wl_display_terminate(server->wl_display);
@@ -424,6 +455,8 @@ static const struct shady_plugin_api_v1 plugin_api = {
 	.output_schedule_render = host_output_schedule_render,
 	.window_set_water_effect = host_window_set_water_effect,
 	.window_water_effect = host_window_water_effect,
+	.window_set_water_surface = host_window_set_water_surface,
+	.window_water_surface = host_window_water_surface,
 	.event_name = host_event_name,
 	.subscribe_event = host_subscribe_event,
 	.subscribe_event_handle = host_subscribe_event_handle,

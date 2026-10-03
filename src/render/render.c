@@ -580,12 +580,19 @@ static void render_spatial_subsurface_buffer(struct wlr_scene_buffer *buffer,
 		ctx->toplevel->water_speed,
 		ctx->toplevel->water_phase,
 	};
+	float water_surface[4] = {
+		ctx->toplevel->fullscreen ? 0.f : ctx->toplevel->water_fresnel,
+		ctx->toplevel->fullscreen ? 0.f : ctx->toplevel->water_specular,
+		ctx->toplevel->fullscreen ? 0.f : ctx->toplevel->water_caustic,
+		ctx->toplevel->fullscreen ? 0.f : ctx->toplevel->water_tint,
+	};
 	shady_gl_pipeline_draw_window(&pipeline,
 		attribs.target, attribs.tex, attribs.has_alpha,
 		mvp, model, ctx->time_seconds,
 		wobble_x,
 		wobble_y,
 		water,
+		water_surface,
 		shady_close_state_for_const(ctx->toplevel)->progress,
 		tint, server->config.window_effect_strength,
 		server->config.window_brightness * (focused ? 1.08f : 1.0f));
@@ -1037,6 +1044,12 @@ void shady_render_output_frame(
 			toplevel->water_speed,
 			toplevel->water_phase,
 		};
+		float water_surface[4] = {
+			toplevel->fullscreen ? 0.f : toplevel->water_fresnel,
+			toplevel->fullscreen ? 0.f : toplevel->water_specular,
+			toplevel->fullscreen ? 0.f : toplevel->water_caustic,
+			toplevel->fullscreen ? 0.f : toplevel->water_tint,
+		};
 		shady_gl_pipeline_draw_window(
 			&pipeline,
 			attribs.target,
@@ -1048,6 +1061,7 @@ void shady_render_output_frame(
 			wobble_x,
 			wobble_y,
 			water,
+			water_surface,
 			shady_close_state_for_const(toplevel)->progress,
 			focused_tint,
 			server->config.window_effect_strength,
@@ -1122,6 +1136,7 @@ void shady_render_output_frame(
 			snapshot->wobble_x, snapshot->wobble_y, snapshot->progress);
 
 		const float no_water[4] = {0.f, 1.f, 0.f, 0.f};
+		const float no_water_surface[4] = {0.f, 0.f, 0.f, 0.f};
 		shady_gl_pipeline_draw_window(
 			&pipeline,
 			GL_TEXTURE_2D,
@@ -1133,6 +1148,7 @@ void shady_render_output_frame(
 			0.0f,
 			0.0f,
 			no_water,
+			no_water_surface,
 			snapshot->progress,
 			window_tint,
 			server->config.window_effect_strength,

@@ -103,6 +103,10 @@ struct shady_plugin_api_v1 {
 		float amplitude, float frequency, float speed, float phase);
 	bool (*window_water_effect)(shady_window window,
 		float *amplitude, float *frequency, float *speed, float *phase);
+	bool (*window_set_water_surface)(shady_host host, shady_window window,
+		float fresnel, float specular, float caustic, float tint);
+	bool (*window_water_surface)(shady_window window,
+		float *fresnel, float *specular, float *caustic, float *tint);
 };
 
 typedef const struct shady_module *(*shady_plugin_entry_v1_fn)(

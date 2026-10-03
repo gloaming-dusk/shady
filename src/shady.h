@@ -205,6 +205,10 @@ struct shady_toplevel {
 	float water_frequency;
 	float water_speed;
 	float water_phase;
+	float water_fresnel;
+	float water_specular;
+	float water_caustic;
+	float water_tint;
 	/* Opaque per-module extension state. The core toplevel does not know
 	 * which optional modules attach data here. */
 	void *module_state[SHADY_MAX_MODULES];
