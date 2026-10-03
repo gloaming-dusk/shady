@@ -4,8 +4,19 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"
 
-if [[ ! -d build ]]; then
-  echo "Shady: build/ does not exist. Run ./build.sh first." >&2
+if [[ ! -x build/shady ]]; then
+  echo "Shady: build/shady is missing. Run ./build.sh first." >&2
+  exit 1
+fi
+
+if ! usage="$("$ROOT/build/shady" -h 2>&1)"; then
+  echo "$usage" >&2
+  echo "Shady native: could not inspect build/shady. Rebuild with ./build.sh." >&2
+  exit 1
+fi
+if [[ "$usage" != *"--native"* ]]; then
+  echo "Shady native: build/shady is outdated and does not support --native." >&2
+  echo "Run ./build.sh in the development shell, then launch this script again." >&2
   exit 1
 fi
 

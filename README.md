@@ -95,14 +95,8 @@ nix develop
 ./build.sh
 ```
 
-`build.sh` reconfigures Meson and builds with Ninja:
-
-```sh
-meson setup --reconfigure build
-ninja -C build
-```
-
-For a new build directory, run `meson setup build` first.
+`build.sh` initializes a new Meson build directory or reconfigures the existing
+one, refreshes cached dependency discovery, and builds with Ninja.
 
 Run Shady nested inside an existing Wayland session:
 
@@ -115,6 +109,9 @@ Run Shady directly on a Linux VT/TTY with DRM + libinput:
 ```sh
 ./run-native.sh
 ```
+
+If the launcher reports that `build/shady` is outdated, run `./build.sh` inside
+the development shell and launch it again.
 
 For the first DRM/TTY smoke test, use the compatibility renderer path first:
 
