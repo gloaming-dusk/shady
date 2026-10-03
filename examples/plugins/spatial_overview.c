@@ -14,6 +14,7 @@ static shady_host host;
 struct overview_state {
 	bool active;
 	bool animating;
+	size_t selected_rank;
 };
 
 struct overview_window_state {
@@ -47,6 +48,18 @@ static size_t managed_count(void) {
 			count++;
 	}
 	return count;
+}
+
+static shady_window managed_at(size_t wanted) {
+	size_t rank = 0;
+	for (size_t i = 0; i < api->window_count(host); i++) {
+		shady_window window = api->window_at(host, i);
+		if (!managed(window))
+			continue;
+		if (rank++ == wanted)
+			return window;
+	}
+	return NULL;
 }
 
 static size_t managed_rank(shady_window needle) {
@@ -102,7 +115,10 @@ static void overview_target(shady_window window, double *x, double *y, float *z)
 
 	*x = center_x + nx * span_x - window_width * 0.5;
 	*y = center_y + ny * span_y - window_height * 0.5;
+	struct overview_state *s = state();
 	*z = -0.34f - 0.055f * (float)rank;
+	if (s && s->active && rank == s->selected_rank)
+		*z += 0.16f;
 }
 
 static void set_active(bool enabled) {
@@ -110,6 +126,8 @@ static void set_active(bool enabled) {
 	if (!s) return;
 
 	if (enabled) {
+		shady_window focused = api->focused_window(host);
+		s->selected_rank = managed(focused) ? managed_rank(focused) : 0;
 		for (size_t i = 0; i < api->window_count(host); i++) {
 			shady_window window = api->window_at(host, i);
 			if (!managed(window))
@@ -127,19 +145,76 @@ static void set_active(bool enabled) {
 	api->schedule_render(host);
 }
 
+static void move_selection(int dx, int dy) {
+	struct overview_state *s = state();
+	size_t count = managed_count();
+	if (!s || !s->active || count == 0) return;
+
+	size_t columns = count <= 2 ? count : (count <= 4 ? 2 : 3);
+	if (columns == 0) columns = 1;
+	size_t rank = s->selected_rank < count ? s->selected_rank : 0;
+	size_t row = rank / columns;
+	size_t col = rank % columns;
+	size_t rows = (count + columns - 1) / columns;
+
+	long next_row = (long)row + dy;
+	long next_col = (long)col + dx;
+	if (next_row < 0) next_row = 0;
+	if (next_col < 0) next_col = 0;
+	if ((size_t)next_row >= rows) next_row = (long)rows - 1;
+	if ((size_t)next_col >= columns) next_col = (long)columns - 1;
+
+	size_t next = (size_t)next_row * columns + (size_t)next_col;
+	if (next >= count) next = count - 1;
+	if (next == s->selected_rank) return;
+	s->selected_rank = next;
+	s->animating = true;
+	api->schedule_render(host);
+}
+
 static bool key(struct shady_server *server, const xkb_keysym_t *syms,
 		int nsyms, uint32_t key_state, uint32_t modifiers) {
 	(void)server;
 	if (key_state != SHADY_KEY_PRESSED)
 		return false;
-	if ((modifiers & SHADY_MODIFIER_LOGO) == 0)
-		return false;
+
+	struct overview_state *s = state();
+	if (!s) return false;
+
 	for (int i = 0; i < nsyms; i++) {
-		if (syms[i] == XKB_KEY_o || syms[i] == XKB_KEY_O) {
-			struct overview_state *s = state();
-			if (!s) return false;
+		xkb_keysym_t sym = syms[i];
+		if ((modifiers & SHADY_MODIFIER_LOGO) &&
+				(sym == XKB_KEY_o || sym == XKB_KEY_O)) {
 			set_active(!s->active);
 			return true;
+		}
+		if (!s->active)
+			continue;
+		switch (sym) {
+		case XKB_KEY_Left:
+			move_selection(-1, 0);
+			return true;
+		case XKB_KEY_Right:
+			move_selection(1, 0);
+			return true;
+		case XKB_KEY_Up:
+			move_selection(0, -1);
+			return true;
+		case XKB_KEY_Down:
+			move_selection(0, 1);
+			return true;
+		case XKB_KEY_Return:
+		case XKB_KEY_KP_Enter: {
+			shady_window selected = managed_at(s->selected_rank);
+			set_active(false);
+			if (selected) api->window_focus(host, selected);
+			return true;
+		}
+		case XKB_KEY_Escape:
+			set_active(false);
+			return true;
+		default:
+			break;
 		}
 	}
 	return false;

@@ -5,9 +5,9 @@ local started = false
 local initial = {}
 
 local ids = {
-    "overview-a",
-    "overview-b",
-    "overview-c",
+    ["overview-a"] = true,
+    ["overview-b"] = true,
+    ["overview-c"] = true,
 }
 
 local function mark(line)
@@ -22,8 +22,16 @@ local function find(id)
     end
 end
 
+local function managed_windows()
+    local out = {}
+    for _, w in ipairs(shady.windows()) do
+        if ids[w.app_id] then table.insert(out, w) end
+    end
+    return out
+end
+
 local function save_initial()
-    for _, id in ipairs(ids) do
+    for id, _ in pairs(ids) do
         local w = assert(find(id))
         initial[id] = { x = w.x, y = w.y, z = w.z }
     end
@@ -38,16 +46,20 @@ end
 local function verify_overview()
     local changed = 0
     local positions = {}
-    for _, id in ipairs(ids) do
+    local selected_forward = 0
+    for id, _ in pairs(ids) do
         local w = assert(find(id))
         assert(w.z ~= nil, "overview requires spatial z")
         positions[id] = { x = w.x, y = w.y, z = w.z }
-        if dist2(positions[id], initial[id]) > 900 or math.abs(w.z - initial[id].z) > 0.08 then
+        if dist2(positions[id], initial[id]) > 900 or
+                math.abs(w.z - initial[id].z) > 0.08 then
             changed = changed + 1
         end
-        assert(w.z < -0.25, "overview did not push window into depth: " .. id)
+        assert(w.z < -0.10, "overview did not push window into depth: " .. id)
+        if w.z > -0.25 then selected_forward = selected_forward + 1 end
     end
-    assert(changed == #ids, "not all windows moved into overview")
+    assert(changed == 3, "not all windows moved into overview")
+    assert(selected_forward == 1, "overview selection depth highlight missing")
 
     assert(dist2(positions["overview-a"], positions["overview-b"]) > 4000,
         "overview a/b are not sufficiently separated")
@@ -57,7 +69,7 @@ local function verify_overview()
 end
 
 local function verify_restored()
-    for _, id in ipairs(ids) do
+    for id, _ in pairs(ids) do
         local w = assert(find(id))
         local home = initial[id]
         assert(math.abs(w.x - home.x) <= 2,
@@ -69,13 +81,25 @@ local function verify_restored()
     mark("RESTORE=PASS")
 end
 
-shady.on("window.mapped", function(window)
-    local recognized = false
-    for _, id in ipairs(ids) do
-        if window.app_id == id then recognized = true break end
+local function choose_neighbor()
+    local windows = managed_windows()
+    local focused = assert(shady.focused_window())
+    local rank = nil
+    for i, w in ipairs(windows) do
+        if w.app_id == focused.app_id then rank = i - 1 break end
     end
-    if not recognized then return end
+    assert(rank ~= nil, "focused window not in overview set")
 
+    -- Three windows use two columns:
+    -- rank 0 rank 1
+    -- rank 2
+    if rank == 0 then return "Right", windows[2].app_id end
+    if rank == 1 then return "Left", windows[1].app_id end
+    return "Up", windows[1].app_id
+end
+
+shady.on("window.mapped", function(window)
+    if not ids[window.app_id] then return end
     mapped[window.app_id] = true
 
     if window.app_id == "overview-a" and not mapped["overview-b"] then
@@ -101,16 +125,44 @@ shady.on("window.mapped", function(window)
     started = true
 
     shady.automation.after(350, function()
-        save_initial()
-        assert(shady.automation.key("Super+o"), "Super+O was not handled by overview plugin")
-        shady.automation.after(900, function()
-            verify_overview()
-            assert(shady.automation.key("Super+o"), "second Super+O was not handled")
+        -- Headless runs may not have a seat keyboard yet, so establish a
+        -- deterministic logical focus before deriving the overview order.
+        assert(find("overview-c"):focus())
+        shady.automation.after(120, function()
+            save_initial()
+            local key, expected = choose_neighbor()
+            assert(shady.automation.key("Super+o"), "Super+O was not handled")
             shady.automation.after(900, function()
-                verify_restored()
-                shady.log("spatial-overview-test: PASS")
-                shady.quit()
+            verify_overview()
+
+            assert(shady.automation.key(key), key .. " was not handled")
+            shady.automation.after(300, function()
+                assert(shady.automation.key("Return"), "Return was not handled")
+                shady.automation.after(900, function()
+                    verify_restored()
+                    local focused = assert(shady.focused_window())
+                    assert(focused.app_id == expected,
+                        "Enter did not focus selected window: expected=" ..
+                        expected .. " got=" .. focused.app_id)
+                    mark("SELECT=PASS")
+
+                    -- Re-enter and cancel. Escape must restore without changing focus.
+                    assert(shady.automation.key("Super+o"), "re-entry failed")
+                    shady.automation.after(500, function()
+                        assert(shady.automation.key("Escape"), "Escape was not handled")
+                        shady.automation.after(900, function()
+                            verify_restored()
+                            focused = assert(shady.focused_window())
+                            assert(focused.app_id == expected,
+                                "Escape changed focused window")
+                            mark("CANCEL=PASS")
+                            shady.log("spatial-overview-test: PASS")
+                            shady.quit()
+                        end)
+                    end)
+                end)
             end)
+        end)
         end)
     end)
 end)
