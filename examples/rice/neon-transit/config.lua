@@ -58,12 +58,18 @@ shady.plugin(os.getenv("SHADY_FPS_REPRESENTATION_PLUGIN") or
 
 -- Native C spatial mode. Overview is the default because it gives Neon Transit
 -- an explicit 3D workspace switcher without competing position writers. Magnetic
--- Windows also writes window positions, so opt-in magnetic mode skips the default
--- overview plugin unless a depth mode is explicitly requested.
+-- Windows and Window Constellation also write window positions, so either opt-in mode
+-- skips the default overview plugin unless a depth mode is explicitly requested.
 local magnetic_enabled = os.getenv("SHADY_NEON_MAGNETIC") == "1"
+local constellation_enabled = os.getenv("SHADY_NEON_CONSTELLATION") == "1"
+if magnetic_enabled and constellation_enabled then
+    shady.log("Neon Transit: constellation takes precedence over magnetic window motion")
+    magnetic_enabled = false
+end
+local spatial_motion_plugin = magnetic_enabled or constellation_enabled
 local explicit_depth_mode = os.getenv("SHADY_NEON_DEPTH_MODE")
 local depth_mode = explicit_depth_mode or "overview"
-if not magnetic_enabled or explicit_depth_mode then
+if not spatial_motion_plugin or explicit_depth_mode then
     if depth_mode == "focus" then
         shady.plugin(os.getenv("SHADY_FOCUS_DEPTH_PLUGIN") or
             (root .. "/build/libshady-plugin-focus-depth.so"))
@@ -78,6 +84,13 @@ end
 if magnetic_enabled then
     shady.plugin(os.getenv("SHADY_MAGNETIC_PLUGIN") or
         (root .. "/build/libshady-plugin-magnetic-windows.so"))
+end
+
+-- Orbital workspace. Super+C makes the focused window the anchor while the other
+-- windows orbit through XY and depth; toggling again restores the exact old layout.
+if constellation_enabled then
+    shady.plugin(os.getenv("SHADY_CONSTELLATION_PLUGIN") or
+        (root .. "/build/libshady-plugin-window-constellation.so"))
 end
 
 -- Native liquid-surface effect is part of the Neon Transit look by default.
