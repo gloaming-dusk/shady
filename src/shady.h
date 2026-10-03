@@ -179,6 +179,8 @@ struct shady_toplevel {
 	struct shady_server *server;
 	struct wlr_xdg_toplevel *xdg_toplevel;
 	struct wlr_scene_tree *scene_tree;
+	struct wlr_scene_tree *focus_border_tree;
+	struct wlr_scene_rect *focus_border[4];
 	struct wl_listener map;
 	struct wl_listener unmap;
 	struct wl_listener commit;

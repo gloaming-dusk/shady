@@ -561,9 +561,13 @@ static void render_spatial_subsurface_buffer(struct wlr_scene_buffer *buffer,
 		shady_mat4_multiply(mvp, ctx->vp, model);
 	}
 	struct shady_server *server = ctx->toplevel->server;
+	bool focused = !wl_list_empty(&server->toplevels) &&
+		server->toplevels.next == &ctx->toplevel->link;
 	const float tint[4] = {
-		server->config.window_tint[0], server->config.window_tint[1],
-		server->config.window_tint[2], 1.0f,
+		server->config.window_tint[0] * (focused ? 0.92f : 1.0f),
+		server->config.window_tint[1] * (focused ? 1.06f : 1.0f),
+		server->config.window_tint[2] * (focused ? 1.16f : 1.0f),
+		1.0f,
 	};
 
 	shady_gl_pipeline_draw_window(&pipeline,
@@ -573,7 +577,7 @@ static void render_spatial_subsurface_buffer(struct wlr_scene_buffer *buffer,
 		wobble_y,
 		shady_close_state_for_const(ctx->toplevel)->progress,
 		tint, server->config.window_effect_strength,
-		server->config.window_brightness);
+		server->config.window_brightness * (focused ? 1.08f : 1.0f));
 }
 
 static void render_spatial_overlays(struct shady_server *server,
@@ -1008,6 +1012,14 @@ void shady_render_output_frame(
 		}
 
 		if (screen_space) glDisable(GL_DEPTH_TEST);
+		bool focused = !wl_list_empty(&server->toplevels) &&
+			server->toplevels.next == &toplevel->link;
+		float focused_tint[4] = {
+			window_tint[0] * (focused ? 0.92f : 1.0f),
+			window_tint[1] * (focused ? 1.06f : 1.0f),
+			window_tint[2] * (focused ? 1.16f : 1.0f),
+			1.0f,
+		};
 		shady_gl_pipeline_draw_window(
 			&pipeline,
 			attribs.target,
@@ -1019,9 +1031,9 @@ void shady_render_output_frame(
 			wobble_x,
 			wobble_y,
 			shady_close_state_for_const(toplevel)->progress,
-			window_tint,
+			focused_tint,
 			server->config.window_effect_strength,
-			server->config.window_brightness
+			server->config.window_brightness * (focused ? 1.08f : 1.0f)
 		);
 
 		/* Render wl_subsurface children from the same scene subtree instead of

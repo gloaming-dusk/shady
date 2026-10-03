@@ -68,6 +68,8 @@ The F7–F9 bindings are implemented in `test-shady.lua`, not hard-coded composi
 | Alt + `=` / `-` | Zoom |
 | Alt + `0` | Reset camera |
 
+The focused window is highlighted visually: desktop/safe mode draws a thin cyan focus ring, while the spatial renderer applies a subtle cyan/brightness lift to the focused window.
+
 ## Building on NixOS
 
 Shady currently targets **wlroots 0.20.2**. The Nix development shell provides wlroots, GLES/EGL, Lua 5.4, Meson and Ninja.

@@ -15,6 +15,40 @@
 #include "module/module.h"
 #include "render/render.h"
 
+#define FOCUS_BORDER_WIDTH 3
+
+static void focus_border_set_enabled(struct shady_toplevel *toplevel, bool enabled) {
+	if (toplevel && toplevel->focus_border_tree)
+		wlr_scene_node_set_enabled(&toplevel->focus_border_tree->node, enabled);
+}
+
+static void focus_border_update_geometry(struct shady_toplevel *toplevel) {
+	if (!toplevel || !toplevel->focus_border_tree) return;
+	struct wlr_surface *surface = toplevel->xdg_toplevel->base->surface;
+	int width = surface->current.width;
+	int height = surface->current.height;
+	if (width <= 0 || height <= 0) return;
+
+	if (toplevel->focus_border[0]) {
+		wlr_scene_rect_set_size(toplevel->focus_border[0], width, FOCUS_BORDER_WIDTH);
+		wlr_scene_node_set_position(&toplevel->focus_border[0]->node,
+			0, -FOCUS_BORDER_WIDTH);
+	}
+	if (toplevel->focus_border[1]) {
+		wlr_scene_rect_set_size(toplevel->focus_border[1], width, FOCUS_BORDER_WIDTH);
+		wlr_scene_node_set_position(&toplevel->focus_border[1]->node, 0, height);
+	}
+	if (toplevel->focus_border[2]) {
+		wlr_scene_rect_set_size(toplevel->focus_border[2], FOCUS_BORDER_WIDTH, height);
+		wlr_scene_node_set_position(&toplevel->focus_border[2]->node,
+			-FOCUS_BORDER_WIDTH, 0);
+	}
+	if (toplevel->focus_border[3]) {
+		wlr_scene_rect_set_size(toplevel->focus_border[3], FOCUS_BORDER_WIDTH, height);
+		wlr_scene_node_set_position(&toplevel->focus_border[3]->node, width, 0);
+	}
+}
+
 static struct wlr_output *toplevel_output(struct shady_toplevel *toplevel) {
 	struct shady_server *server = toplevel->server;
 	if (toplevel->fullscreen && toplevel->xdg_toplevel->requested.fullscreen_output) {
@@ -183,6 +217,7 @@ void focus_toplevel(struct shady_toplevel *toplevel) {
 	struct wlr_surface *prev_surface = seat->keyboard_state.focused_surface;
 	struct wlr_surface *surface = toplevel->xdg_toplevel->base->surface;
 	if (prev_surface == surface) {
+		focus_border_set_enabled(toplevel, true);
 		return;
 	}
 	if (prev_surface) {
@@ -193,6 +228,10 @@ void focus_toplevel(struct shady_toplevel *toplevel) {
 		}
 	}
 	struct wlr_keyboard *keyboard = wlr_seat_get_keyboard(seat);
+	struct shady_toplevel *other;
+	wl_list_for_each(other, &server->all_toplevels, all_link)
+		focus_border_set_enabled(other, false);
+	focus_border_set_enabled(toplevel, true);
 	wlr_scene_node_raise_to_top(&toplevel->scene_tree->node);
 	wl_list_remove(&toplevel->link);
 	wl_list_insert(&server->toplevels, &toplevel->link);
@@ -245,6 +284,7 @@ static void xdg_toplevel_map(struct wl_listener *listener, void *data) {
 
 	wl_list_insert(&toplevel->server->toplevels, &toplevel->link);
 	toplevel->mapped = true;
+	focus_border_update_geometry(toplevel);
 	if (toplevel->xdg_toplevel->requested.maximized ||
 			toplevel->xdg_toplevel->requested.fullscreen) {
 		apply_requested_toplevel_state(toplevel);
@@ -272,6 +312,7 @@ static void xdg_toplevel_unmap(struct wl_listener *listener, void *data) {
 	 */
 	shady_event_emit_window(server, SHADY_EVENT_WINDOW_UNMAPPED, toplevel);
 	shady_modules_toplevel_unmap(toplevel);
+	focus_border_set_enabled(toplevel, false);
 	wl_list_remove(&toplevel->link);
 	toplevel->mapped = false;
 
@@ -317,6 +358,7 @@ static void xdg_toplevel_commit(struct wl_listener *listener, void *data) {
 			 height != toplevel->last_surface_height)) {
 		toplevel->last_surface_width = width;
 		toplevel->last_surface_height = height;
+		focus_border_update_geometry(toplevel);
 		shady_event_emit_window(toplevel->server,
 			SHADY_EVENT_WINDOW_RESIZED, toplevel);
 	}
@@ -406,6 +448,14 @@ void server_new_xdg_toplevel(struct wl_listener *listener, void *data) {
 		wlr_scene_xdg_surface_create(toplevel->server->content_tree, xdg_toplevel->base);
 	toplevel->scene_tree->node.data = toplevel;
 	xdg_toplevel->base->data = toplevel->scene_tree;
+	static const float border_color[4] = {0.10f, 0.65f, 1.0f, 1.0f};
+	toplevel->focus_border_tree = wlr_scene_tree_create(toplevel->scene_tree);
+	if (toplevel->focus_border_tree) {
+		for (size_t i = 0; i < 4; i++)
+			toplevel->focus_border[i] = wlr_scene_rect_create(
+				toplevel->focus_border_tree, 1, 1, border_color);
+		wlr_scene_node_set_enabled(&toplevel->focus_border_tree->node, false);
+	}
 
 	toplevel->map.notify = xdg_toplevel_map;
 	wl_signal_add(&xdg_toplevel->base->surface->events.map, &toplevel->map);
