@@ -29,6 +29,22 @@ static bool managed(shady_window window) {
 		!api->window_fullscreen(window);
 }
 
+static float surface_scale_for_window(shady_window window) {
+	int width = 0, height = 0;
+	if (!api->window_size(window, &width, &height) || width <= 0 || height <= 0)
+		return 1.f;
+
+	/* Specular/Fresnel that looks broad and natural on a large surface can
+	 * become visually harsh on a small window. Fade only the surface-light
+	 * layer with size; keep the underlying liquid geometry/refraction intact. */
+	int min_dim = width < height ? width : height;
+	if (min_dim <= 220) return 0.30f;
+	if (min_dim >= 620) return 1.00f;
+	float t = (float)(min_dim - 220) / 400.f;
+	/* Smoothstep avoids a visible style jump while resizing. */
+	return 0.30f + 0.70f * (t * t * (3.f - 2.f * t));
+}
+
 static void apply_window(shady_window window, size_t rank) {
 	struct water_state *s = state();
 	if (!s || !managed(window))
@@ -51,10 +67,11 @@ static void apply_window(shady_window window, size_t rank) {
 	float phase = (float)rank * 1.73f;
 	api->window_set_water_effect(host, window,
 		amplitude, frequency, speed, phase);
-	float fresnel = (window == focused ? 1.28f : 1.00f) * s->strength;
-	float specular = (window == focused ? 1.42f : 1.08f) * s->strength;
-	float caustic = 1.10f * s->strength;
-	float tint = 0.92f * s->strength;
+	float surface_scale = surface_scale_for_window(window);
+	float fresnel = (window == focused ? 1.28f : 1.00f) * s->strength * surface_scale;
+	float specular = (window == focused ? 1.42f : 1.08f) * s->strength * surface_scale;
+	float caustic = 1.10f * s->strength * (0.45f + 0.55f * surface_scale);
+	float tint = 0.92f * s->strength * (0.65f + 0.35f * surface_scale);
 	api->window_set_water_surface(host, window,
 		fresnel, specular, caustic, tint);
 }
