@@ -1,0 +1,7 @@
+shady.set("spatial_mode", true)
+shady.set("window_wobble", true)
+shady.set("physics_enabled", false)
+shady.set("fps_mode", false)
+shady.set("sky", false)
+shady.set("environment_obj", false)
+shady.plugin(assert(os.getenv("SHADY_MOTION_CONTRACT_PLUGIN")))

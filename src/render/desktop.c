@@ -84,12 +84,7 @@ void shady_render_plugin_cleanup_owner(struct shady_server *server, void *owner)
 			toplevel->plugin_shader_source = NULL;
 			toplevel->plugin_shader_source_owner = NULL;
 		}
-		if (toplevel->plugin_representation_owner == owner) {
-			toplevel->plugin_representation_override = false;
-			memset(&toplevel->plugin_representation, 0,
-				sizeof(toplevel->plugin_representation));
-			toplevel->plugin_representation_owner = NULL;
-		}
+
 	}
 }
 

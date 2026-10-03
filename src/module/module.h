@@ -70,6 +70,6 @@ void shady_modules_toplevel_moved(struct shady_toplevel *toplevel,
 void shady_modules_tick(struct shady_server *server, float dt,
 	float logical_w, float logical_h);
 
-void shady_register_builtin_modules(struct shady_server *server);
+bool shady_register_builtin_modules(struct shady_server *server);
 
 #endif

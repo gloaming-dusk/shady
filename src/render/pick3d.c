@@ -12,7 +12,6 @@
 #include "render.h"
 #include "../modules/fps/fps.h"
 #include "../modules/fps/state.h"
-#include "../modules/window_motion/state.h"
 
 struct shady_toplevel *shady_titlebar_at_3d(struct shady_server *server,
 		double lx, double ly) {
@@ -71,14 +70,14 @@ struct shady_toplevel *shady_titlebar_at_3d(struct shady_server *server,
 		float model[16];
 		shady_window_model(model, layout_x, layout_y - title_h, tw, frame_h,
 			logical_w, logical_h, shady_spatial_toplevel_state(toplevel)->z,
-			shady_window_motion_state_for_const(toplevel)->tilt_x,
-			shady_window_motion_state_for_const(toplevel)->tilt_y);
+			toplevel->motion.tilt_x,
+			toplevel->motion.tilt_y);
 
 		float t, u, v;
 		bool front_hit = false;
 		if (!shady_ray_window_shell_hit(&ray, model,
-				shady_window_motion_state_for_const(toplevel)->wobble_x,
-				shady_window_motion_state_for_const(toplevel)->wobble_y,
+				toplevel->motion.wobble_x,
+				toplevel->motion.wobble_y,
 				&t, &u, &v, &front_hit) || !front_hit ||
 				v < client_fraction)
 			continue;
@@ -179,8 +178,8 @@ struct shady_toplevel *shady_toplevel_at_3d(struct shady_server *server,
 			.window_width = tw, .window_height = th,
 			.center_x = cx, .center_y = cy,
 			.center_z = shady_spatial_toplevel_state(toplevel)->z,
-			.tilt_x = shady_window_motion_state_for_const(toplevel)->tilt_x,
-			.tilt_y = shady_window_motion_state_for_const(toplevel)->tilt_y,
+			.tilt_x = toplevel->motion.tilt_x,
+			.tilt_y = toplevel->motion.tilt_y,
 			.first_person = shady_spatial_state(server)->runtime.camera.first_person,
 			.folded = shady_spatial_state(server)->runtime.camera.first_person &&
 				!shady_fps_toplevel_state_const(toplevel)->expanded,
@@ -214,8 +213,8 @@ struct shady_toplevel *shady_toplevel_at_3d(struct shady_server *server,
 			client_fraction = frame_h > 0.f ? th / frame_h : 1.f;
 			shady_window_model(model,layout_x,layout_y-title_h,tw,frame_h,logical_w,logical_h,
 				shady_spatial_toplevel_state(toplevel)->z,
-				shady_window_motion_state_for_const(toplevel)->tilt_x,
-				shady_window_motion_state_for_const(toplevel)->tilt_y);
+				toplevel->motion.tilt_x,
+				toplevel->motion.tilt_y);
 		}
 
 		float t, u, v;
@@ -227,8 +226,8 @@ struct shady_toplevel *shady_toplevel_at_3d(struct shady_server *server,
 				representation_mesh.indices,
 				representation_mesh.index_count, &t, &u, &v)
 			: shady_ray_window_shell_hit(&ray, model,
-				shady_window_motion_state_for_const(toplevel)->wobble_x,
-				shady_window_motion_state_for_const(toplevel)->wobble_y,
+				toplevel->motion.wobble_x,
+				toplevel->motion.wobble_y,
 				&t, &u, &v, &front_hit);
 		if (!hit) continue;
 		if (client_fraction < 1.f) {
@@ -316,8 +315,8 @@ struct shady_toplevel *shady_toplevel_at_camera_center_hit_output(
 				.window_width = tw, .window_height = th,
 				.center_x = cx, .center_y = cy,
 				.center_z = shady_spatial_toplevel_state(toplevel)->z,
-				.tilt_x = shady_window_motion_state_for_const(toplevel)->tilt_x,
-				.tilt_y = shady_window_motion_state_for_const(toplevel)->tilt_y,
+				.tilt_x = toplevel->motion.tilt_x,
+				.tilt_y = toplevel->motion.tilt_y,
 				.first_person = shady_spatial_state(server)->runtime.camera.first_person,
 				.folded = shady_spatial_state(server)->runtime.camera.first_person &&
 					!shady_fps_toplevel_state_const(toplevel)->expanded,
@@ -350,8 +349,8 @@ struct shady_toplevel *shady_toplevel_at_camera_center_hit_output(
 					(float)(toplevel->scene_tree->node.y + oy),
 					tw, th, logical_w, logical_h,
 					shady_spatial_toplevel_state(toplevel)->z,
-					shady_window_motion_state_for_const(toplevel)->tilt_x,
-					shady_window_motion_state_for_const(toplevel)->tilt_y);
+					toplevel->motion.tilt_x,
+					toplevel->motion.tilt_y);
 			}
 
 			float t, u, v;
@@ -363,8 +362,8 @@ struct shady_toplevel *shady_toplevel_at_camera_center_hit_output(
 					representation_mesh.indices,
 					representation_mesh.index_count, &t, &u, &v)
 				: shady_ray_window_shell_hit(&ray, model,
-					shady_window_motion_state_for_const(toplevel)->wobble_x,
-					shady_window_motion_state_for_const(toplevel)->wobble_y,
+					toplevel->motion.wobble_x,
+					toplevel->motion.wobble_y,
 					&t, &u, &v, &front_hit);
 			if (hit && t < best_t) {
 				best_t = t;

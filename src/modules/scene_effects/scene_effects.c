@@ -1,6 +1,5 @@
 #include "scene_effects.h"
 #include "../spatial/state.h"
-#include "../window_motion/state.h"
 #include "../close_animation/state.h"
 #include <wlr/types/wlr_compositor.h>
 #include <wlr/types/wlr_scene.h>
@@ -38,8 +37,8 @@ void shady_scene_effects_draw_shadows(struct shady_server *server,
 		float model[16];
 		shady_window_model(model,(float)(t->scene_tree->node.x+ox),
 			(float)(t->scene_tree->node.y+oy),tw,th,logical_w,logical_h,
-			shady_spatial_toplevel_state(t)->z,shady_window_motion_state_for_const(t)->tilt_x,shady_window_motion_state_for_const(t)->tilt_y);
-		shady_gl_pipeline_draw_shadow(pipeline,vp,model,shady_window_motion_state_for_const(t)->wobble_x,shady_window_motion_state_for_const(t)->wobble_y,shady_spatial_toplevel_state(t)->z,&floor);
+			shady_spatial_toplevel_state(t)->z,t->motion.tilt_x,t->motion.tilt_y);
+		shady_gl_pipeline_draw_shadow(pipeline,vp,model,t->motion.wobble_x,t->motion.wobble_y,shady_spatial_toplevel_state(t)->z,&floor);
 	}
 }
 

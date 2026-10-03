@@ -18,7 +18,6 @@
 #include "../physics/physics.h"
 #include "../physics/collision.h"
 #include "../window_motion/window_motion.h"
-#include "../window_motion/state.h"
 #include "../../world/world.h"
 #define LOOK_SENS .0032f
 #define HOLD_MIN .28f
@@ -195,8 +194,8 @@ void shady_fps_update_held_window(struct shady_server*s,float lw,float lh){
 		.logical_width = lw, .logical_height = lh,
 		.window_width = tw, .window_height = th,
 		.center_x = current[0], .center_y = current[1], .center_z = current[2],
-		.tilt_x = shady_window_motion_state_for_const(t)->tilt_x,
-		.tilt_y = shady_window_motion_state_for_const(t)->tilt_y,
+		.tilt_x = t->motion.tilt_x,
+		.tilt_y = t->motion.tilt_y,
 		.first_person = true, .folded = true, .held = true,
 		.focused = !wl_list_empty(&s->toplevels) && s->toplevels.next == &t->link,
 	};

@@ -10,7 +10,6 @@
 #include "../../render/render.h"
 #include "../../render/math3d.h"
 #include "../window_motion/window_motion.h"
-#include "../window_motion/state.h"
 #include "../fps/fps.h"
 #include "../../world/floor.h"
 #include "../../world/collider.h"
@@ -81,8 +80,8 @@ void shady_physics_update(struct shady_server *server,float dt,float logical_w,f
 			.window_width = tw, .window_height = th,
 			.center_x = base_center_x, .center_y = base_center_y,
 			.center_z = base_center_z,
-			.tilt_x = shady_window_motion_state_for_const(t)->tilt_x,
-			.tilt_y = shady_window_motion_state_for_const(t)->tilt_y,
+			.tilt_x = t->motion.tilt_x,
+			.tilt_y = t->motion.tilt_y,
 			.first_person = true, .folded = !shady_fps_is_expanded(server, t),
 			.held = false,
 			.focused = !wl_list_empty(&server->toplevels) &&

@@ -56,11 +56,15 @@ shady_sources = [
   'src/event/event.c',
   'src/module/builtin.c',
   'src/plugin/plugin.c',
+  'src/plugin/host_api.c',
+  'src/plugin/motion.c',
+  'src/plugin/representation.c',
   'src/config.c',
   'src/config_lua.c',
   'src/titlebar.c',
   'src/input.c',
   'src/xdg.c',
+  'src/modules/window_motion/window_motion.c',
   'src/layer.c',
   'src/output.c',
   'src/output_management.c',
@@ -114,12 +118,6 @@ if fps_enabled
   shady_sources += [
     'src/modules/fps/fps.c',
     'src/modules/fps/module.c',
-  ]
-endif
-if window_motion_enabled
-  shady_sources += [
-    'src/modules/window_motion/window_motion.c',
-    'src/modules/window_motion/module.c',
   ]
 endif
 if close_animation_enabled
@@ -205,11 +203,23 @@ if shell_enabled
     install: false)
 endif
 
+motion_plugin = []
+if window_motion_enabled
+  motion_plugin = shared_module('shady-plugin-window-motion',
+    'examples/plugins/window_motion.c',
+    include_directories: include_directories('include'),
+    dependencies: [cc.find_library('m', required: true)],
+    install: true,
+    install_dir: join_paths(get_option('libdir'), 'shady', 'plugins'))
+endif
+
 executable('shady',
   shady_sources,
+  link_depends: motion_plugin,
   c_args: [
     '-DWLR_USE_UNSTABLE',
     '-D_POSIX_C_SOURCE=200809L',
+    '-DSHADY_PLUGIN_DIR="@0@"'.format(join_paths(get_option('prefix'), get_option('libdir'), 'shady', 'plugins')),
     '-DSHADY_SHADER_DIR="@0@"'.format(shader_dir),
     '-DSHADY_HAS_SPATIAL=@0@'.format(spatial_enabled ? 1 : 0),
     '-DSHADY_HAS_LUA=@0@'.format(lua_enabled ? 1 : 0),
@@ -226,6 +236,9 @@ executable('shady',
 install_headers(
   'include/shady/module.h',
   'include/shady/plugin.h',
+  'include/shady/motion.h',
+  'include/shady/types.h',
+  'include/shady/representation.h',
   'include/shady/event.h',
   subdir: 'shady')
 
@@ -444,3 +457,19 @@ config_titlebar_test = executable('config-titlebar-test',
   install: false)
 
 test('config-titlebar', config_titlebar_test)
+
+if window_motion_enabled
+  motion_plugin_test = executable('motion-plugin-test',
+    'tests/motion-plugin.c',
+    include_directories: include_directories('include'),
+    dependencies: [dl],
+    install: false)
+  test('motion-plugin', motion_plugin_test,
+    args: [motion_plugin.full_path()], depends: [motion_plugin])
+endif
+
+shared_module('shady-plugin-motion-contract',
+  'tests/motion-contract.c',
+  include_directories: include_directories('include'),
+  build_by_default: false,
+  install: false)

@@ -493,13 +493,15 @@ src/
     lua/              embedded Lua runtime and Shady scripting API
     physics/          cube gravity and world collision
     fps/              first-person movement, grabbing and throwing
-    window_motion/    wobble and inertial rotation
+    window_motion/    neutral core adapters for plugin-driven motion
     close_animation/  close state machine
     scene_effects/    floor and shadow effects
     environment/      visual environment loading
+  plugin/             loading, host APIs, representation and motion drivers
   render/             GLES2 pipeline, math, picking and debug rendering
   shell/              standalone layer-shell desktop UI client
   world/              shared world and collider representation
+examples/plugins/     native feature plugins, including window-motion
 assets/               development OBJ environments
 shaders/              editable GLSL
 ```
@@ -520,13 +522,27 @@ render physics world
   Lua scripting
 ```
 
+## Core and plugin architecture
+
+The plugin host separates loading and migration, opaque-object APIs, and
+representation validation. Large per-window geometry caches are allocated only
+when a representation is attached. Window wobble and inertial tilt run in the
+shipped `window-motion` shared plugin; rendering, picking, and physics consume
+its published visual data without reading its simulation state.
+
+New plugins can use separately versioned feature tables through
+`api->query_api()`. `shady/motion.h` exposes motion commands and a driver
+contract, while `shady/representation.h` groups shape and provider operations.
+Existing V1/V2 API fields remain available. See [Architecture](docs/ARCHITECTURE.md)
+for ownership rules, loading, state migration, and the remaining built-in modules.
+
 ## Module host and build-time modules
 
 Shady now has a built-in module host. Modules own their runtime state and optional per-window state, and can declare capabilities they provide, capabilities they require, and optional capabilities that only affect load ordering when present. The resolver performs a stable dependency sort, rejects missing required capabilities, duplicate active providers, and dependency cycles, then initializes modules in dependency order and destroys them in reverse order.
 
 State ownership follows the same boundary. The `spatial` foundation owns only shared camera/world/timing state plus each window's Z coordinate. Physics owns gravity and per-window velocity, FPS owns capture/grab/expanded state, window-motion owns wobble/tilt state, and close-animation owns its per-window state machine. Render and picking code consume those features through public module APIs/read-only accessors rather than embedding their state inside spatial window objects.
 
-Current built-in modules are `desktop-protocols`, `workspace`, `spatial`, `window-motion`, `physics`, `fps`, `close-animation`, `scene-effects`, and `lua`. `workspace` provides `desktop.workspace` and owns named workspace membership/visibility per window. `spatial` provides the shared 3D renderer/window-state capability; the other spatial features are independent submodules that require or optionally consume those capabilities. Lua follows whichever optional capabilities are present and scripts can feature-detect them with `shady.has_capability(...)`.
+Current built-in modules are `desktop-protocols`, `workspace`, `spatial`, `physics`, `fps`, `close-animation`, `scene-effects`, and `lua`. The shipped `window-motion` plugin uses the same module host and is registered automatically when its build option is enabled. `workspace` provides `desktop.workspace` and owns named workspace membership/visibility per window. `spatial` provides the shared 3D renderer/window-state capability; the other spatial features are independent submodules that require or optionally consume those capabilities. Lua follows whichever optional capabilities are present and scripts can feature-detect them with `shady.has_capability(...)`.
 
 For example, all of these are valid build shapes:
 
@@ -613,7 +629,7 @@ stage a fresh copy of the new .so
         -> start new instance
 ```
 
-The staged copy is created beside the original plugin so a broken replacement can be rejected before the working old plugin is torn down. If new init/restore fails after teardown begins, Shady attempts to re-init the still-mapped old plugin and restore the same snapshot before reporting reload failure.
+The staged copy is normally created beside the original plugin; read-only installation directories use a private temporary copy. A broken replacement is rejected before the working old plugin is torn down. If new init/restore fails after teardown begins, Shady attempts to re-init the still-mapped old plugin and restore the same snapshot before reporting reload failure.
 
 A reload must preserve all capabilities previously provided by the plugin. Stateful migration also refuses to silently drop existing module or per-window state. `examples/plugins/counter.c` demonstrates V2 module and window snapshot callbacks; its development test preserves both a start counter and a live window marker across reload.
 

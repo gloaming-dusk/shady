@@ -570,3 +570,37 @@ const struct shady_module *shady_plugin_entry_v1(
 ```
 
 See `examples/plugins/` for larger examples.
+
+## Versioned feature tables
+
+New APIs are grouped into separately versioned immutable host tables. Existing
+umbrella API fields keep their offsets and behavior. Check
+`SHADY_API_HAS(api, query_api)` before accessing `query_api`, then request the
+feature by name and version. Unknown names and unsupported versions return
+`NULL`; table availability does not imply that an optional driver is active.
+
+```c
+#include <shady/motion.h>
+
+const struct shady_motion_api_v1 *motion = NULL;
+if (SHADY_API_HAS(api, query_api)) {
+    motion = api->query_api(host, SHADY_MOTION_API, SHADY_MOTION_API_VERSION);
+}
+if (motion && motion->struct_size >= sizeof(*motion)) {
+    motion->add_impulse(host, window, 0.1f, 0.0f, 0.2f, 0.0f);
+}
+```
+
+`shady.window-motion` version 1 supports impulses, damping, reset, visual queries,
+and an exclusive driver contract. Only the attached driver's shared object may
+publish visual data. Detach and loader cleanup clear the driver and its visual
+state before unmapping the plugin. `examples/plugins/window_motion.c` is a
+complete public-API driver with V2 state migration.
+
+`shady.window-representation` version 1 is declared in
+`shady/representation.h`. It groups `set`, `reset`, `get`, `attach_provider`,
+`detach_provider`, and `provider_state`. These operations share implementations
+and ownership rules with the older umbrella representation API. Large geometry
+caches are allocated on demand, rather than embedded in every core window.
+
+See [Architecture](ARCHITECTURE.md) for implementation boundaries and tests.

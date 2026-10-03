@@ -110,17 +110,19 @@ static void new_virtual_keyboard(struct wl_listener *listener, void *data) {
 	wl_list_insert(&state->pending_virtual_keyboards, &pending->link);
 }
 
+static void desktop_protocols_destroy(struct shady_server *server);
+
 static bool desktop_protocols_init(struct shady_server *server) {
 	struct shady_desktop_state *state = shady_desktop_state(server);
 	state->server = server;
 	wl_list_init(&state->layer_surfaces);
 	wl_list_init(&state->pending_virtual_keyboards);
 	state->layer_shell = wlr_layer_shell_v1_create(server->wl_display, 4);
-	if (!state->layer_shell) return false;
+	if (!state->layer_shell) goto fail;
 	state->new_layer_surface.notify = server_new_layer_surface;
 	wl_signal_add(&state->layer_shell->events.new_surface,
 		&state->new_layer_surface);
-	if (!shady_shell_protocol_init(server)) return false;
+	if (!shady_shell_protocol_init(server)) goto fail;
 
 	state->relative_pointer_manager =
 		wlr_relative_pointer_manager_v1_create(server->wl_display);
@@ -139,7 +141,7 @@ static bool desktop_protocols_init(struct shady_server *server) {
 	state->xdg_output_manager =
 		wlr_xdg_output_manager_v1_create(server->wl_display, server->output_layout);
 	state->xdg_activation = wlr_xdg_activation_v1_create(server->wl_display);
-	if (!state->xdg_activation) return false;
+	if (!state->xdg_activation) goto fail;
 	state->xdg_activation_request.notify = xdg_activation_request;
 	wl_signal_add(&state->xdg_activation->events.request_activate,
 		&state->xdg_activation_request);
@@ -151,18 +153,18 @@ static bool desktop_protocols_init(struct shady_server *server) {
 	state->virtual_keyboard_manager =
 		wlr_virtual_keyboard_manager_v1_create(server->wl_display);
 	if (!state->fractional_scale_manager || !state->viewporter ||
-			!state->cursor_shape_manager || !state->virtual_keyboard_manager) return false;
+			!state->cursor_shape_manager || !state->virtual_keyboard_manager) goto fail;
 	state->cursor_shape_request.notify = cursor_shape_request;
 	wl_signal_add(&state->cursor_shape_manager->events.request_set_shape,
 		&state->cursor_shape_request);
 	state->new_virtual_keyboard.notify = new_virtual_keyboard;
 	wl_signal_add(&state->virtual_keyboard_manager->events.new_virtual_keyboard,
 		&state->new_virtual_keyboard);
-	if (!shady_ime_init(server)) return false;
+	if (!shady_ime_init(server)) goto fail;
 
 	state->output_manager =
 		wlr_output_manager_v1_create(server->wl_display);
-	if (!state->output_manager) return false;
+	if (!state->output_manager) goto fail;
 	state->output_manager_apply.notify = shady_output_manager_apply;
 	wl_signal_add(&state->output_manager->events.apply,
 		&state->output_manager_apply);
@@ -172,12 +174,12 @@ static bool desktop_protocols_init(struct shady_server *server) {
 
 	state->session_lock_manager =
 		wlr_session_lock_manager_v1_create(server->wl_display);
-	if (!state->session_lock_manager) return false;
+	if (!state->session_lock_manager) goto fail;
 	state->new_session_lock.notify = server_new_session_lock;
 	wl_signal_add(&state->session_lock_manager->events.new_lock,
 		&state->new_session_lock);
 
-	return state->relative_pointer_manager &&
+	bool ready = state->relative_pointer_manager &&
 		state->pointer_constraints &&
 		state->screencopy_manager &&
 		state->idle_notifier &&
@@ -189,6 +191,10 @@ static bool desktop_protocols_init(struct shady_server *server) {
 		state->fractional_scale_manager &&
 		state->viewporter &&
 		state->cursor_shape_manager;
+	if (ready) return true;
+fail:
+	desktop_protocols_destroy(server);
+	return false;
 }
 
 static void desktop_protocols_destroy(struct shady_server *server) {

@@ -12,6 +12,7 @@
 #include "module/module.h"
 #include "event/event.h"
 #include <shady/plugin.h>
+#include <shady/motion.h>
 
 struct wlr_allocator;
 struct wlr_backend;
@@ -114,6 +115,8 @@ struct shady_config {
 	struct shady_keybind bind_camera_reset;
 };
 
+struct shady_representation_state;
+
 struct shady_server {
 	struct wl_display *wl_display;
 	struct wlr_backend *backend;
@@ -160,6 +163,8 @@ struct shady_server {
 	struct shady_config config;
 	struct shady_module_manager modules;
 	struct shady_event_bus events;
+	const struct shady_motion_driver *motion_driver;
+	void *motion_owner;
 
 };
 
@@ -242,67 +247,8 @@ struct shady_toplevel {
 	void *plugin_shader_owner;
 	struct shady_toplevel *plugin_shader_source;
 	void *plugin_shader_source_owner;
-	bool plugin_representation_override;
-	struct shady_window_representation plugin_representation;
-	void *plugin_representation_owner;
-	bool plugin_representation_provider_active;
-	struct shady_window_representation_provider plugin_representation_provider;
-	const struct shady_window_representation_provider *plugin_representation_provider_anchor;
-	void *plugin_representation_provider_owner;
-	void *plugin_representation_state;
-	size_t plugin_representation_state_size;
-	struct {
-		bool initialized;
-		bool valid;
-		const void *vertices;
-		const void *indices;
-		size_t vertex_count;
-		size_t index_count;
-		uint64_t revision;
-	} plugin_representation_mesh_validation_cache;
-	struct {
-		bool initialized;
-		bool valid;
-		const void *vertices;
-		const void *indices;
-		size_t vertex_count;
-		size_t index_count;
-		uint64_t revision;
-	} plugin_representation_hull_validation_cache;
-	struct {
-		bool valid;
-		uint64_t revision;
-		const void *vertices;
-		const void *indices;
-		size_t vertex_count;
-		size_t index_count;
-		float shape_key[5];
-		float vertices_world[256][3];
-		float center_offset[3];
-		float half[3];
-	} plugin_representation_hull_world_cache;
-	struct {
-		bool initialized;
-		bool valid;
-		const void *parts;
-		size_t part_count;
-		uint64_t revision;
-	} plugin_representation_compound_validation_cache;
-	struct {
-		bool valid;
-		uint64_t revision;
-		const void *parts;
-		size_t part_count;
-		float shape_key[5];
-		float vertices_world[256][3];
-		uint16_t indices[1536];
-		size_t part_vertex_offset[8];
-		size_t part_vertex_count[8];
-		size_t part_index_offset[8];
-		size_t part_index_count[8];
-		float center_offset[3];
-		float half[3];
-	} plugin_representation_compound_world_cache;
+	struct shady_representation_state *representation;
+	struct shady_motion_visual motion;
 	/* Opaque per-module extension state. The core toplevel does not know
 	 * which optional modules attach data here. */
 	void *module_state[SHADY_MAX_MODULES];

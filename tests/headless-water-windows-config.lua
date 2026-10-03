@@ -16,7 +16,8 @@ shady.set("background_horizon", "#080A0F")
 shady.set("background_bottom", "#080A0F")
 
 local root = os.getenv("SHADY_ROOT") or "."
-shady.plugin(root .. "/build/libshady-plugin-fps-cube.so")
+shady.plugin(os.getenv("SHADY_FPS_REPRESENTATION_PLUGIN") or
+    (root .. "/build/libshady-plugin-fps-cube.so"))
 
 shady.modules({
     ["window-motion"] = true,

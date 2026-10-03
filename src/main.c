@@ -153,10 +153,19 @@ int main(int argc, char *argv[]) {
 	}
 
 	struct shady_server server = {0};
+	wl_list_init(&server.outputs);
+	wl_list_init(&server.toplevels);
+	wl_list_init(&server.all_toplevels);
+	wl_list_init(&server.popups);
+	wl_list_init(&server.keyboards);
 	shady_events_init(&server);
 	shady_config_defaults(&server.config);
 	shady_modules_init(&server.modules);
-	shady_register_builtin_modules(&server);
+	if (!shady_register_builtin_modules(&server)) {
+		shady_events_finish(&server);
+		shady_modules_close_plugins(&server);
+		return 1;
+	}
 	char config_buf[4096];
 	if (!config_path) {
 		default_config_path(config_buf, sizeof(config_buf));
@@ -260,7 +269,6 @@ int main(int argc, char *argv[]) {
 
 	server.output_layout = wlr_output_layout_create(server.wl_display);
 
-	wl_list_init(&server.outputs);
 	server.new_output.notify = server_new_output;
 	wl_signal_add(&server.backend->events.new_output, &server.new_output);
 
@@ -270,9 +278,6 @@ int main(int argc, char *argv[]) {
 	server.scene_layout = wlr_scene_attach_output_layout(server.scene,
 		server.output_layout);
 
-	wl_list_init(&server.toplevels);
-	wl_list_init(&server.all_toplevels);
-	wl_list_init(&server.popups);
 	server.xdg_shell = wlr_xdg_shell_create(server.wl_display, 3);
 	server.new_xdg_toplevel.notify = server_new_xdg_toplevel;
 	wl_signal_add(&server.xdg_shell->events.new_toplevel, &server.new_xdg_toplevel);
@@ -296,7 +301,6 @@ int main(int argc, char *argv[]) {
 	server.cursor_frame.notify = server_cursor_frame;
 	wl_signal_add(&server.cursor->events.frame, &server.cursor_frame);
 
-	wl_list_init(&server.keyboards);
 	server.new_input.notify = server_new_input;
 	wl_signal_add(&server.backend->events.new_input, &server.new_input);
 	server.seat = wlr_seat_create(server.wl_display, "seat0");

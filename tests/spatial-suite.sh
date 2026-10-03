@@ -19,13 +19,25 @@ nix develop -c ninja -C "$BUILD_DIR" \
   headless-automation-probe \
   math3d-test \
   physics-collision-test \
+  libshady-plugin-fps-cube.so \
+  libshady-plugin-fps-folded-paper.so \
+  libshady-plugin-fps-origami.so \
+  libshady-plugin-motion-contract.so \
   libshady-plugin-focus-depth.so \
   libshady-plugin-spatial-overview.so \
   libshady-plugin-water-windows.so \
   libshady-plugin-close-slide-fade.so
 
+export SHADY_FPS_REPRESENTATION_PLUGIN="$ROOT/$BUILD_DIR/libshady-plugin-fps-cube.so"
+
 nix develop -c meson test -C "$BUILD_DIR" \
-  math3d physics-collision --print-errorlogs
+  math3d physics-collision motion-plugin --print-errorlogs
+
+SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
+  nix develop -c bash ./tests/headless-motion.sh
+
+SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
+  nix develop -c bash ./tests/headless-representation-lifetime.sh
 
 SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
   nix develop -c bash ./tests/headless-fps-toggle.sh

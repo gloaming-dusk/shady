@@ -43,6 +43,8 @@ struct shady_module {
 	size_t state_size;
 	size_t toplevel_state_size;
 	bool (*enabled)(struct shady_server *server);
+	/* On failure, init must detach listeners and release its partial resources.
+	 * destroy runs only for successfully initialized instances. */
 	bool (*init)(struct shady_server *server);
 	void (*start)(struct shady_server *server);
 	void (*stop)(struct shady_server *server);
