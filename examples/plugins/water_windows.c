@@ -2,6 +2,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 
 #include <xkbcommon/xkbcommon-keysyms.h>
@@ -11,6 +12,8 @@
 
 static const struct shady_plugin_api_v1 *api;
 static shady_host host;
+static shady_shader_program water_program;
+static bool shader_logged;
 
 struct water_state {
 	bool enabled;
@@ -51,9 +54,16 @@ static void apply_window(shady_window window, size_t rank) {
 		return;
 
 	if (!s->enabled) {
+		api->window_reset_shader(host, window);
 		api->window_set_water_effect(host, window, 0.f, 8.f, 1.f, 0.f);
 		api->window_set_water_surface(host, window, 0.f, 0.f, 0.f, 0.f);
 		return;
+	}
+
+	if (water_program && api->window_set_shader(host, window, water_program) && !shader_logged) {
+		api->log(SHADY_PLUGIN_LOG_INFO,
+			"water-windows: external window shader attached");
+		shader_logged = true;
 	}
 
 	shady_window focused = api->focused_window(host);
@@ -124,6 +134,22 @@ static void on_event(shady_host event_host,
 	}
 }
 
+static bool init(struct shady_server *server) {
+	(void)server;
+	const char *root = getenv("SHADY_ROOT");
+	if (!root || !*root) root = ".";
+	char vert[1024], frag[1024];
+	snprintf(vert, sizeof(vert), "%s/examples/plugins/shaders/water_window.vert", root);
+	snprintf(frag, sizeof(frag), "%s/examples/plugins/shaders/water_window.frag", root);
+	water_program = api->shader_program_create(host, vert, frag);
+	if (!water_program) {
+		api->log(SHADY_PLUGIN_LOG_ERROR,
+			"water-windows: failed to load plugin window shader");
+		return false;
+	}
+	return true;
+}
+
 static void start(struct shady_server *server) {
 	(void)server;
 	struct water_state *s = state();
@@ -149,10 +175,18 @@ static void stop(struct shady_server *server) {
 	for (size_t i = 0; i < api->window_count(host); i++) {
 		shady_window window = api->window_at(host, i);
 		if (api->window_valid(host, window)) {
+			api->window_reset_shader(host, window);
 			api->window_set_water_effect(host, window, 0.f, 8.f, 1.f, 0.f);
 			api->window_set_water_surface(host, window, 0.f, 0.f, 0.f, 0.f);
 		}
 	}
+}
+
+static void destroy(struct shady_server *server) {
+	(void)server;
+	if (water_program) api->shader_program_destroy(host, water_program);
+	water_program = 0;
+	shader_logged = false;
 }
 
 static const char *const provides[] = {
@@ -170,8 +204,10 @@ static const struct shady_module module = {
 	.provides = provides,
 	.requires = requires,
 	.state_size = sizeof(struct water_state),
+	.init = init,
 	.start = start,
 	.stop = stop,
+	.destroy = destroy,
 	.key = key,
 };
 
@@ -186,7 +222,11 @@ const struct shady_module *shady_plugin_entry_v1(
 			!host_api->window_set_water_effect ||
 			!host_api->window_water_effect ||
 			!host_api->window_set_water_surface ||
-			!host_api->window_water_surface)
+			!host_api->window_water_surface ||
+			!host_api->shader_program_create ||
+			!host_api->shader_program_destroy ||
+			!host_api->window_set_shader ||
+			!host_api->window_reset_shader)
 		return NULL;
 
 	api = host_api;

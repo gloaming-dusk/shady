@@ -499,6 +499,92 @@ static void host_terminate(shady_host host) {
 	if (server->wl_display) wl_display_terminate(server->wl_display);
 }
 
+static void *plugin_owner_from_address(void *address) {
+	Dl_info info = {0};
+	return address && dladdr(address, &info) != 0 ? info.dli_fbase : NULL;
+}
+
+static shady_shader_program host_shader_program_create(shady_host host,
+		const char *vertex_path, const char *fragment_path) {
+	return shady_render_plugin_shader_create(HOST(host), plugin_owner_from_address(__builtin_return_address(0)),
+		vertex_path, fragment_path);
+}
+
+static bool host_shader_program_destroy(shady_host host, shady_shader_program program) {
+	return shady_render_plugin_shader_destroy(HOST(host), plugin_owner_from_address(__builtin_return_address(0)), program);
+}
+
+static bool host_shader_uniform_float(shady_host host, shady_shader_program program,
+		const char *name, float value) {
+	return shady_render_plugin_shader_uniform_float(HOST(host), plugin_owner_from_address(__builtin_return_address(0)),
+		program, name, value);
+}
+
+static bool host_shader_uniform_int(shady_host host, shady_shader_program program,
+		const char *name, int value) {
+	return shady_render_plugin_shader_uniform_int(HOST(host), plugin_owner_from_address(__builtin_return_address(0)),
+		program, name, value);
+}
+
+static bool host_shader_uniform_vec2(shady_host host, shady_shader_program program,
+		const char *name, float x, float y) {
+	return shady_render_plugin_shader_uniform_vec2(HOST(host), plugin_owner_from_address(__builtin_return_address(0)),
+		program, name, x, y);
+}
+
+static bool host_shader_uniform_vec4(shady_host host, shady_shader_program program,
+		const char *name, float x, float y, float z, float w) {
+	return shady_render_plugin_shader_uniform_vec4(HOST(host), plugin_owner_from_address(__builtin_return_address(0)),
+		program, name, x, y, z, w);
+}
+
+static bool host_shader_draw_fullscreen(shady_host host, shady_shader_program program) {
+	return shady_render_plugin_shader_draw_fullscreen(HOST(host), plugin_owner_from_address(__builtin_return_address(0)),
+		program);
+}
+
+static shady_render_hook_id host_render_hook_add(shady_host host, uint32_t stage,
+		shady_render_callback callback, void *user_data) {
+	return shady_render_plugin_hook_add(HOST(host), plugin_owner_from_address(__builtin_return_address(0)),
+		stage, callback, user_data);
+}
+
+static bool host_render_hook_remove(shady_host host, shady_render_hook_id hook) {
+	return shady_render_plugin_hook_remove(HOST(host),
+		plugin_owner_from_address(__builtin_return_address(0)), hook);
+}
+
+static bool host_window_set_shader(shady_host host, shady_window window,
+		shady_shader_program program) {
+	if (!host_window_valid(host, window) || !program) return false;
+	void *owner = plugin_owner_from_address(__builtin_return_address(0));
+	if (!owner || !shady_render_plugin_shader_valid(HOST(host), owner, program))
+		return false;
+	struct shady_toplevel *toplevel = WINDOW(window);
+	toplevel->plugin_shader_program = program;
+	toplevel->plugin_shader_owner = owner;
+	if (HOST(host)->renderer) shady_render_schedule_all_outputs(HOST(host));
+	return true;
+}
+
+static bool host_window_reset_shader(shady_host host, shady_window window) {
+	if (!host_window_valid(host, window)) return false;
+	void *owner = plugin_owner_from_address(__builtin_return_address(0));
+	struct shady_toplevel *toplevel = WINDOW(window);
+	if (toplevel->plugin_shader_owner && owner &&
+			toplevel->plugin_shader_owner != owner)
+		return false;
+	toplevel->plugin_shader_program = 0;
+	toplevel->plugin_shader_owner = NULL;
+	if (HOST(host)->renderer) shady_render_schedule_all_outputs(HOST(host));
+	return true;
+}
+
+static shady_shader_program host_window_shader(shady_window window) {
+	struct shady_toplevel *toplevel = WINDOW(window);
+	return toplevel ? toplevel->plugin_shader_program : 0;
+}
+
 static const struct shady_plugin_api_v1 plugin_api = {
 	.abi_version = SHADY_PLUGIN_ABI_V1,
 	.struct_size = sizeof(struct shady_plugin_api_v1),
@@ -559,6 +645,18 @@ static const struct shady_plugin_api_v1 plugin_api = {
 	.unsubscribe_event = host_unsubscribe_event,
 	.schedule_render = host_schedule_render,
 	.terminate = host_terminate,
+	.shader_program_create = host_shader_program_create,
+	.shader_program_destroy = host_shader_program_destroy,
+	.shader_uniform_float = host_shader_uniform_float,
+	.shader_uniform_int = host_shader_uniform_int,
+	.shader_uniform_vec2 = host_shader_uniform_vec2,
+	.shader_uniform_vec4 = host_shader_uniform_vec4,
+	.shader_draw_fullscreen = host_shader_draw_fullscreen,
+	.render_hook_add = host_render_hook_add,
+	.render_hook_remove = host_render_hook_remove,
+	.window_set_shader = host_window_set_shader,
+	.window_reset_shader = host_window_reset_shader,
+	.window_shader = host_window_shader,
 };
 
 static bool list_contains(const char *const *items, const char *value) {
@@ -630,6 +728,7 @@ static bool plugin_open(struct shady_server *server, const char *path,
 				!descriptor->module || !descriptor->module->name) {
 			wlr_log(WLR_ERROR, "plugin: %s rejected ABI v%u", path, SHADY_PLUGIN_ABI_V2);
 			shady_event_unsubscribe_owner(server, base);
+			shady_render_plugin_cleanup_owner(server, base);
 			dlclose(handle);
 			return false;
 		}
@@ -658,6 +757,7 @@ static bool plugin_open(struct shady_server *server, const char *path,
 	if (!module || !module->name) {
 		wlr_log(WLR_ERROR, "plugin: %s rejected ABI v%u", path, SHADY_PLUGIN_ABI_V1);
 		shady_event_unsubscribe_owner(server, base);
+		shady_render_plugin_cleanup_owner(server, base);
 		dlclose(handle);
 		return false;
 	}
@@ -872,6 +972,7 @@ bool shady_plugin_load(struct shady_server *server, const char *path) {
 		free(name_copy);
 		wlr_log(WLR_ERROR, "plugin: failed to retain metadata for %s", module->name);
 		shady_event_unsubscribe_owner(server, base);
+		shady_render_plugin_cleanup_owner(server, base);
 		dlclose(handle);
 		return false;
 	}
@@ -880,6 +981,7 @@ bool shady_plugin_load(struct shady_server *server, const char *path) {
 		free(path_copy);
 		free(name_copy);
 		shady_event_unsubscribe_owner(server, base);
+		shady_render_plugin_cleanup_owner(server, base);
 		dlclose(handle);
 		return false;
 	}
@@ -919,6 +1021,7 @@ static bool plugin_unload_now(struct shady_server *server, const char *name) {
 		manager->active[index] = false;
 	}
 	shady_event_unsubscribe_owner(server, manager->plugin_base[index]);
+	shady_render_plugin_cleanup_owner(server, manager->plugin_base[index]);
 	dlclose(manager->plugin_handle[index]);
 	manager->plugin_handle[index] = NULL;
 	manager->plugin_base[index] = NULL;
@@ -986,6 +1089,7 @@ static bool plugin_reload_now(struct shady_server *server, const char *name) {
 			!plugin_provides_compatible(old_module, new_module)) {
 		wlr_log(WLR_ERROR, "plugin: reload contract rejected for %s", name);
 		shady_event_unsubscribe_owner(server, new_base);
+		shady_render_plugin_cleanup_owner(server, new_base);
 		dlclose(new_handle);
 		return false;
 	}
@@ -995,18 +1099,21 @@ static bool plugin_reload_now(struct shady_server *server, const char *name) {
 			!old_v2 || !new_v2)) {
 		wlr_log(WLR_ERROR, "plugin: stateful reload requires ABI v2 on both sides: %s", name);
 		shady_event_unsubscribe_owner(server, new_base);
+		shady_render_plugin_cleanup_owner(server, new_base);
 		dlclose(new_handle);
 		return false;
 	}
 	if (was_active && old_module->state_size > 0 && new_module->state_size == 0) {
 		wlr_log(WLR_ERROR, "plugin: %s cannot drop module state during hot reload", name);
 		shady_event_unsubscribe_owner(server, new_base);
+		shady_render_plugin_cleanup_owner(server, new_base);
 		dlclose(new_handle);
 		return false;
 	}
 	if (was_active && old_module->toplevel_state_size > 0 && new_module->toplevel_state_size == 0) {
 		wlr_log(WLR_ERROR, "plugin: %s cannot drop window state during hot reload", name);
 		shady_event_unsubscribe_owner(server, new_base);
+		shady_render_plugin_cleanup_owner(server, new_base);
 		dlclose(new_handle);
 		return false;
 	}
@@ -1014,6 +1121,7 @@ static bool plugin_reload_now(struct shady_server *server, const char *name) {
 	struct plugin_reload_snapshot snapshot;
 	if (!plugin_snapshot_capture(server, index, &snapshot)) {
 		shady_event_unsubscribe_owner(server, new_base);
+		shady_render_plugin_cleanup_owner(server, new_base);
 		dlclose(new_handle);
 		return false;
 	}
@@ -1026,6 +1134,7 @@ static bool plugin_reload_now(struct shady_server *server, const char *name) {
 	if (window_count > 0 && !swaps) {
 		plugin_snapshot_finish(&snapshot);
 		shady_event_unsubscribe_owner(server, new_base);
+		shady_render_plugin_cleanup_owner(server, new_base);
 		dlclose(new_handle);
 		return false;
 	}
@@ -1035,6 +1144,7 @@ static bool plugin_reload_now(struct shady_server *server, const char *name) {
 		free(swaps);
 		plugin_snapshot_finish(&snapshot);
 		shady_event_unsubscribe_owner(server, new_base);
+		shady_render_plugin_cleanup_owner(server, new_base);
 		dlclose(new_handle);
 		return false;
 	}
@@ -1050,6 +1160,7 @@ static bool plugin_reload_now(struct shady_server *server, const char *name) {
 				free(swaps);
 				plugin_snapshot_finish(&snapshot);
 				shady_event_unsubscribe_owner(server, new_base);
+				shady_render_plugin_cleanup_owner(server, new_base);
 				dlclose(new_handle);
 				return false;
 			}
@@ -1089,6 +1200,7 @@ static bool plugin_reload_now(struct shady_server *server, const char *name) {
 		if (manager->active[index] && new_module->destroy) new_module->destroy(server);
 		manager->active[index] = false;
 		shady_event_unsubscribe_owner(server, new_base);
+		shady_render_plugin_cleanup_owner(server, new_base);
 		dlclose(new_handle);
 		free(manager->state[index]);
 		for (size_t i = 0; i < window_count; i++) free(swaps[i].window->module_state[index]);
@@ -1120,6 +1232,7 @@ static bool plugin_reload_now(struct shady_server *server, const char *name) {
 	}
 
 	shady_event_unsubscribe_owner(server, old_base);
+	shady_render_plugin_cleanup_owner(server, old_base);
 	dlclose(old_handle);
 	free(old_module_state);
 	for (size_t i = 0; i < window_count; i++) free(swaps[i].old_state);

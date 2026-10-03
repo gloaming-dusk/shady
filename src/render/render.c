@@ -5,9 +5,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <stdio.h>
 
 #include <wayland-server-core.h>
 
+#include <wlr/render/egl.h>
 #include <wlr/render/gles2.h>
 #include <wlr/render/pass.h>
 #include <wlr/render/wlr_texture.h>
@@ -21,6 +23,7 @@
 
 #include <wlr/util/log.h>
 
+#include <EGL/egl.h>
 #include <GLES2/gl2.h>
 
 #include "../shady.h"
@@ -41,11 +44,428 @@
 
 static struct shady_gl_pipeline pipeline;
 static bool pipeline_ready;
+static struct wlr_renderer *plugin_renderer;
+
+#define SHADY_PLUGIN_SHADER_MAX 64
+#define SHADY_PLUGIN_HOOK_MAX 64
+struct plugin_shader_slot {
+	bool used;
+	shady_shader_program id;
+	void *owner;
+	GLuint program;
+};
+struct plugin_hook_slot {
+	bool used;
+	shady_render_hook_id id;
+	void *owner;
+	uint32_t stage;
+	shady_render_callback callback;
+	void *user_data;
+};
+static struct plugin_shader_slot plugin_shaders[SHADY_PLUGIN_SHADER_MAX];
+static struct plugin_hook_slot plugin_hooks[SHADY_PLUGIN_HOOK_MAX];
+static uint64_t next_plugin_shader_id = 1;
+static uint64_t next_plugin_hook_id = 1;
+static GLuint plugin_fullscreen_vbo;
 
 static GLuint depth_rbo;
 static int depth_rbo_w;
 static int depth_rbo_h;
 static int render_stats_enabled_cache = -1;
+
+static bool plugin_make_current(void) {
+	if (!plugin_renderer || !wlr_renderer_is_gles2(plugin_renderer)) return false;
+	struct wlr_egl *egl = wlr_gles2_renderer_get_egl(plugin_renderer);
+	if (!egl) return false;
+	return eglMakeCurrent(wlr_egl_get_display(egl), EGL_NO_SURFACE,
+		EGL_NO_SURFACE, wlr_egl_get_context(egl)) == EGL_TRUE;
+}
+
+static char *plugin_read_text_file(const char *path) {
+	if (!path || !*path) return NULL;
+	FILE *f = fopen(path, "rb");
+	if (!f) return NULL;
+	if (fseek(f, 0, SEEK_END) != 0) { fclose(f); return NULL; }
+	long len = ftell(f);
+	if (len < 0) { fclose(f); return NULL; }
+	rewind(f);
+	char *buf = malloc((size_t)len + 1);
+	if (!buf) { fclose(f); return NULL; }
+	size_t n = fread(buf, 1, (size_t)len, f);
+	fclose(f);
+	if (n != (size_t)len) { free(buf); return NULL; }
+	buf[len] = '\0';
+	return buf;
+}
+
+static GLuint plugin_compile_shader(GLenum type, const char *src, const char *label) {
+	GLuint shader = glCreateShader(type);
+	glShaderSource(shader, 1, &src, NULL);
+	glCompileShader(shader);
+	GLint ok = GL_FALSE;
+	glGetShaderiv(shader, GL_COMPILE_STATUS, &ok);
+	if (!ok) {
+		char log[2048] = {0};
+		glGetShaderInfoLog(shader, sizeof(log), NULL, log);
+		wlr_log(WLR_ERROR, "plugin shader compile failed (%s): %s", label, log);
+		glDeleteShader(shader);
+		return 0;
+	}
+	return shader;
+}
+
+static GLuint plugin_link_shader_files(const char *vert_path, const char *frag_path) {
+	char *vert = plugin_read_text_file(vert_path);
+	char *frag = plugin_read_text_file(frag_path);
+	if (!vert || !frag) {
+		wlr_log(WLR_ERROR, "plugin shader: failed to read %s / %s",
+			vert_path ? vert_path : "(null)", frag_path ? frag_path : "(null)");
+		free(vert); free(frag);
+		return 0;
+	}
+	GLuint vs = plugin_compile_shader(GL_VERTEX_SHADER, vert, vert_path);
+	GLuint fs = plugin_compile_shader(GL_FRAGMENT_SHADER, frag, frag_path);
+	free(vert); free(frag);
+	if (!vs || !fs) {
+		if (vs) glDeleteShader(vs);
+		if (fs) glDeleteShader(fs);
+		return 0;
+	}
+	GLuint prog = glCreateProgram();
+	glAttachShader(prog, vs);
+	glAttachShader(prog, fs);
+	glBindAttribLocation(prog, 0, "a_pos");
+	glLinkProgram(prog);
+	glDeleteShader(vs);
+	glDeleteShader(fs);
+	GLint ok = GL_FALSE;
+	glGetProgramiv(prog, GL_LINK_STATUS, &ok);
+	if (!ok) {
+		char log[2048] = {0};
+		glGetProgramInfoLog(prog, sizeof(log), NULL, log);
+		wlr_log(WLR_ERROR, "plugin shader link failed: %s", log);
+		glDeleteProgram(prog);
+		return 0;
+	}
+	return prog;
+}
+
+static struct plugin_shader_slot *plugin_shader_find(shady_shader_program id, void *owner) {
+	for (size_t i = 0; i < SHADY_PLUGIN_SHADER_MAX; i++)
+		if (plugin_shaders[i].used && plugin_shaders[i].id == id &&
+				(!owner || plugin_shaders[i].owner == owner)) return &plugin_shaders[i];
+	return NULL;
+}
+
+shady_shader_program shady_render_plugin_shader_create(struct shady_server *server,
+		void *owner, const char *vertex_path, const char *fragment_path) {
+	(void)server;
+	if (!owner || !plugin_make_current()) return 0;
+	size_t slot = SHADY_PLUGIN_SHADER_MAX;
+	for (size_t i = 0; i < SHADY_PLUGIN_SHADER_MAX; i++)
+		if (!plugin_shaders[i].used) { slot = i; break; }
+	if (slot == SHADY_PLUGIN_SHADER_MAX) return 0;
+	GLuint prog = plugin_link_shader_files(vertex_path, fragment_path);
+	if (!prog) return 0;
+	shady_shader_program id = next_plugin_shader_id++;
+	if (!id) id = next_plugin_shader_id++;
+	plugin_shaders[slot] = (struct plugin_shader_slot){
+		.used = true, .id = id, .owner = owner, .program = prog
+	};
+	return id;
+}
+
+bool shady_render_plugin_shader_valid(struct shady_server *server, void *owner,
+		shady_shader_program program) {
+	(void)server;
+	return plugin_shader_find(program, owner) != NULL;
+}
+
+bool shady_render_plugin_shader_destroy(struct shady_server *server, void *owner,
+		shady_shader_program program) {
+	struct plugin_shader_slot *slot = plugin_shader_find(program, owner);
+	if (!slot || !plugin_make_current()) return false;
+	if (server) {
+		struct shady_toplevel *toplevel;
+		wl_list_for_each(toplevel, &server->all_toplevels, all_link) {
+			if (toplevel->plugin_shader_owner == owner &&
+					toplevel->plugin_shader_program == program) {
+				toplevel->plugin_shader_program = 0;
+				toplevel->plugin_shader_owner = NULL;
+			}
+		}
+	}
+	glDeleteProgram(slot->program);
+	memset(slot, 0, sizeof(*slot));
+	return true;
+}
+
+static GLint plugin_uniform_location(void *owner, shady_shader_program program,
+		const char *name, GLuint *gl_program) {
+	struct plugin_shader_slot *slot = plugin_shader_find(program, owner);
+	if (!slot || !name || !*name || !plugin_make_current()) return -1;
+	if (gl_program) *gl_program = slot->program;
+	return glGetUniformLocation(slot->program, name);
+}
+
+bool shady_render_plugin_shader_uniform_float(struct shady_server *server, void *owner,
+		shady_shader_program program, const char *name, float value) {
+	(void)server;
+	GLuint gl_program = 0;
+	GLint loc = plugin_uniform_location(owner, program, name, &gl_program);
+	if (loc < 0) return false;
+	GLint previous = 0;
+	glGetIntegerv(GL_CURRENT_PROGRAM, &previous);
+	glUseProgram(gl_program);
+	glUniform1f(loc, value);
+	glUseProgram((GLuint)previous);
+	return true;
+}
+bool shady_render_plugin_shader_uniform_int(struct shady_server *server, void *owner,
+		shady_shader_program program, const char *name, int value) {
+	(void)server;
+	GLuint gl_program = 0;
+	GLint loc = plugin_uniform_location(owner, program, name, &gl_program);
+	if (loc < 0) return false;
+	GLint previous = 0;
+	glGetIntegerv(GL_CURRENT_PROGRAM, &previous);
+	glUseProgram(gl_program);
+	glUniform1i(loc, value);
+	glUseProgram((GLuint)previous);
+	return true;
+}
+bool shady_render_plugin_shader_uniform_vec2(struct shady_server *server, void *owner,
+		shady_shader_program program, const char *name, float x, float y) {
+	(void)server;
+	GLuint gl_program = 0;
+	GLint loc = plugin_uniform_location(owner, program, name, &gl_program);
+	if (loc < 0) return false;
+	GLint previous = 0;
+	glGetIntegerv(GL_CURRENT_PROGRAM, &previous);
+	glUseProgram(gl_program);
+	glUniform2f(loc, x, y);
+	glUseProgram((GLuint)previous);
+	return true;
+}
+bool shady_render_plugin_shader_uniform_vec4(struct shady_server *server, void *owner,
+		shady_shader_program program, const char *name, float x, float y, float z, float w) {
+	(void)server;
+	GLuint gl_program = 0;
+	GLint loc = plugin_uniform_location(owner, program, name, &gl_program);
+	if (loc < 0) return false;
+	GLint previous = 0;
+	glGetIntegerv(GL_CURRENT_PROGRAM, &previous);
+	glUseProgram(gl_program);
+	glUniform4f(loc, x, y, z, w);
+	glUseProgram((GLuint)previous);
+	return true;
+}
+
+static bool plugin_shader_draw_window(struct shady_server *server,
+		struct shady_toplevel *toplevel, GLenum source_target, GLuint source_texture,
+		int texture_width, int texture_height, bool has_alpha,
+		const float mvp[16], const float model[16], const float frame_rect[4],
+		float time_seconds, float output_width, float output_height,
+		float window_width, float window_height, float wobble_x, float wobble_y,
+		const float water[4], const float water_surface[4],
+		const float border_color[4], const float border_width[2],
+		float close_progress, const float close_effect[4], const float tint[4],
+		float effect_strength, float brightness) {
+	(void)server;
+	if (!toplevel->plugin_shader_program || !toplevel->plugin_shader_owner) return false;
+	struct plugin_shader_slot *slot = plugin_shader_find(
+		toplevel->plugin_shader_program, toplevel->plugin_shader_owner);
+	if (!slot || !plugin_make_current()) return false;
+
+	GLuint sampled_texture = source_texture;
+	GLuint copied_texture = 0;
+	if (source_target != GL_TEXTURE_2D) {
+		if (!shady_gl_pipeline_copy_texture(&pipeline, source_target, source_texture,
+				texture_width, texture_height, &copied_texture))
+			return false;
+		sampled_texture = copied_texture;
+	}
+
+	GLint old_program = 0, old_buffer = 0, old_texture = 0, old_active_texture = 0;
+	GLboolean depth = glIsEnabled(GL_DEPTH_TEST);
+	GLboolean blend = glIsEnabled(GL_BLEND);
+	GLboolean depth_mask = GL_TRUE;
+	glGetIntegerv(GL_CURRENT_PROGRAM, &old_program);
+	glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &old_buffer);
+	glGetIntegerv(GL_ACTIVE_TEXTURE, &old_active_texture);
+	glActiveTexture(GL_TEXTURE0);
+	glGetIntegerv(GL_TEXTURE_BINDING_2D, &old_texture);
+	glGetBooleanv(GL_DEPTH_WRITEMASK, &depth_mask);
+
+	glUseProgram(slot->program);
+	GLint loc = glGetUniformLocation(slot->program, "u_mvp");
+	if (loc >= 0) glUniformMatrix4fv(loc, 1, GL_FALSE, mvp);
+	loc = glGetUniformLocation(slot->program, "u_model");
+	if (loc >= 0) glUniformMatrix4fv(loc, 1, GL_FALSE, model);
+	loc = glGetUniformLocation(slot->program, "u_frame_rect");
+	if (loc >= 0) glUniform4fv(loc, 1, frame_rect);
+	loc = glGetUniformLocation(slot->program, "u_time");
+	if (loc >= 0) glUniform1f(loc, time_seconds);
+	loc = glGetUniformLocation(slot->program, "u_resolution");
+	if (loc >= 0) glUniform2f(loc, output_width, output_height);
+	loc = glGetUniformLocation(slot->program, "u_window_size");
+	if (loc >= 0) glUniform2f(loc, window_width, window_height);
+	loc = glGetUniformLocation(slot->program, "u_has_alpha");
+	if (loc >= 0) glUniform1f(loc, has_alpha ? 1.f : 0.f);
+	loc = glGetUniformLocation(slot->program, "u_wobble");
+	if (loc >= 0) glUniform2f(loc, wobble_x, wobble_y);
+	loc = glGetUniformLocation(slot->program, "u_water");
+	if (loc >= 0) glUniform4fv(loc, 1, water);
+	loc = glGetUniformLocation(slot->program, "u_water_surface");
+	if (loc >= 0) glUniform4fv(loc, 1, water_surface);
+	loc = glGetUniformLocation(slot->program, "u_border_color");
+	if (loc >= 0) glUniform4fv(loc, 1, border_color);
+	loc = glGetUniformLocation(slot->program, "u_border_width");
+	if (loc >= 0) glUniform2fv(loc, 1, border_width);
+	loc = glGetUniformLocation(slot->program, "u_close_progress");
+	if (loc >= 0) glUniform1f(loc, close_progress);
+	loc = glGetUniformLocation(slot->program, "u_close_effect");
+	if (loc >= 0) glUniform4fv(loc, 1, close_effect);
+	loc = glGetUniformLocation(slot->program, "u_tint");
+	if (loc >= 0) glUniform4fv(loc, 1, tint);
+	loc = glGetUniformLocation(slot->program, "u_effect_strength");
+	if (loc >= 0) glUniform1f(loc, effect_strength);
+	loc = glGetUniformLocation(slot->program, "u_brightness");
+	if (loc >= 0) glUniform1f(loc, brightness);
+	loc = glGetUniformLocation(slot->program, "u_light_dir");
+	if (loc >= 0) glUniform3f(loc, -0.45f, 0.72f, 0.53f);
+	loc = glGetUniformLocation(slot->program, "u_tex");
+	if (loc >= 0) glUniform1i(loc, 0);
+
+	glBindTexture(GL_TEXTURE_2D, sampled_texture);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+	if (has_alpha) {
+		glEnable(GL_BLEND);
+		glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+		glDepthMask(GL_FALSE);
+	}
+
+	glBindBuffer(GL_ARRAY_BUFFER, pipeline.mesh_vbo);
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(GLfloat), (void *)0);
+	glEnableVertexAttribArray(0);
+	glDrawArrays(GL_TRIANGLES, 0, pipeline.mesh_vertex_count);
+	glDisableVertexAttribArray(0);
+
+	glBindBuffer(GL_ARRAY_BUFFER, (GLuint)old_buffer);
+	glBindTexture(GL_TEXTURE_2D, (GLuint)old_texture);
+	glActiveTexture((GLenum)old_active_texture);
+	glUseProgram((GLuint)old_program);
+	glDepthMask(depth_mask);
+	if (depth) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
+	if (blend) glEnable(GL_BLEND); else glDisable(GL_BLEND);
+	if (copied_texture) glDeleteTextures(1, &copied_texture);
+	return true;
+}
+
+bool shady_render_plugin_shader_draw_fullscreen(struct shady_server *server, void *owner,
+		shady_shader_program program) {
+	(void)server;
+	struct plugin_shader_slot *slot = plugin_shader_find(program, owner);
+	if (!slot || !plugin_make_current()) return false;
+	if (!plugin_fullscreen_vbo) {
+		static const float verts[] = {-1.f,-1.f, 3.f,-1.f, -1.f,3.f};
+		glGenBuffers(1, &plugin_fullscreen_vbo);
+		glBindBuffer(GL_ARRAY_BUFFER, plugin_fullscreen_vbo);
+		glBufferData(GL_ARRAY_BUFFER, sizeof(verts), verts, GL_STATIC_DRAW);
+	}
+	GLboolean depth = glIsEnabled(GL_DEPTH_TEST);
+	GLboolean blend = glIsEnabled(GL_BLEND);
+	GLint old_program = 0, old_buffer = 0;
+	GLint blend_src_rgb = 0, blend_dst_rgb = 0, blend_src_alpha = 0, blend_dst_alpha = 0;
+	glGetIntegerv(GL_CURRENT_PROGRAM, &old_program);
+	glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &old_buffer);
+	glGetIntegerv(GL_BLEND_SRC_RGB, &blend_src_rgb);
+	glGetIntegerv(GL_BLEND_DST_RGB, &blend_dst_rgb);
+	glGetIntegerv(GL_BLEND_SRC_ALPHA, &blend_src_alpha);
+	glGetIntegerv(GL_BLEND_DST_ALPHA, &blend_dst_alpha);
+	glDisable(GL_DEPTH_TEST);
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	glUseProgram(slot->program);
+	glBindBuffer(GL_ARRAY_BUFFER, plugin_fullscreen_vbo);
+	glEnableVertexAttribArray(0);
+	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void *)0);
+	glDrawArrays(GL_TRIANGLES, 0, 3);
+	glDisableVertexAttribArray(0);
+	glBindBuffer(GL_ARRAY_BUFFER, (GLuint)old_buffer);
+	glUseProgram((GLuint)old_program);
+	glBlendFuncSeparate((GLenum)blend_src_rgb, (GLenum)blend_dst_rgb,
+		(GLenum)blend_src_alpha, (GLenum)blend_dst_alpha);
+	if (depth) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
+	if (blend) glEnable(GL_BLEND); else glDisable(GL_BLEND);
+	return true;
+}
+
+shady_render_hook_id shady_render_plugin_hook_add(struct shady_server *server, void *owner,
+		uint32_t stage, shady_render_callback callback, void *user_data) {
+	(void)server;
+	if (!owner || !callback || stage > SHADY_RENDER_STAGE_OVERLAY) return 0;
+	for (size_t i = 0; i < SHADY_PLUGIN_HOOK_MAX; i++) if (!plugin_hooks[i].used) {
+		shady_render_hook_id id = next_plugin_hook_id++;
+		if (!id) id = next_plugin_hook_id++;
+		plugin_hooks[i] = (struct plugin_hook_slot){
+			.used = true, .id = id, .owner = owner, .stage = stage,
+			.callback = callback, .user_data = user_data
+		};
+		return id;
+	}
+	return 0;
+}
+
+bool shady_render_plugin_hook_remove(struct shady_server *server, void *owner,
+		shady_render_hook_id hook) {
+	(void)server;
+	for (size_t i = 0; i < SHADY_PLUGIN_HOOK_MAX; i++)
+		if (plugin_hooks[i].used && plugin_hooks[i].id == hook &&
+				plugin_hooks[i].owner == owner) {
+			memset(&plugin_hooks[i], 0, sizeof(plugin_hooks[i]));
+			return true;
+		}
+	return false;
+}
+
+void shady_render_plugin_cleanup_owner(struct shady_server *server, void *owner) {
+	if (!owner) return;
+	if (server) {
+		struct shady_toplevel *toplevel;
+		wl_list_for_each(toplevel, &server->all_toplevels, all_link) {
+			if (toplevel->plugin_shader_owner == owner) {
+				toplevel->plugin_shader_program = 0;
+				toplevel->plugin_shader_owner = NULL;
+			}
+		}
+	}
+	if (plugin_make_current()) for (size_t i = 0; i < SHADY_PLUGIN_SHADER_MAX; i++)
+		if (plugin_shaders[i].used && plugin_shaders[i].owner == owner) {
+			glDeleteProgram(plugin_shaders[i].program);
+			memset(&plugin_shaders[i], 0, sizeof(plugin_shaders[i]));
+		}
+	for (size_t i = 0; i < SHADY_PLUGIN_HOOK_MAX; i++)
+		if (plugin_hooks[i].used && plugin_hooks[i].owner == owner)
+			memset(&plugin_hooks[i], 0, sizeof(plugin_hooks[i]));
+}
+
+static void plugin_render_hooks_run(struct shady_server *server, uint32_t stage,
+		struct shady_output *output, int width, int height,
+		float logical_width, float logical_height, float time_seconds) {
+	struct shady_render_context context = {
+		.struct_size = sizeof(context), .stage = stage, .output = (shady_output)output,
+		.width = width, .height = height, .logical_width = logical_width,
+		.logical_height = logical_height, .time_seconds = time_seconds,
+	};
+	for (size_t i = 0; i < SHADY_PLUGIN_HOOK_MAX; i++)
+		if (plugin_hooks[i].used && plugin_hooks[i].stage == stage)
+			plugin_hooks[i].callback((shady_host)server, &context, plugin_hooks[i].user_data);
+}
 
 static bool render_stats_enabled(void) {
 	if (render_stats_enabled_cache < 0) {
@@ -236,6 +656,11 @@ ensure_close_snapshot(
 bool shady_render_init(
 	struct wlr_renderer *renderer
 ) {
+	plugin_renderer = renderer;
+	memset(plugin_shaders, 0, sizeof(plugin_shaders));
+	memset(plugin_hooks, 0, sizeof(plugin_hooks));
+	next_plugin_shader_id = 1;
+	next_plugin_hook_id = 1;
 	pipeline_ready =
 		shady_gl_pipeline_init(
 			&pipeline,
@@ -262,6 +687,16 @@ bool shady_render_init(
 }
 
 void shady_render_fini(void) {
+	if (plugin_make_current()) {
+		for (size_t i = 0; i < SHADY_PLUGIN_SHADER_MAX; i++) {
+			if (plugin_shaders[i].used) glDeleteProgram(plugin_shaders[i].program);
+		}
+		if (plugin_fullscreen_vbo) glDeleteBuffers(1, &plugin_fullscreen_vbo);
+	}
+	memset(plugin_shaders, 0, sizeof(plugin_shaders));
+	memset(plugin_hooks, 0, sizeof(plugin_hooks));
+	plugin_fullscreen_vbo = 0;
+	plugin_renderer = NULL;
 	if (depth_rbo) {
 		glDeleteRenderbuffers(
 			1,
@@ -742,6 +1177,7 @@ void shady_render_output_frame(
 
 	float logical_h =
 		(float)buf_h / scale;
+	float time_seconds = shader_time_seconds();
 
 	/*
 	 * Attach a depth RBO to wlroots'
@@ -807,6 +1243,8 @@ void shady_render_output_frame(
 		server->config.background_top,
 		server->config.background_horizon,
 		server->config.background_bottom);
+	plugin_render_hooks_run(server, SHADY_RENDER_STAGE_AFTER_BACKGROUND,
+		output, buf_w, buf_h, logical_w, logical_h, time_seconds);
 
 	float view[16];
 	float proj[16];
@@ -850,8 +1288,6 @@ void shady_render_output_frame(
 	 * Same time value for every window
 	 * rendered in this frame.
 	 */
-	float time_seconds =
-		shader_time_seconds();
 	const float window_tint[4] = {
 		server->config.window_tint[0], server->config.window_tint[1],
 		server->config.window_tint[2], 1.0f,
@@ -881,6 +1317,8 @@ void shady_render_output_frame(
 	struct shady_toplevel *toplevel;
 	shady_scene_effects_draw_shadows(server, &pipeline, vp,
 		logical_w, logical_h, ox, oy);
+	plugin_render_hooks_run(server, SHADY_RENDER_STAGE_BEFORE_WINDOWS,
+		output, buf_w, buf_h, logical_w, logical_h, time_seconds);
 	if (profile) {
 		clock_gettime(CLOCK_MONOTONIC, &profile_effects_end);
 		profile_windows_start = profile_effects_end;
@@ -1109,27 +1547,41 @@ void shady_render_output_frame(
 			close_state->direction_x,
 			close_state->direction_y,
 		};
-		shady_gl_pipeline_draw_window(
-			&pipeline,
-			attribs.target,
-			attribs.tex,
-			attribs.has_alpha,
-			mvp,
-			model,
-			client_frame_rect,
-			time_seconds,
-			wobble_x,
-			wobble_y,
-			water,
-			water_surface,
-			border_color,
-			border_width,
-			shady_close_state_for_const(toplevel)->progress,
-			close_effect,
-			focused_tint,
-			server->config.window_effect_strength,
-			server->config.window_brightness * (focused ? 1.08f : 1.0f)
-		);
+		bool custom_drawn = false;
+		if (toplevel->plugin_shader_program && toplevel->plugin_shader_owner) {
+			custom_drawn = plugin_shader_draw_window(
+				server, toplevel, attribs.target, attribs.tex,
+				texture->width, texture->height, attribs.has_alpha,
+				mvp, model, client_frame_rect, time_seconds,
+				(float)buf_w, (float)buf_h, tw, th, wobble_x, wobble_y,
+				water, water_surface, border_color, border_width,
+				shady_close_state_for_const(toplevel)->progress, close_effect,
+				focused_tint, server->config.window_effect_strength,
+				server->config.window_brightness * (focused ? 1.08f : 1.0f));
+		}
+		if (!custom_drawn) {
+			shady_gl_pipeline_draw_window(
+				&pipeline,
+				attribs.target,
+				attribs.tex,
+				attribs.has_alpha,
+				mvp,
+				model,
+				client_frame_rect,
+				time_seconds,
+				wobble_x,
+				wobble_y,
+				water,
+				water_surface,
+				border_color,
+				border_width,
+				shady_close_state_for_const(toplevel)->progress,
+				close_effect,
+				focused_tint,
+				server->config.window_effect_strength,
+				server->config.window_brightness * (focused ? 1.08f : 1.0f)
+			);
+		}
 
 		if (frame_has_titlebar) {
 			struct wlr_gles2_texture_attribs title_attribs;
@@ -1278,6 +1730,8 @@ void shady_render_output_frame(
 			server->config.window_brightness
 		);
 	}
+	plugin_render_hooks_run(server, SHADY_RENDER_STAGE_AFTER_WINDOWS,
+		output, buf_w, buf_h, logical_w, logical_h, time_seconds);
 	if (profile) clock_gettime(CLOCK_MONOTONIC, &profile_windows_end);
 
 
@@ -1356,6 +1810,8 @@ void shady_render_output_frame(
 	/* Compose protocol-driven 2D surfaces after the spatial pass. */
 	if (profile) clock_gettime(CLOCK_MONOTONIC, &profile_overlay_start);
 	render_spatial_overlays(server, pass, wlr_output, ox, oy, scale);
+	plugin_render_hooks_run(server, SHADY_RENDER_STAGE_OVERLAY,
+		output, buf_w, buf_h, logical_w, logical_h, time_seconds);
 	if (profile) {
 		clock_gettime(CLOCK_MONOTONIC, &profile_overlay_end);
 		profile_submit_start = profile_overlay_end;

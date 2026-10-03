@@ -1,0 +1,31 @@
+attribute vec3 a_pos;
+uniform mat4 u_vp;
+uniform mat4 u_model;
+uniform vec2 u_wobble;
+uniform float u_softness;
+uniform vec4 u_floor_bounds;
+varying vec2 v_uv;
+varying vec2 v_shadow_xz;
+void main() {
+    vec2 uv = a_pos.xy;
+    vec3 pos = a_pos;
+    float cx = uv.x - 0.5;
+    float cy = uv.y - 0.5;
+    float bx = sin(uv.y * 3.14159265);
+    float by = sin(uv.x * 3.14159265);
+    pos.x += u_wobble.x * bx * (0.75 + 0.25 * cos(cy * 3.14159265));
+    pos.y += u_wobble.y * by * (0.75 + 0.25 * cos(cx * 3.14159265));
+    pos.x += u_wobble.y * cy * 0.18 * by;
+    pos.y += u_wobble.x * cx * 0.18 * bx;
+    float ds = sin(uv.x * 3.14159265) * sin(uv.y * 3.14159265);
+    pos.z += (u_wobble.x * cy - u_wobble.y * cx) * 0.65 * ds;
+    vec3 world = (u_model * vec4(pos, 1.0)).xyz;
+    vec3 light = normalize(vec3(-0.45, 0.72, 0.53));
+    float t = (-0.618 - world.y) / -light.y;
+    vec3 projected = world + light * t;
+    projected.y = -0.618;
+    gl_Position = u_vp * vec4(projected, 1.0);
+    gl_Position.y = -gl_Position.y;
+    v_uv = uv;
+    v_shadow_xz = projected.xz;
+}

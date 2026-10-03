@@ -11,6 +11,7 @@
 #include "experimental/state.h"
 #include "module/module.h"
 #include "event/event.h"
+#include <shady/plugin.h>
 
 struct wlr_allocator;
 struct wlr_backend;
@@ -237,6 +238,8 @@ struct shady_toplevel {
 	float close_effect_strength;
 	float close_effect_direction_x;
 	float close_effect_direction_y;
+	shady_shader_program plugin_shader_program;
+	void *plugin_shader_owner;
 	/* Opaque per-module extension state. The core toplevel does not know
 	 * which optional modules attach data here. */
 	void *module_state[SHADY_MAX_MODULES];

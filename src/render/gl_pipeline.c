@@ -20,207 +20,6 @@
 #define WOBBLE_MESH_X 16
 #define WOBBLE_MESH_Y 16
 
-static const char *SIDE_VERT =
-	"attribute vec3 a_pos;\n"
-	"attribute vec3 a_normal;\n"
-	"uniform mat4 u_mvp;\n"
-	"uniform mat4 u_model;\n"
-	"uniform vec2 u_wobble;\n"
-	"varying vec3 v_normal;\n"
-	"void main() {\n"
-	"    vec3 pos = a_pos;\n"
-	"    float bend_x = sin(pos.y * 3.14159265);\n"
-	"    float bend_y = sin(pos.x * 3.14159265);\n"
-	"    float cx = pos.x - 0.5;\n"
-	"    float cy = pos.y - 0.5;\n"
-	"    pos.x += u_wobble.x * bend_x * (0.75 + 0.25 * cos(cy * 3.14159265));\n"
-	"    pos.y += u_wobble.y * bend_y * (0.75 + 0.25 * cos(cx * 3.14159265));\n"
-	"    pos.x += u_wobble.y * cy * 0.18 * bend_y;\n"
-	"    pos.y += u_wobble.x * cx * 0.18 * bend_x;\n"
-	"    float depth_shape = sin(pos.x * 3.14159265) * sin(pos.y * 3.14159265);\n"
-	"    pos.z += (u_wobble.x * cy - u_wobble.y * cx) * 0.65 * depth_shape;\n"
-	"    gl_Position = u_mvp * vec4(pos, 1.0);\n"
-	"    gl_Position.y = -gl_Position.y;\n"
-	"    v_normal = normalize(mat3(u_model) * a_normal);\n"
-	"}\n";
-
-static const char *SIDE_FRAG =
-	"precision mediump float;\n"
-	"uniform vec3 u_light_dir;\n"
-	"uniform vec4 u_base_color;\n"
-	"uniform vec2 u_wobble;\n"
-	"varying vec3 v_normal;\n"
-	"void main() {\n"
-	"    vec3 n = normalize(v_normal);\n"
-	"    vec3 l = normalize(u_light_dir);\n"
-	"    float diffuse = max(dot(n, l), 0.0);\n"
-	"    float rim = pow(1.0 - abs(n.z), 2.0);\n"
-	"    float light = 0.24 + diffuse * 0.76;\n"
-	"    vec3 color = u_base_color.rgb * light;\n"
-	"    color += vec3(0.035, 0.075, 0.13) * rim;\n"
-	"    gl_FragColor = vec4(color, u_base_color.a);\n"
-	"}\n";
-
-static const char *SHADOW_VERT =
-	"attribute vec3 a_pos;\n"
-	"uniform mat4 u_vp;\n"
-	"uniform mat4 u_model;\n"
-	"uniform vec2 u_wobble;\n"
-	"uniform float u_softness;\n"
-	"uniform vec4 u_floor_bounds;\n"
-	"varying vec2 v_uv;\n"
-	"varying vec2 v_shadow_xz;\n"
-	"void main() {\n"
-	"    vec2 uv = a_pos.xy;\n"
-	"    vec3 pos = a_pos;\n"
-	"    float cx = uv.x - 0.5;\n"
-	"    float cy = uv.y - 0.5;\n"
-	"    float bx = sin(uv.y * 3.14159265);\n"
-	"    float by = sin(uv.x * 3.14159265);\n"
-	"    pos.x += u_wobble.x * bx * (0.75 + 0.25 * cos(cy * 3.14159265));\n"
-	"    pos.y += u_wobble.y * by * (0.75 + 0.25 * cos(cx * 3.14159265));\n"
-	"    pos.x += u_wobble.y * cy * 0.18 * by;\n"
-	"    pos.y += u_wobble.x * cx * 0.18 * bx;\n"
-	"    float ds = sin(uv.x * 3.14159265) * sin(uv.y * 3.14159265);\n"
-	"    pos.z += (u_wobble.x * cy - u_wobble.y * cx) * 0.65 * ds;\n"
-	"    vec3 world = (u_model * vec4(pos, 1.0)).xyz;\n"
-	"    vec3 light = normalize(vec3(-0.45, 0.72, 0.53));\n"
-	"    float t = (-0.618 - world.y) / -light.y;\n"
-	"    vec3 projected = world + light * t;\n"
-	"    projected.y = -0.618;\n"
-	"    gl_Position = u_vp * vec4(projected, 1.0);\n"
-	"    gl_Position.y = -gl_Position.y;\n"
-	"    v_uv = uv;\n"
-	"    v_shadow_xz = projected.xz;\n"
-	"}\n";
-
-static const char *SHADOW_FRAG =
-	"precision mediump float;\n"
-	"uniform float u_softness;\n"
-	"uniform float u_opacity;\n"
-	"uniform vec4 u_floor_bounds;\n"
-	"varying vec2 v_uv;\n"
-	"varying vec2 v_shadow_xz;\n"
-	"void main() {\n"
-	"    if (v_shadow_xz.x < u_floor_bounds.x || v_shadow_xz.x > u_floor_bounds.y || v_shadow_xz.y < u_floor_bounds.z || v_shadow_xz.y > u_floor_bounds.w) discard;\n"
-	"    float edge = min(min(v_uv.x, 1.0-v_uv.x), min(v_uv.y, 1.0-v_uv.y));\n"
-	"    float feather = smoothstep(0.0, u_softness, edge);\n"
-	"    float core = smoothstep(0.0, u_softness * 2.2, edge);\n"
-	"    float alpha = u_opacity * mix(0.48, 1.0, core) * feather;\n"
-	"    gl_FragColor = vec4(0.0, 0.0, 0.0, alpha);\n"
-	"}\n";
-
-static const char *BACKGROUND_VERT =
-	"attribute vec2 a_pos;\n"
-	"varying float v_y;\n"
-	"void main() {\n"
-	"    v_y = a_pos.y * 0.5 + 0.5;\n"
-	"    gl_Position = vec4(a_pos, 0.999, 1.0);\n"
-	"}\n";
-
-static const char *BACKGROUND_FRAG =
-	"precision mediump float;\n"
-	"uniform vec3 u_top;\n"
-	"uniform vec3 u_horizon;\n"
-	"uniform vec3 u_bottom;\n"
-	"varying float v_y;\n"
-	"void main() {\n"
-	"    float horizon = smoothstep(0.18, 0.58, v_y);\n"
-	"    vec3 lower = mix(u_bottom, u_horizon, horizon);\n"
-	"    float upper_mix = smoothstep(0.48, 1.0, v_y);\n"
-	"    vec3 color = mix(lower, u_top, upper_mix);\n"
-	"    gl_FragColor = vec4(color, 1.0);\n"
-	"}\n";
-
-static const char *FLOOR_VERT =
-	"attribute vec3 a_pos;\n"
-	"uniform mat4 u_vp;\n"
-	"varying vec2 v_world;\n"
-	"void main() {\n"
-	"    v_world = a_pos.xz;\n"
-	"    gl_Position = u_vp * vec4(a_pos, 1.0);\n"
-	"    gl_Position.y = -gl_Position.y;\n"
-	"}\n";
-
-static const char *FLOOR_FRAG =
-	"#extension GL_OES_standard_derivatives : enable\n"
-	"precision mediump float;\n"
-	"varying vec2 v_world;\n"
-	"uniform vec3 u_base_color;\n"
-	"uniform vec3 u_grid_color;\n"
-	"uniform float u_grid_strength;\n"
-	"uniform float u_major_strength;\n"
-	"uniform float u_fade_start;\n"
-	"uniform float u_fade_end;\n"
-	"void main() {\n"
-	"    vec2 g = abs(fract(v_world * 10.0 - 0.5) - 0.5) / max(fwidth(v_world * 10.0), vec2(0.0001));\n"
-	"    float line = 1.0 - min(min(g.x, g.y), 1.0);\n"
-	"    vec2 major_g = abs(fract(v_world * 2.0 - 0.5) - 0.5) / max(fwidth(v_world * 2.0), vec2(0.0001));\n"
-	"    float major = 1.0 - min(min(major_g.x, major_g.y), 1.0);\n"
-	"    float fade = 1.0 - smoothstep(u_fade_start, max(u_fade_end, u_fade_start + 0.001), length(v_world));\n"
-	"    vec3 grid = u_grid_color * (line * u_grid_strength + major * u_major_strength);\n"
-	"    gl_FragColor = vec4(u_base_color + grid * fade, 1.0);\n"
-	"}\n";
-
-static const char *DEBUG_VERT =
-	"attribute vec3 a_pos;\n"
-	"uniform mat4 u_vp;\n"
-	"void main() { gl_Position = u_vp * vec4(a_pos, 1.0); gl_Position.y = -gl_Position.y; }\n";
-
-static const char *DEBUG_FRAG =
-	"precision mediump float;\n"
-	"uniform vec4 u_color;\n"
-	"void main() { gl_FragColor = u_color; }\n";
-
-static const char *TITLEBAR_VERT =
-	"attribute vec3 a_pos;\n"
-	"uniform mat4 u_mvp;\n"
-	"varying vec2 v_uv;\n"
-	"void main() {\n"
-	"    v_uv = vec2(a_pos.x, 1.0 - a_pos.y);\n"
-	"    gl_Position = u_mvp * vec4(a_pos, 1.0);\n"
-	"    gl_Position.y = -gl_Position.y;\n"
-	"}\n";
-
-static const char *TITLEBAR_FRAG =
-	"precision mediump float;\n"
-	"uniform sampler2D u_tex;\n"
-	"uniform float u_opacity;\n"
-	"varying vec2 v_uv;\n"
-	"void main() {\n"
-	"    vec4 c = texture2D(u_tex, v_uv);\n"
-	"    gl_FragColor = vec4(c.rgb * u_opacity, c.a * u_opacity);\n"
-	"}\n";
-
-static const char *COPY_VERT =
-	"attribute vec3 a_pos;\n"
-	"varying vec2 v_uv;\n"
-	"void main() {\n"
-	"    v_uv = a_pos.xy;\n"
-	"    gl_Position = vec4(\n"
-	"        a_pos.x * 2.0 - 1.0,\n"
-	"        a_pos.y * 2.0 - 1.0,\n"
-	"        0.0,\n"
-	"        1.0\n"
-	"    );\n"
-	"}\n";
-
-static const char *COPY_FRAG_2D =
-	"precision mediump float;\n"
-	"uniform sampler2D u_tex;\n"
-	"varying vec2 v_uv;\n"
-	"void main() {\n"
-	"    gl_FragColor = texture2D(u_tex, v_uv);\n"
-	"}\n";
-
-static const char *COPY_FRAG_EXT =
-	"#extension GL_OES_EGL_image_external : require\n"
-	"precision mediump float;\n"
-	"uniform samplerExternalOES u_tex;\n"
-	"varying vec2 v_uv;\n"
-	"void main() {\n"
-	"    gl_FragColor = texture2D(u_tex, v_uv);\n"
-	"}\n";
 
 static char *read_shader_file(const char *name) {
 	char path[512];
@@ -419,6 +218,21 @@ static GLuint link_program(
 		return 0;
 	}
 
+	return prog;
+}
+
+static GLuint link_program_files(const char *vert_name,
+		const char *frag_name, const char *label) {
+	char *vert = read_shader_file(vert_name);
+	char *frag = read_shader_file(frag_name);
+	if (!vert || !frag) {
+		free(vert);
+		free(frag);
+		return 0;
+	}
+	GLuint prog = link_program(vert, frag, label);
+	free(vert);
+	free(frag);
 	return prog;
 }
 
@@ -817,7 +631,7 @@ bool shady_gl_pipeline_init(
 	pipeline->u_brightness_ext = glGetUniformLocation(pipeline->prog_ext, "u_brightness");
 	pipeline->u_frame_rect_ext = glGetUniformLocation(pipeline->prog_ext, "u_frame_rect");
 
-	pipeline->titlebar_prog = link_program(TITLEBAR_VERT, TITLEBAR_FRAG, "titlebar");
+	pipeline->titlebar_prog = link_program_files("titlebar.vert", "titlebar.frag", "titlebar");
 	if (!pipeline->titlebar_prog) {
 		shady_gl_pipeline_fini(pipeline);
 		return false;
@@ -826,19 +640,11 @@ bool shady_gl_pipeline_init(
 	pipeline->titlebar_u_tex = glGetUniformLocation(pipeline->titlebar_prog, "u_tex");
 	pipeline->titlebar_u_opacity = glGetUniformLocation(pipeline->titlebar_prog, "u_opacity");
 
-	pipeline->copy_prog_2d =
-	link_program(
-		COPY_VERT,
-		COPY_FRAG_2D,
-		"snapshot copy 2D"
-	);
+	pipeline->copy_prog_2d = link_program_files(
+		"copy.vert", "copy.frag", "snapshot copy 2D");
 
-	pipeline->copy_prog_ext =
-		link_program(
-			COPY_VERT,
-			COPY_FRAG_EXT,
-			"snapshot copy external"
-		);
+	pipeline->copy_prog_ext = link_program_files(
+		"copy.vert", "copy_ext.frag", "snapshot copy external");
 
 	if (
 		!pipeline->copy_prog_2d ||
@@ -860,7 +666,7 @@ bool shady_gl_pipeline_init(
 			"u_tex"
 		);
 
-	pipeline->side_prog = link_program(SIDE_VERT, SIDE_FRAG, "window sides");
+	pipeline->side_prog = link_program_files("side.vert", "side.frag", "window sides");
 	if (!pipeline->side_prog || !create_side_mesh(pipeline)) {
 		shady_gl_pipeline_fini(pipeline);
 		return false;
@@ -871,7 +677,8 @@ bool shady_gl_pipeline_init(
 	pipeline->side_u_base_color = glGetUniformLocation(pipeline->side_prog, "u_base_color");
 	pipeline->side_u_wobble = glGetUniformLocation(pipeline->side_prog, "u_wobble");
 
-	pipeline->background_prog = link_program(BACKGROUND_VERT, BACKGROUND_FRAG, "background gradient");
+	pipeline->background_prog = link_program_files(
+		"background.vert", "background.frag", "background gradient");
 	if (!pipeline->background_prog) {
 		shady_gl_pipeline_fini(pipeline);
 		return false;
@@ -880,7 +687,7 @@ bool shady_gl_pipeline_init(
 	pipeline->background_u_horizon = glGetUniformLocation(pipeline->background_prog, "u_horizon");
 	pipeline->background_u_bottom = glGetUniformLocation(pipeline->background_prog, "u_bottom");
 
-	pipeline->floor_prog = link_program(FLOOR_VERT, FLOOR_FRAG, "3D floor");
+	pipeline->floor_prog = link_program_files("floor.vert", "floor.frag", "3D floor");
 	if (!pipeline->floor_prog || !create_floor_mesh(pipeline)) {
 		shady_gl_pipeline_fini(pipeline);
 		return false;
@@ -893,7 +700,7 @@ bool shady_gl_pipeline_init(
 	pipeline->floor_u_fade_start = glGetUniformLocation(pipeline->floor_prog, "u_fade_start");
 	pipeline->floor_u_fade_end = glGetUniformLocation(pipeline->floor_prog, "u_fade_end");
 
-	pipeline->shadow_prog = link_program(SHADOW_VERT, SHADOW_FRAG, "window shadow");
+	pipeline->shadow_prog = link_program_files("shadow.vert", "shadow.frag", "window shadow");
 	if (!pipeline->shadow_prog) {
 		shady_gl_pipeline_fini(pipeline);
 		return false;
@@ -905,7 +712,7 @@ bool shady_gl_pipeline_init(
 	pipeline->shadow_u_opacity = glGetUniformLocation(pipeline->shadow_prog, "u_opacity");
 	pipeline->shadow_u_floor_bounds = glGetUniformLocation(pipeline->shadow_prog, "u_floor_bounds");
 
-	pipeline->debug_prog = link_program(DEBUG_VERT, DEBUG_FRAG, "debug ray");
+	pipeline->debug_prog = link_program_files("debug.vert", "debug.frag", "debug ray");
 	if (!pipeline->debug_prog) {
 		shady_gl_pipeline_fini(pipeline);
 		return false;

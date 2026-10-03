@@ -31,6 +31,50 @@ void shady_render_schedule_output(struct shady_output *output) {
 	wlr_output_schedule_frame(output->wlr_output);
 }
 
+shady_shader_program shady_render_plugin_shader_create(struct shady_server *server,
+		void *owner, const char *vertex_path, const char *fragment_path) {
+	(void)server; (void)owner; (void)vertex_path; (void)fragment_path; return 0;
+}
+bool shady_render_plugin_shader_valid(struct shady_server *server, void *owner,
+		shady_shader_program program) {
+	(void)server; (void)owner; (void)program; return false;
+}
+bool shady_render_plugin_shader_destroy(struct shady_server *server, void *owner,
+		shady_shader_program program) {
+	(void)server; (void)owner; (void)program; return false;
+}
+bool shady_render_plugin_shader_uniform_float(struct shady_server *server, void *owner,
+		shady_shader_program program, const char *name, float value) {
+	(void)server; (void)owner; (void)program; (void)name; (void)value; return false;
+}
+bool shady_render_plugin_shader_uniform_int(struct shady_server *server, void *owner,
+		shady_shader_program program, const char *name, int value) {
+	(void)server; (void)owner; (void)program; (void)name; (void)value; return false;
+}
+bool shady_render_plugin_shader_uniform_vec2(struct shady_server *server, void *owner,
+		shady_shader_program program, const char *name, float x, float y) {
+	(void)server; (void)owner; (void)program; (void)name; (void)x; (void)y; return false;
+}
+bool shady_render_plugin_shader_uniform_vec4(struct shady_server *server, void *owner,
+		shady_shader_program program, const char *name, float x, float y, float z, float w) {
+	(void)server; (void)owner; (void)program; (void)name; (void)x; (void)y; (void)z; (void)w; return false;
+}
+bool shady_render_plugin_shader_draw_fullscreen(struct shady_server *server, void *owner,
+		shady_shader_program program) {
+	(void)server; (void)owner; (void)program; return false;
+}
+shady_render_hook_id shady_render_plugin_hook_add(struct shady_server *server, void *owner,
+		uint32_t stage, shady_render_callback callback, void *user_data) {
+	(void)server; (void)owner; (void)stage; (void)callback; (void)user_data; return 0;
+}
+bool shady_render_plugin_hook_remove(struct shady_server *server, void *owner,
+		shady_render_hook_id hook) {
+	(void)server; (void)owner; (void)hook; return false;
+}
+void shady_render_plugin_cleanup_owner(struct shady_server *server, void *owner) {
+	(void)server; (void)owner;
+}
+
 void shady_render_schedule_all_outputs(struct shady_server *server) {
 	struct shady_output *output;
 	wl_list_for_each(output, &server->outputs, link) {

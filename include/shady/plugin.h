@@ -24,6 +24,8 @@ typedef struct shady_output_handle *shady_output;
 typedef struct shady_seat_handle *shady_seat;
 typedef struct shady_module_handle *shady_module_handle;
 typedef uint64_t shady_subscription_id;
+typedef uint64_t shady_shader_program;
+typedef uint64_t shady_render_hook_id;
 struct shady_event;
 typedef void (*shady_event_callback)(
 	shady_host host,
@@ -40,6 +42,27 @@ enum shady_close_effect_style {
 	SHADY_CLOSE_EFFECT_CRUMPLE = 0,
 	SHADY_CLOSE_EFFECT_SLIDE_FADE = 1,
 };
+
+enum shady_render_stage {
+	SHADY_RENDER_STAGE_AFTER_BACKGROUND = 0,
+	SHADY_RENDER_STAGE_BEFORE_WINDOWS = 1,
+	SHADY_RENDER_STAGE_AFTER_WINDOWS = 2,
+	SHADY_RENDER_STAGE_OVERLAY = 3,
+};
+
+struct shady_render_context {
+	uint32_t struct_size;
+	uint32_t stage;
+	shady_output output;
+	int width;
+	int height;
+	float logical_width;
+	float logical_height;
+	float time_seconds;
+};
+
+typedef void (*shady_render_callback)(shady_host host,
+	const struct shady_render_context *context, void *user_data);
 
 struct shady_close_effect {
 	uint32_t style;
@@ -130,6 +153,37 @@ struct shady_plugin_api_v1 {
 	bool (*window_close_effect)(shady_window window,
 		struct shady_close_effect *effect, bool *overridden);
 	bool (*window_reset_close_effect)(shady_host host, shady_window window);
+
+	/* Host-owned GLES2 shader resources for plugin render effects. Shader files
+	 * are loaded from the paths supplied by the plugin. Fullscreen programs must
+	 * expose an `a_pos` attribute; uniforms can be set by name from callbacks. */
+	shady_shader_program (*shader_program_create)(shady_host host,
+		const char *vertex_path, const char *fragment_path);
+	bool (*shader_program_destroy)(shady_host host, shady_shader_program program);
+	bool (*shader_uniform_float)(shady_host host, shady_shader_program program,
+		const char *name, float value);
+	bool (*shader_uniform_int)(shady_host host, shady_shader_program program,
+		const char *name, int value);
+	bool (*shader_uniform_vec2)(shady_host host, shady_shader_program program,
+		const char *name, float x, float y);
+	bool (*shader_uniform_vec4)(shady_host host, shady_shader_program program,
+		const char *name, float x, float y, float z, float w);
+	bool (*shader_draw_fullscreen)(shady_host host, shady_shader_program program);
+	shady_render_hook_id (*render_hook_add)(shady_host host, uint32_t stage,
+		shady_render_callback callback, void *user_data);
+	bool (*render_hook_remove)(shady_host host, shady_render_hook_id hook);
+
+	/* Associate a host-owned shader program with one window. The program is
+	 * executed on Shady's subdivided window mesh. The host binds the current
+	 * window texture to sampler `u_tex` and supplies standard uniforms when
+	 * present: u_mvp, u_model, u_frame_rect, u_time, u_resolution,
+	 * u_window_size, u_has_alpha, u_wobble, u_water, u_water_surface,
+	 * u_border_color, u_border_width, u_close_progress, u_close_effect,
+	 * u_tint, u_effect_strength, u_brightness and u_light_dir. */
+	bool (*window_set_shader)(shady_host host, shady_window window,
+		shady_shader_program program);
+	bool (*window_reset_shader)(shady_host host, shady_window window);
+	shady_shader_program (*window_shader)(shady_window window);
 };
 
 typedef const struct shady_module *(*shady_plugin_entry_v1_fn)(

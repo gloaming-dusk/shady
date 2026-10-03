@@ -286,6 +286,12 @@ shared_module('shady-plugin-close-slide-fade',
   build_by_default: true,
   install: false)
 
+shared_module('shady-plugin-shader-overlay',
+  'examples/plugins/shader_overlay.c',
+  include_directories: include_directories('include'),
+  build_by_default: true,
+  install: false)
+
 module_resolver_test = executable('module-resolver-test',
   [
     'tests/module-resolver.c',
