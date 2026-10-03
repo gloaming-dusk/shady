@@ -11,6 +11,20 @@ local function find(id)
 end
 local function after(ms, fn) shady.automation.after(ms, fn) end
 local function key(chord) assert(shady.automation.key(chord), chord .. " was not handled") end
+
+local function screenshot_retry(attempts, callback)
+    local pid, err = shady.automation.screenshot(screenshot, function(ok)
+        if ok then
+            callback()
+            return
+        end
+        assert(attempts > 1, "screenshot failed after retries")
+        after(200, function()
+            screenshot_retry(attempts - 1, callback)
+        end)
+    end)
+    assert(pid, err)
+end
 shady.on("window.mapped", function(w)
     if not w.app_id:match("^astral%-probe%-") then return end
     originals[w.app_id] = {x=w.x, y=w.y, z=w.z}
@@ -29,8 +43,7 @@ shady.on("window.mapped", function(w)
             local z = b.z
             after(200, function()
                 assert(math.abs(b.z-z) < .1, "pause produced a large jump")
-                local pid, err = shady.automation.screenshot(screenshot, function(ok)
-                    assert(ok, "screenshot failed")
+                screenshot_retry(3, function()
                     key("Super+j")
                     after(1800, function()
                         for id, original in pairs(originals) do
@@ -60,7 +73,6 @@ shady.on("window.mapped", function(w)
                         end)
                     end)
                 end)
-                assert(pid, err)
             end)
         end)
     end)

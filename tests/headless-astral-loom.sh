@@ -18,11 +18,11 @@ if ! timeout 20s "$BUILD_DIR/shady" -c examples/rice/astral-loom/config.lua >"$t
     tail -n 60 "$tmp/log" >&2
     exit 1
 fi
-if rg -q 'AddressSanitizer|runtime error:|UndefinedBehaviorSanitizer' "$tmp/log"; then
+if grep -Eq 'AddressSanitizer|runtime error:|UndefinedBehaviorSanitizer' "$tmp/log"; then
     tail -n 60 "$tmp/log" >&2
     exit 1
 fi
-if ! rg -q 'astral-loom-test: PASS' "$tmp/log" || [[ ! -s "$SHADY_ASTRAL_SCREENSHOT" ]]; then
+if ! grep -q 'astral-loom-test: PASS' "$tmp/log" || [[ ! -s "$SHADY_ASTRAL_SCREENSHOT" ]]; then
     tail -n 60 "$tmp/log" >&2
     exit 1
 fi

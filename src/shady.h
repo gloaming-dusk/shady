@@ -188,7 +188,10 @@ struct shady_output {
 	uint64_t continuous_physics_frames;
 	uint64_t continuous_close_frames;
 	uint64_t continuous_snapshot_frames;
+	bool lock_frame_pending;
+	uint32_t lock_commit_seq;
 	struct wl_listener frame;
+	struct wl_listener present;
 	struct wl_listener request_state;
 	struct wl_listener destroy;
 };

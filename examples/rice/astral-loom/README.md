@@ -68,10 +68,18 @@ use the compositor's real 3D geometry and depth buffer.
 ```sh
 nix develop -c ninja -C build headless-automation-probe
 nix develop -c bash tests/headless-astral-loom.sh
+./astral-loom-daily-driver.sh
+./astral-loom-daily-driver.sh stress
 ```
 
 The headless GLES scenario opens four clients and checks depth separation,
-layout restoration, plugin reload, window closure, and screenshot capture.
+layout restoration, plugin reload, window closure, and screenshot capture. The
+separate daily-driver gate uses a sanitized spatial build and exercises the rice
+through focus, maximize/fullscreen transitions, plugin reload, multi-output
+session locking, and output disable/recovery. The fast stress gate runs ten
+rounds of four-window churn while switching workspaces, cycling focus, toggling
+FPS capture/orbit state, exercising Astral layout state, and validating stale
+Lua handles after every destruction batch.
 Set `SHADY_ASTRAL_SCREENSHOT=/tmp/astral.png` to keep its captured frame. For a
 sanitized build, set `SHADY_SPATIAL_TEST_BUILD_DIR` to that build directory.
 

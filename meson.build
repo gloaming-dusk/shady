@@ -178,6 +178,21 @@ if shell_enabled
     output: 'xdg-shell-protocol.c',
     command: [wayland_scanner, 'private-code', '@INPUT@', '@OUTPUT@'],
   )
+  ext_session_lock_xml = join_paths(
+    wayland_protocols_dir,
+    'staging/ext-session-lock/ext-session-lock-v1.xml')
+  ext_session_lock_client_header = custom_target(
+    'ext-session-lock-v1-client-protocol.h',
+    input: ext_session_lock_xml,
+    output: 'ext-session-lock-v1-client-protocol.h',
+    command: [wayland_scanner, 'client-header', '@INPUT@', '@OUTPUT@'],
+  )
+  ext_session_lock_protocol_code = custom_target(
+    'ext-session-lock-v1-protocol.c',
+    input: ext_session_lock_xml,
+    output: 'ext-session-lock-v1-protocol.c',
+    command: [wayland_scanner, 'private-code', '@INPUT@', '@OUTPUT@'],
+  )
   executable('shady-shell',
     [
       layer_shell_protocol_header,
@@ -196,6 +211,17 @@ if shell_enabled
       xdg_shell_client_header,
       xdg_shell_protocol_code,
       'tests/headless-automation-probe.c',
+    ],
+    include_directories: include_directories('.'),
+    dependencies: [wayland_client],
+    build_by_default: false,
+    install: false)
+
+  executable('headless-session-lock-probe',
+    [
+      ext_session_lock_client_header,
+      ext_session_lock_protocol_code,
+      'tests/headless-session-lock-probe.c',
     ],
     include_directories: include_directories('.'),
     dependencies: [wayland_client],

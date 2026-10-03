@@ -436,10 +436,32 @@ static int lua_child_watch_ready(int fd, uint32_t mask, void *data) {
 	if (!(mask & (WL_EVENT_HANGUP | WL_EVENT_ERROR))) return 0;
 	if (watch->source) wl_event_source_remove(watch->source);
 	close(fd);
-	waitpid(watch->pid, NULL, WNOHANG);
+
+	int child_status = 0;
+	pid_t waited;
+	do {
+		waited = waitpid(watch->pid, &child_status, 0);
+	} while (waited < 0 && errno == EINTR);
 
 	struct stat st;
-	bool ok = stat(watch->path, &st) == 0 && st.st_size > 0;
+	bool file_ok = stat(watch->path, &st) == 0 && st.st_size > 0;
+	bool child_ok = waited == watch->pid && WIFEXITED(child_status) &&
+		WEXITSTATUS(child_status) == 0;
+	bool ok = child_ok && file_ok;
+	if (!ok) {
+		if (waited != watch->pid) {
+			wlr_log(WLR_ERROR, "screenshot worker wait failed for %s: %s",
+				watch->path, strerror(errno));
+		} else if (WIFEXITED(child_status)) {
+			wlr_log(WLR_ERROR,
+				"screenshot worker exited status=%d path=%s file_ok=%d",
+				WEXITSTATUS(child_status), watch->path, file_ok);
+		} else if (WIFSIGNALED(child_status)) {
+			wlr_log(WLR_ERROR,
+				"screenshot worker killed by signal=%d path=%s file_ok=%d",
+				WTERMSIG(child_status), watch->path, file_ok);
+		}
+	}
 	lua_rawgeti(watch->L, LUA_REGISTRYINDEX, watch->callback_ref);
 	luaL_unref(watch->L, LUA_REGISTRYINDEX, watch->callback_ref);
 	lua_pushboolean(watch->L, ok);

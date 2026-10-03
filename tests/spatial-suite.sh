@@ -17,12 +17,15 @@ fi
 nix develop -c ninja -C "$BUILD_DIR" \
   shady \
   headless-automation-probe \
+  headless-session-lock-probe \
   math3d-test \
   physics-collision-test \
   libshady-plugin-fps-cube.so \
   libshady-plugin-fps-folded-paper.so \
   libshady-plugin-fps-origami.so \
   libshady-plugin-astral-loom.so \
+  libshady-plugin-counter.so \
+  libshady-plugin-counter-bad.so \
   libshady-plugin-motion-contract.so \
   libshady-plugin-focus-depth.so \
   libshady-plugin-spatial-overview.so \
@@ -33,6 +36,21 @@ export SHADY_FPS_REPRESENTATION_PLUGIN="$ROOT/$BUILD_DIR/libshady-plugin-fps-cub
 
 nix develop -c meson test -C "$BUILD_DIR" \
   math3d physics-collision motion-plugin --print-errorlogs
+
+SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
+  nix develop -c bash ./tests/headless-spatial-daily.sh
+
+SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
+  nix develop -c bash ./tests/headless-spatial-output-recovery.sh
+
+SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
+  nix develop -c bash ./tests/headless-spatial-plugin-rollback.sh
+
+SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
+  nix develop -c bash ./tests/headless-astral-loom-daily.sh
+
+SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
+  nix develop -c bash ./tests/headless-astral-loom-stress.sh
 
 SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
   nix develop -c bash ./tests/headless-motion.sh

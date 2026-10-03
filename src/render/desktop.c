@@ -104,7 +104,11 @@ void shady_render_output_frame(struct shady_output *output) {
 	}
 	if (!wlr_scene_output_commit(scene_output, NULL)) {
 		wlr_log(WLR_ERROR, "failed to commit desktop scene output");
+		return;
 	}
+	struct timespec now;
+	clock_gettime(CLOCK_MONOTONIC, &now);
+	wlr_scene_output_send_frame_done(scene_output, &now);
 }
 
 void shady_render_toplevel_commit(struct shady_toplevel *toplevel) {

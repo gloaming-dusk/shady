@@ -2,6 +2,7 @@
 #define SHADY_MODULE_DESKTOP_STATE_H
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <wayland-server-core.h>
 #include "../../module/module.h"
 
@@ -65,6 +66,8 @@ struct shady_desktop_state {
 	struct wlr_session_lock_v1 *session_lock;
 	struct wlr_scene_tree *session_lock_tree;
 	bool session_locked;
+	bool session_lock_pending_locked_event;
+	size_t session_lock_pending_outputs;
 };
 
 static inline struct shady_desktop_state *shady_desktop_state(struct shady_server *server) {

@@ -19,14 +19,25 @@ foot --app-id=shady-daily-driver-probe sh -c 'sleep 4' &
 probe=$!
 sleep 0.5
 
-# With two headless outputs, disabling the first output exercises the same
-# recovery path used when an output disappears. The test remains useful on
-# systems without wlr-randr, but records that the output transition was skipped.
+# New toplevels are placed on server->outputs.next. With the headless backend,
+# outputs are inserted at the front while wlr_output_layout_add_auto() lays each
+# newly managed output to the right. Pick the rightmost output so the probe is
+# guaranteed to exercise recovery instead of merely disabling an unused output.
+# The test remains useful without wlr-randr, but records that transition as skipped.
 if command -v wlr-randr >/dev/null 2>&1; then
   origin_output="$(
     wlr-randr 2>/dev/null | awk '
       /^[^[:space:]]/ { output=$1 }
-      /^[[:space:]]+Position: 0,0/ { print output; exit }
+      /^[[:space:]]+Position:/ {
+        split($2, pos, ",")
+        x = pos[1] + 0
+        if (!found || x > max_x) {
+          found = 1
+          max_x = x
+          chosen = output
+        }
+      }
+      END { if (found) print chosen }
     '
   )"
   if [[ -n "$origin_output" ]]; then

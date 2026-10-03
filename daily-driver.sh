@@ -37,7 +37,11 @@ configure() {
 build() {
   configure
   ninja -C "$BUILD_DIR"
-  ninja -C "$BUILD_DIR" libshady-plugin-counter.so libshady-plugin-counter-bad.so headless-automation-probe
+  ninja -C "$BUILD_DIR" \
+    libshady-plugin-counter.so \
+    libshady-plugin-counter-bad.so \
+    headless-automation-probe \
+    headless-session-lock-probe
 }
 
 test_daily() {
@@ -49,6 +53,9 @@ test_daily() {
   SHADY_DAILY_BUILD_DIR="$BUILD_DIR" bash ./tests/plugin-rollback.sh
   SHADY_DAILY_BUILD_DIR="$BUILD_DIR" bash ./tests/headless-automation.sh
   SHADY_DAILY_BUILD_DIR="$BUILD_DIR" bash ./tests/headless-alt-tab.sh
+  SHADY_DAILY_BUILD_DIR="$BUILD_DIR" bash ./tests/headless-session-lock.sh
+  SHADY_DAILY_BUILD_DIR="$BUILD_DIR" SHADY_SESSION_LOCK_OUTPUTS=2 bash ./tests/headless-session-lock.sh
+  SHADY_DAILY_BUILD_DIR="$BUILD_DIR" bash ./tests/headless-session-lock-client-exit.sh
   SHADY_BORDER_TEST_BUILD_DIR="$BUILD_DIR" bash ./tests/headless-border-plugin.sh
   SHADY_DAILY_BUILD_DIR="$BUILD_DIR" bash ./tests/headless-shell-taskbar.sh
   SHADY_DAILY_BUILD_DIR="$BUILD_DIR" bash ./tests/headless-shell-quick.sh

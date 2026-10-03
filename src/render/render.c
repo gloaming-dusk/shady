@@ -1205,7 +1205,11 @@ void shady_render_output_frame(
 	if (!server->config.spatial_mode || shady_desktop_state(server)->session_locked) {
 		if (!wlr_scene_output_commit(scene_output, NULL)) {
 			wlr_log(WLR_ERROR, "failed to commit desktop scene output");
+			return;
 		}
+		struct timespec now;
+		clock_gettime(CLOCK_MONOTONIC, &now);
+		wlr_scene_output_send_frame_done(scene_output, &now);
 		return;
 	}
 

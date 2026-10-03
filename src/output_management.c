@@ -18,11 +18,10 @@ void shady_output_manager_publish(struct shady_server *server) {
 		struct wlr_output_configuration_head_v1 *head =
 			wlr_output_configuration_head_v1_create(
 				config, output->wlr_output);
-		double lx = 0, ly = 0;
-		wlr_output_layout_output_coords(
-			server->output_layout, output->wlr_output, &lx, &ly);
-		head->state.x = (int32_t)lx;
-		head->state.y = (int32_t)ly;
+		struct wlr_box box = {0};
+		wlr_output_layout_get_box(server->output_layout, output->wlr_output, &box);
+		head->state.x = box.x;
+		head->state.y = box.y;
 	}
 	wlr_output_manager_v1_set_configuration(shady_desktop_state(server)->output_manager, config);
 }

@@ -12,13 +12,21 @@
 
 #include "shady.h"
 #include "render/render.h"
+#include "session_lock.h"
 
 static void output_frame(struct wl_listener *listener, void *data) {
 	(void)data;
 	struct shady_output *output = wl_container_of(listener, output, frame);
 	output->frame_callbacks++;
 	output->frame_scheduled = false;
+	uint32_t previous_commit_seq = output->wlr_output->commit_seq;
 	shady_render_output_frame(output);
+	shady_session_lock_output_committed(output, previous_commit_seq);
+}
+
+static void output_present(struct wl_listener *listener, void *data) {
+	struct shady_output *output = wl_container_of(listener, output, present);
+	shady_session_lock_output_presented(output, data);
 }
 
 static void output_request_state(struct wl_listener *listener, void *data) {
@@ -73,7 +81,9 @@ static void output_destroy(struct wl_listener *listener, void *data) {
 	struct shady_server *server = output->server;
 
 	wl_list_remove(&output->frame.link);
+	wl_list_remove(&output->present.link);
 	wl_list_remove(&output->request_state.link);
+	shady_session_lock_output_removed(output);
 	shady_event_emit_output(server, SHADY_EVENT_OUTPUT_REMOVED, output);
 	wl_list_remove(&output->destroy.link);
 	wl_list_remove(&output->link);
@@ -154,6 +164,9 @@ void server_new_output(struct wl_listener *listener, void *data) {
 	output->frame.notify = output_frame;
 	wl_signal_add(&wlr_output->events.frame, &output->frame);
 
+	output->present.notify = output_present;
+	wl_signal_add(&wlr_output->events.present, &output->present);
+
 	output->request_state.notify = output_request_state;
 	wl_signal_add(&wlr_output->events.request_state, &output->request_state);
 
@@ -167,6 +180,7 @@ void server_new_output(struct wl_listener *listener, void *data) {
 	struct wlr_scene_output *scene_output =
 		wlr_scene_output_create(server->scene, wlr_output);
 	wlr_scene_output_layout_add_output(server->scene_layout, l_output, scene_output);
+	shady_session_lock_output_added(output);
 	shady_output_manager_publish(server);
 	shady_event_emit_output(server, SHADY_EVENT_OUTPUT_ADDED, output);
 }
