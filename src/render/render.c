@@ -388,6 +388,18 @@ static bool plugin_shader_draw_window(struct shady_server *server,
 	if (loc >= 0) glUniform1f(loc, portal_available ? 1.f : 0.f);
 	loc = glGetUniformLocation(slot->program, "u_portal_size");
 	if (loc >= 0) glUniform2f(loc, (float)portal_width, (float)portal_height);
+	/* Optional rounded-frame contract (see docs/SHADER_API.md). Mesh
+	 * representations bring their own UV layout, so they opt out. */
+	bool rounded_frame = !mesh_vertices &&
+		pipeline.frame_px[0] > 0.f && pipeline.frame_px[1] > 0.f;
+	loc = glGetUniformLocation(slot->program, "u_frame_px");
+	if (loc >= 0) glUniform2f(loc,
+		rounded_frame ? pipeline.frame_px[0] : 0.f,
+		rounded_frame ? pipeline.frame_px[1] : 0.f);
+	loc = glGetUniformLocation(slot->program, "u_frame_shape");
+	if (loc >= 0) glUniform2f(loc, pipeline.frame_radius, pipeline.frame_border);
+	bool frame_clips = rounded_frame && pipeline.frame_radius > 0.f &&
+		glGetUniformLocation(slot->program, "u_frame_px") >= 0;
 
 	glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_2D, sampled_texture);
@@ -409,6 +421,10 @@ static bool plugin_shader_draw_window(struct shady_server *server,
 		glEnable(GL_BLEND);
 		glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 		glDepthMask(GL_FALSE);
+	} else if (frame_clips) {
+		/* Opaque client, anti-aliased rounded corners: blend the fringe. */
+		glEnable(GL_BLEND);
+		glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 	}
 
 	GLuint draw_vbo = pipeline.mesh_vbo;
@@ -551,6 +567,20 @@ static void plugin_render_hooks_run(struct shady_server *server, uint32_t stage,
 		.width = width, .height = height, .logical_width = logical_width,
 		.logical_height = logical_height, .time_seconds = time_seconds,
 	};
+	float view[16], proj[16];
+	shady_render_camera_matrices(server, width, height, view, proj);
+	/* look_at rows: right, up, -forward; translation is -R * eye. */
+	for (int i = 0; i < 3; i++) {
+		context.camera_right[i] = view[i * 4 + 0];
+		context.camera_up[i] = view[i * 4 + 1];
+		context.camera_forward[i] = -view[i * 4 + 2];
+	}
+	for (int i = 0; i < 3; i++) {
+		context.camera_position[i] = -(view[i * 4 + 0] * view[12] +
+			view[i * 4 + 1] * view[13] + view[i * 4 + 2] * view[14]);
+	}
+	context.tan_half_fov_y = tanf(SHADY_CAMERA_FOV_Y * 0.5f);
+	context.aspect = height > 0 ? (float)width / (float)height : 1.f;
 	for (size_t i = 0; i < SHADY_PLUGIN_HOOK_MAX; i++)
 		if (plugin_hooks[i].used && plugin_hooks[i].stage == stage)
 			plugin_hooks[i].callback((shady_host)server, &context, plugin_hooks[i].user_data);
@@ -1630,6 +1660,16 @@ void shady_render_output_frame(
 			shady_mat4_multiply(mvp, vp, model);
 		}
 
+		float border_px = 0.f, border_color[4];
+		shady_toplevel_get_border(toplevel, &border_px, border_color);
+		/* Free-floating decorated windows get one rounded frame shared by the
+		 * side walls, client and title bar. Screen-space (maximized or
+		 * fullscreen) and folded representations keep their square edges. */
+		bool rounded_frame = !screen_space && !folded_representation;
+		shady_gl_pipeline_set_frame_style(&pipeline,
+			rounded_frame ? frame_w : 0.f, rounded_frame ? frame_h : 0.f,
+			server->config.window_corner_radius, border_px, border_color);
+
 		if (!screen_space && !mesh_representation) {
 			shady_scene_effects_draw_sides(server, &pipeline, mvp, model,
 				wobble_x, wobble_y, shady_close_state_for_const(toplevel)->progress);
@@ -1654,8 +1694,6 @@ void shady_render_output_frame(
 			toplevel->fullscreen ? 0.f : toplevel->water_caustic,
 			toplevel->fullscreen ? 0.f : toplevel->water_tint,
 		};
-		float border_px = 0.f, border_color[4];
-		shady_toplevel_get_border(toplevel, &border_px, border_color);
 		float border_width[2] = {
 			tw > 0.f ? border_px / tw : 0.f,
 			th > 0.f ? border_px / th : 0.f,
@@ -1741,7 +1779,10 @@ void shady_render_output_frame(
 					1.f,
 					1.f - client_fraction,
 				};
-				const float no_border_color[4] = {0.f, 0.f, 0.f, 0.f};
+				/* The legacy client border stays off for the title bar, but the
+				 * rounded-frame path still needs the colour so its outline runs
+				 * continuously around the title bar as well. */
+				const float *title_border_color = border_color;
 				const float no_border_width[2] = {0.f, 0.f};
 				const float title_tint[4] = {
 					1.f, 1.f, 1.f, server->config.window_opacity
@@ -1765,7 +1806,7 @@ void shady_render_output_frame(
 						(float)buf_w, (float)buf_h,
 						tw, frame_title_h, wobble_x, wobble_y,
 						water, water_surface,
-						no_border_color, no_border_width,
+						title_border_color, no_border_width,
 						close_state->progress, close_effect, title_tint,
 						0.f, 1.f, NULL, 0, NULL, 0);
 				}
@@ -1783,7 +1824,7 @@ void shady_render_output_frame(
 						wobble_y,
 						water,
 						water_surface,
-						no_border_color,
+						title_border_color,
 						no_border_width,
 						close_state->progress,
 						close_effect,
@@ -1794,6 +1835,10 @@ void shady_render_output_frame(
 				}
 			}
 		}
+
+		/* Subsurfaces are rectangles inside the client; never clip them to
+		 * the parent's frame shape. */
+		shady_gl_pipeline_set_frame_style(&pipeline, 0.f, 0.f, 0.f, 0.f, NULL);
 
 		/* Render wl_subsurface children from the same scene subtree instead of
 		 * silently dropping them in spatial mode. XDG popups are intentionally
@@ -1813,6 +1858,7 @@ void shady_render_output_frame(
 			render_spatial_subsurface_buffer, &surface_ctx);
 		if (screen_space) glEnable(GL_DEPTH_TEST);
 	}
+	shady_gl_pipeline_set_frame_style(&pipeline, 0.f, 0.f, 0.f, 0.f, NULL);
 
 	struct shady_close_snapshot *snapshot;
 
@@ -1859,6 +1905,10 @@ void shady_render_output_frame(
 			model
 		);
 
+		/* Keep the closing window's silhouette rounded so the close animation
+		 * does not snap back to square corners on its first frame. */
+		shady_gl_pipeline_set_frame_style(&pipeline, snapshot->width,
+			snapshot->height, server->config.window_corner_radius, 0.f, NULL);
 		shady_scene_effects_draw_sides(server, &pipeline, mvp, model,
 			snapshot->wobble_x, snapshot->wobble_y, snapshot->progress);
 
@@ -1912,6 +1962,7 @@ void shady_render_output_frame(
 			);
 		}
 	}
+	shady_gl_pipeline_set_frame_style(&pipeline, 0.f, 0.f, 0.f, 0.f, NULL);
 	plugin_render_hooks_run(server, SHADY_RENDER_STAGE_AFTER_WINDOWS,
 		output, buf_w, buf_h, logical_w, logical_h, time_seconds);
 	if (profile) clock_gettime(CLOCK_MONOTONIC, &profile_windows_end);

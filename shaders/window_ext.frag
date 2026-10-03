@@ -1,9 +1,16 @@
 #extension GL_OES_EGL_image_external : require
+#ifdef GL_OES_standard_derivatives
+#extension GL_OES_standard_derivatives : enable
+#endif
 precision mediump float;
 
 uniform samplerExternalOES u_tex;
 uniform vec4 u_tint;
+
+/* 1.0 = sample alpha; 0.0 = force opaque (RGBX / XRGB). */
 uniform float u_has_alpha;
+
+/* Seconds since compositor render timer started. */
 uniform float u_time;
 uniform vec3 u_light_dir;
 uniform float u_effect_strength;
@@ -14,10 +21,32 @@ uniform vec4 u_border_color;
 uniform vec2 u_border_width; /* normalized x/y thickness */
 uniform float u_close_progress;
 uniform vec4 u_close_effect; /* style, strength, direction_x, direction_y */
+uniform vec4 u_frame_rect; /* this pass's sub-rect inside the decorated frame */
+uniform vec2 u_frame_px; /* decorated frame size in px; 0 = legacy border */
+uniform vec2 u_frame_shape; /* corner radius px, border px */
 
 varying vec2 v_uv;
 varying vec3 v_normal;
 varying float v_water_wave;
+
+/* Signed distance to the decorated frame's rounded rectangle, in frame px.
+ * Negative inside. Uses the undeformed mesh UV so the silhouette stays
+ * attached to the window perimeter under wobble and water refraction. */
+float frame_distance() {
+	vec2 frame_uv = u_frame_rect.xy + vec2(v_uv.x, 1.0 - v_uv.y) * u_frame_rect.zw;
+	vec2 half_size = u_frame_px * 0.5;
+	float r = min(u_frame_shape.x, min(half_size.x, half_size.y));
+	vec2 q = abs(frame_uv * u_frame_px - half_size) - (half_size - vec2(r));
+	return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
+}
+
+float frame_aa(float d) {
+#ifdef GL_OES_standard_derivatives
+	return max(fwidth(d), 0.0001);
+#else
+	return 1.0;
+#endif
+}
 
 void main() {
 	vec2 uv = v_uv;
@@ -40,6 +69,12 @@ void main() {
 		(u_water.x * 0.095) + slope_refraction * u_water.x * 0.75) * water_edge;
 	uv = clamp(uv + water_offset, 0.0, 1.0);
 
+	/*
+	 * Subtle animated chromatic aberration.
+	 *
+	 * Keep this deliberately small: we're rendering real application
+	 * contents, so text should remain readable.
+	 */
 	float pulse = 0.5 + 0.5 * sin(u_time * 1.7);
 	float aberration = (0.0007 + 0.0013 * pulse) * u_effect_strength;
 
@@ -63,23 +98,35 @@ void main() {
 		color.a = 1.0;
 	}
 
+	/*
+	 * Distance from the closest edge of the window.
+	 */
 	float edge_distance = min(
 		min(uv.x, 1.0 - uv.x),
 		min(uv.y, 1.0 - uv.y)
 	);
 
+	/*
+	 * Thin outer glow.
+	 */
 	float edge = 1.0 - smoothstep(
 		0.0,
 		0.025,
 		edge_distance
 	);
 
+	/*
+	 * Slightly wider secondary glow.
+	 */
 	float soft_edge = 1.0 - smoothstep(
 		0.0,
 		0.09,
 		edge_distance
 	);
 
+	/*
+	 * Slowly shifting neon color.
+	 */
 	vec3 neon_a = vec3(0.10, 0.45, 1.00);
 	vec3 neon_b = vec3(0.75, 0.15, 1.00);
 
@@ -91,15 +138,24 @@ void main() {
 
 	vec3 neon = mix(neon_a, neon_b, wave);
 
+	/*
+	 * Strong thin edge + subtle halo.
+	 */
 	color.rgb += neon * edge * (0.08 + 0.05 * pulse) * u_effect_strength;
 	color.rgb += neon * soft_edge * 0.018 * u_effect_strength;
 
+	/*
+	 * Very subtle scanline modulation.
+	 *
+	 * UV-based rather than pixel-based so no resolution uniform is needed.
+	 */
 	float scan = 0.985 + 0.015 * sin(
 		uv.y * 900.0 + u_time * 2.0
 	);
 
 	color.rgb *= mix(1.0, scan, u_effect_strength);
 
+	/* Tint and exposure are explicit compositor configuration. */
 	color.rgb *= u_tint.rgb;
 	color.rgb *= u_brightness;
 	/* Premultiplied-alpha pipeline: global opacity must scale RGB and A. */
@@ -161,11 +217,28 @@ void main() {
 	/* Window border uses the original mesh UV, not refracted UV, so it stays
 	 * locked to the physical window perimeter even when the water surface
 	 * bends application contents underneath it. */
-	float border_enabled = step(0.000001, max(u_border_width.x, u_border_width.y));
+	float frame_enabled = step(0.5, min(u_frame_px.x, u_frame_px.y));
+	float border_enabled = step(0.000001, max(u_border_width.x, u_border_width.y)) *
+		(1.0 - frame_enabled);
 	float border_x = min(v_uv.x, 1.0 - v_uv.x) / max(u_border_width.x, 0.000001);
 	float border_y = min(v_uv.y, 1.0 - v_uv.y) / max(u_border_width.y, 0.000001);
 	float border_mask = (1.0 - smoothstep(0.72, 1.0, min(border_x, border_y))) *
 		border_enabled;
+	float frame_coverage = 1.0;
+	if (frame_enabled > 0.5) {
+		/* Rounded decorated frame: one continuous anti-aliased outline around
+		 * title bar and client together, plus a faint inner glow so focused
+		 * accents read as light rather than a flat painted stroke. */
+		float d = frame_distance();
+		float aa = frame_aa(d);
+		frame_coverage = clamp(0.5 - d / aa, 0.0, 1.0);
+		float border_px = u_frame_shape.y;
+		float inner = max(-d - border_px, 0.0);
+		border_mask = step(0.0001, border_px) *
+			clamp(0.5 + (d + border_px) / aa, 0.0, 1.0);
+		float glow = step(0.0001, border_px) * exp(-inner / 5.0) * 0.16;
+		color.rgb += u_border_color.rgb * u_border_color.a * glow * color.a;
+	}
 	float border_alpha = clamp(border_mask * u_border_color.a, 0.0, 1.0);
 	color.rgb = color.rgb * (1.0 - border_alpha) + u_border_color.rgb * border_alpha;
 	color.a = color.a + border_alpha * (1.0 - color.a);
@@ -175,6 +248,10 @@ void main() {
 	float close_fade = mix(1.0, 1.0 - smoothstep(0.08, 1.0, close_p), slide_close);
 	color.rgb *= close_fade;
 	color.a *= close_fade;
+
+	/* Premultiplied output: coverage scales colour and alpha together. */
+	if (frame_coverage <= 0.0) discard;
+	color *= frame_coverage;
 
 	gl_FragColor = color;
 }

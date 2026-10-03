@@ -33,7 +33,7 @@
 #define APP_NAME_MAX 128
 #define APP_EXEC_MAX 512
 #define LAUNCHER_WIDTH 680
-#define LAUNCHER_HEIGHT 560
+#define LAUNCHER_HEIGHT 580
 #define LAUNCHER_RESULTS 8
 #define SEARCH_MAX 128
 #define MAX_WINDOWS 64
@@ -366,20 +366,75 @@ static struct shell_buffer *create_buffer(struct shell *shell,
     return buffer;
 }
 
+/*
+ * Visual language shared with the compositor's window frames: deep navy glass
+ * with a faint top sheen, hairline edges, and a cyan accent that appears as a
+ * glowing status pip on whatever currently has focus.
+ */
+struct ui_rgb { double r, g, b; };
+/* Defaults match Neon Transit; rices override them with SHADY_SHELL_* colour
+ * variables (see ui_load_theme). */
+static struct ui_rgb UI_ACCENT = { 0.157, 0.902, 1.000 };
+static struct ui_rgb UI_ACCENT_2 = { 0.100, 0.360, 0.900 };
+static struct ui_rgb UI_ACCENT_DEEP = { 0.040, 0.300, 0.420 };
+static struct ui_rgb UI_SURFACE = { 0.022, 0.030, 0.054 };
+static struct ui_rgb UI_TEXT = { 0.910, 0.965, 1.000 };
+static struct ui_rgb UI_TEXT_DIM = { 0.560, 0.650, 0.740 };
+static struct ui_rgb UI_DANGER = { 1.000, 0.420, 0.450 };
+
+static void ui_theme_color(const char *name, struct ui_rgb *out) {
+    const char *value = getenv(name);
+    unsigned r, g, b;
+    if (!value || value[0] != '#' || strlen(value) != 7 ||
+            sscanf(value + 1, "%02x%02x%02x", &r, &g, &b) != 3) {
+        if (value && *value)
+            fprintf(stderr, "shady-shell: ignoring %s=%s (want #RRGGBB)\n", name, value);
+        return;
+    }
+    *out = (struct ui_rgb){ r / 255.0, g / 255.0, b / 255.0 };
+}
+
+static void ui_load_theme(void) {
+    ui_theme_color("SHADY_SHELL_ACCENT", &UI_ACCENT);
+    ui_theme_color("SHADY_SHELL_ACCENT_2", &UI_ACCENT_2);
+    ui_theme_color("SHADY_SHELL_ACCENT_DEEP", &UI_ACCENT_DEEP);
+    ui_theme_color("SHADY_SHELL_SURFACE", &UI_SURFACE);
+    ui_theme_color("SHADY_SHELL_TEXT", &UI_TEXT);
+    ui_theme_color("SHADY_SHELL_TEXT_DIM", &UI_TEXT_DIM);
+    ui_theme_color("SHADY_SHELL_DANGER", &UI_DANGER);
+}
+
+static void add_letter_spacing(PangoLayout *layout) {
+    PangoAttrList *attrs = pango_attr_list_new();
+    pango_attr_list_insert(attrs, pango_attr_letter_spacing_new(PANGO_SCALE / 4));
+    pango_layout_set_attributes(layout, attrs);
+    pango_attr_list_unref(attrs);
+}
+
 static PangoLayout *make_layout_sized(cairo_t *cr, const char *text,
         bool bold, int size) {
     PangoLayout *layout = pango_cairo_create_layout(cr);
     char desc[64];
-    snprintf(desc, sizeof(desc), bold ? "Sans Bold %d" : "Sans %d", size);
+    snprintf(desc, sizeof(desc), bold ? "Sans SemiBold %d" : "Sans %d", size);
     PangoFontDescription *font = pango_font_description_from_string(desc);
     pango_layout_set_font_description(layout, font);
     pango_layout_set_text(layout, text ? text : "", -1);
     pango_font_description_free(font);
+    add_letter_spacing(layout);
     return layout;
 }
 
+/* Bar labels: measured and drawn through the same layout so hit regions
+ * always match the rendered text. */
 static PangoLayout *make_layout(cairo_t *cr, const char *text, bool bold) {
-    return make_layout_sized(cr, text, bold, 10);
+    PangoLayout *layout = pango_cairo_create_layout(cr);
+    PangoFontDescription *font = pango_font_description_from_string(
+        bold ? "Sans SemiBold 9.5" : "Sans Medium 9.5");
+    pango_layout_set_font_description(layout, font);
+    pango_layout_set_text(layout, text ? text : "", -1);
+    pango_font_description_free(font);
+    add_letter_spacing(layout);
+    return layout;
 }
 
 static int text_width(cairo_t *cr, const char *text, bool bold) {
@@ -390,11 +445,23 @@ static int text_width(cairo_t *cr, const char *text, bool bold) {
     return width;
 }
 
-static void draw_layout(cairo_t *cr, PangoLayout *layout,
-        double x, double y, double r, double g, double b) {
-    cairo_set_source_rgba(cr, r, g, b, 1.0);
+static void draw_layout_alpha(cairo_t *cr, PangoLayout *layout,
+        double x, double y, struct ui_rgb color, double alpha) {
+    cairo_set_source_rgba(cr, color.r, color.g, color.b, alpha);
     cairo_move_to(cr, x, y);
     pango_cairo_show_layout(cr, layout);
+}
+
+static void draw_layout(cairo_t *cr, PangoLayout *layout,
+        double x, double y, double r, double g, double b) {
+    draw_layout_alpha(cr, layout, x, y, (struct ui_rgb){ r, g, b }, 1.0);
+}
+
+/* Vertically centre a layout inside [y, y + height). */
+static double layout_center_y(PangoLayout *layout, double y, double height) {
+    int h = 0;
+    pango_layout_get_pixel_size(layout, NULL, &h);
+    return y + (height - h) * 0.5;
 }
 
 static void draw_text_color(cairo_t *cr, const char *text,
@@ -418,6 +485,87 @@ static void rounded_rect(cairo_t *cr, double x, double y,
     cairo_close_path(cr);
 }
 
+static struct ui_rgb ui_mix(struct ui_rgb a, struct ui_rgb b, double t) {
+    return (struct ui_rgb){
+        a.r + (b.r - a.r) * t, a.g + (b.g - a.g) * t, a.b + (b.b - a.b) * t,
+    };
+}
+
+/* Rounded fill with a soft vertical sheen: `lift` brightens the top edge. */
+static void fill_sheen(cairo_t *cr, double x, double y, double w, double h,
+        double radius, struct ui_rgb base, double alpha, double lift) {
+    struct ui_rgb top = ui_mix(base, (struct ui_rgb){ 1, 1, 1 }, lift);
+    cairo_pattern_t *pattern = cairo_pattern_create_linear(0, y, 0, y + h);
+    cairo_pattern_add_color_stop_rgba(pattern, 0.0, top.r, top.g, top.b, alpha);
+    cairo_pattern_add_color_stop_rgba(pattern, 1.0, base.r, base.g, base.b, alpha);
+    rounded_rect(cr, x, y, w, h, radius);
+    cairo_set_source(cr, pattern);
+    cairo_fill(cr);
+    cairo_pattern_destroy(pattern);
+}
+
+/* 1px outline aligned to the pixel grid. */
+static void stroke_hairline(cairo_t *cr, double x, double y, double w, double h,
+        double radius, struct ui_rgb color, double alpha) {
+    cairo_set_line_width(cr, 1.0);
+    rounded_rect(cr, x + 0.5, y + 0.5, w - 1.0, h - 1.0, radius);
+    cairo_set_source_rgba(cr, color.r, color.g, color.b, alpha);
+    cairo_stroke(cr);
+}
+
+/* Focus pip, matching the compositor title bar: a lit dot with a halo for
+ * the focused item, a dim ring otherwise. */
+static void draw_pip(cairo_t *cr, double x, double y, double radius, bool lit) {
+    if (lit) {
+        cairo_pattern_t *halo = cairo_pattern_create_radial(
+            x, y, 0, x, y, radius * 3.2);
+        cairo_pattern_add_color_stop_rgba(halo, 0.0,
+            UI_ACCENT.r, UI_ACCENT.g, UI_ACCENT.b, 0.45);
+        cairo_pattern_add_color_stop_rgba(halo, 1.0,
+            UI_ACCENT.r, UI_ACCENT.g, UI_ACCENT.b, 0.0);
+        cairo_set_source(cr, halo);
+        cairo_arc(cr, x, y, radius * 3.2, 0, 2 * G_PI);
+        cairo_fill(cr);
+        cairo_pattern_destroy(halo);
+        cairo_set_source_rgba(cr, UI_ACCENT.r, UI_ACCENT.g, UI_ACCENT.b, 1.0);
+        cairo_arc(cr, x, y, radius, 0, 2 * G_PI);
+        cairo_fill(cr);
+    } else {
+        cairo_set_line_width(cr, 1.0);
+        cairo_set_source_rgba(cr, UI_TEXT.r, UI_TEXT.g, UI_TEXT.b, 0.28);
+        cairo_arc(cr, x, y, radius - 0.5, 0, 2 * G_PI);
+        cairo_stroke(cr);
+    }
+}
+
+/* Popup/panel body: glass card, hairline rim and a brighter top edge. */
+static void draw_panel(cairo_t *cr, double w, double h, double radius) {
+    cairo_set_operator(cr, CAIRO_OPERATOR_SOURCE);
+    cairo_set_source_rgba(cr, 0, 0, 0, 0);
+    cairo_paint(cr);
+    cairo_set_operator(cr, CAIRO_OPERATOR_OVER);
+    fill_sheen(cr, 0, 0, w, h, radius, UI_SURFACE, 0.975, 0.045);
+    stroke_hairline(cr, 0, 0, w, h, radius, UI_TEXT, 0.08);
+    /* Accent kiss along the top edge, fading out towards the corners. */
+    cairo_pattern_t *edge = cairo_pattern_create_linear(0, 0, w, 0);
+    cairo_pattern_add_color_stop_rgba(edge, 0.0, UI_ACCENT.r, UI_ACCENT.g, UI_ACCENT.b, 0.0);
+    cairo_pattern_add_color_stop_rgba(edge, 0.5, UI_ACCENT.r, UI_ACCENT.g, UI_ACCENT.b, 0.40);
+    cairo_pattern_add_color_stop_rgba(edge, 1.0, UI_ACCENT.r, UI_ACCENT.g, UI_ACCENT.b, 0.0);
+    cairo_set_source(cr, edge);
+    cairo_rectangle(cr, radius, 0, w - 2 * radius, 1);
+    cairo_fill(cr);
+    cairo_pattern_destroy(edge);
+}
+
+/* Highlighted menu/list row: accent-tinted glass plus a focus pip. */
+static void draw_row_highlight(cairo_t *cr, double x, double y, double w,
+        double h, double radius, bool strong, bool danger) {
+    struct ui_rgb tint = danger ? ui_mix(UI_SURFACE, UI_DANGER, 0.28) : UI_ACCENT_DEEP;
+    fill_sheen(cr, x, y, w, h, radius, tint, strong ? 0.85 : 0.55, 0.06);
+    stroke_hairline(cr, x, y, w, h, radius,
+        danger ? UI_DANGER : UI_ACCENT, strong ? 0.32 : 0.16);
+}
+
 static void draw_bar(struct shell *shell) {
     if (!shell->configured || shell->width == 0 || shell->height == 0) return;
 
@@ -429,56 +577,102 @@ static void draw_bar(struct shell *shell) {
         buffer->data, CAIRO_FORMAT_ARGB32,
         (int)shell->width, (int)shell->height, (int)shell->width * 4);
     cairo_t *cr = cairo_create(image);
+    const double w = shell->width;
+    const double h = shell->height;
 
-    cairo_set_source_rgba(cr, 0.020, 0.028, 0.052, 0.97);
+    /* Glass strip: lighter at the top, settling into deep navy. */
+    cairo_set_operator(cr, CAIRO_OPERATOR_SOURCE);
+    cairo_pattern_t *strip = cairo_pattern_create_linear(0, 0, 0, h);
+    struct ui_rgb strip_top = ui_mix(UI_SURFACE, (struct ui_rgb){ 1, 1, 1 }, 0.025);
+    struct ui_rgb strip_bottom = ui_mix(UI_SURFACE, (struct ui_rgb){ 0, 0, 0 }, 0.35);
+    cairo_pattern_add_color_stop_rgba(strip, 0.0, strip_top.r, strip_top.g, strip_top.b, 0.94);
+    cairo_pattern_add_color_stop_rgba(strip, 1.0, strip_bottom.r, strip_bottom.g, strip_bottom.b, 0.94);
+    cairo_set_source(cr, strip);
     cairo_paint(cr);
+    cairo_pattern_destroy(strip);
+    cairo_set_operator(cr, CAIRO_OPERATOR_OVER);
 
-    cairo_set_source_rgba(cr, 0.10, 0.32, 0.46, 0.72);
-    cairo_rectangle(cr, 0, shell->height - 1, shell->width, 1);
+    cairo_set_source_rgba(cr, 1, 1, 1, 0.045);
+    cairo_rectangle(cr, 0, 0, w, 1);
     cairo_fill(cr);
+    /* Bottom edge glows with the accent in the middle and fades out. */
+    cairo_pattern_t *edge = cairo_pattern_create_linear(0, 0, w, 0);
+    cairo_pattern_add_color_stop_rgba(edge, 0.0, UI_ACCENT.r, UI_ACCENT.g, UI_ACCENT.b, 0.06);
+    cairo_pattern_add_color_stop_rgba(edge, 0.5, UI_ACCENT.r, UI_ACCENT.g, UI_ACCENT.b, 0.42);
+    cairo_pattern_add_color_stop_rgba(edge, 1.0, UI_ACCENT.r, UI_ACCENT.g, UI_ACCENT.b, 0.06);
+    cairo_set_source(cr, edge);
+    cairo_rectangle(cr, 0, h - 1, w, 1);
+    cairo_fill(cr);
+    cairo_pattern_destroy(edge);
 
-    cairo_set_source_rgba(cr, 0.08, 0.24, 0.36, 0.92);
+    /* Brand badge: accent gradient tile with a dark monogram. */
+    cairo_pattern_t *badge = cairo_pattern_create_linear(8, 6, 34, 32);
+    cairo_pattern_add_color_stop_rgba(badge, 0.0, UI_ACCENT.r, UI_ACCENT.g, UI_ACCENT.b, 1.0);
+    cairo_pattern_add_color_stop_rgba(badge, 1.0, UI_ACCENT_2.r, UI_ACCENT_2.g, UI_ACCENT_2.b, 1.0);
     rounded_rect(cr, 8, 6, 26, 26, 8);
+    cairo_set_source(cr, badge);
     cairo_fill(cr);
-    draw_text_color(cr, "S", 17, 9, true, 10, 0.86, 0.95, 1.0);
-    draw_text_color(cr, "Shady", 42, 10, true, 10, 0.91, 0.95, 0.99);
+    cairo_pattern_destroy(badge);
+    stroke_hairline(cr, 8, 6, 26, 26, 8, (struct ui_rgb){ 1, 1, 1 }, 0.25);
+    PangoLayout *mono = make_layout_sized(cr, "S", true, 11);
+    int mono_w = 0;
+    pango_layout_get_pixel_size(mono, &mono_w, NULL);
+    draw_layout(cr, mono, 21 - mono_w * 0.5, layout_center_y(mono, 6, 26),
+        0.02, 0.06, 0.10);
+    g_object_unref(mono);
+    PangoLayout *brand = make_layout(cr, "Shady", true);
+    draw_layout_alpha(cr, brand, 42, layout_center_y(brand, 0, h), UI_TEXT, 0.92);
+    g_object_unref(brand);
 
     double x = 94.0;
+    /* Measure workspace pills first so they can share one recessed track. */
+    double ws_x = x;
+    for (size_t i = 0; i < shell->workspace_count; i++) {
+        bool active = strcmp(shell->workspaces[i], shell->active_workspace) == 0;
+        double box_width = text_width(cr, shell->workspaces[i], active) + 22.0;
+        shell->workspace_regions[i].x0 = ws_x;
+        shell->workspace_regions[i].x1 = ws_x + box_width;
+        ws_x += box_width + 5.0;
+    }
+    if (shell->workspace_count > 0) {
+        double track_w = shell->workspace_regions[shell->workspace_count - 1].x1 - x + 6.0;
+        rounded_rect(cr, x - 3, 5, track_w, h - 10, 10);
+        cairo_set_source_rgba(cr, 0, 0, 0, 0.22);
+        cairo_fill(cr);
+        stroke_hairline(cr, x - 3, 5, track_w, h - 10, 10,
+            (struct ui_rgb){ 1, 1, 1 }, 0.06);
+    }
     for (size_t i = 0; i < shell->workspace_count; i++) {
         const char *name = shell->workspaces[i];
         bool active = strcmp(name, shell->active_workspace) == 0;
-        int label_width = text_width(cr, name, active);
-        double box_width = label_width + 22.0;
         bool hovered = shell->hovered_workspace == (int)i;
+        double px = shell->workspace_regions[i].x0;
+        double box_width = shell->workspace_regions[i].x1 - px;
 
-        shell->workspace_regions[i].x0 = x;
-        shell->workspace_regions[i].x1 = x + box_width;
-
-        if (active || hovered) {
-            cairo_set_source_rgba(cr,
-                active ? 0.075 : 0.055,
-                active ? 0.245 : 0.110,
-                active ? 0.365 : 0.170,
-                active ? 0.96 : 0.82);
-            rounded_rect(cr, x, 6, box_width, shell->height - 12, 8);
-            cairo_fill(cr);
-        }
         if (active) {
-            cairo_set_source_rgba(cr, 0.24, 0.72, 0.94, 1.0);
-            cairo_arc(cr, x + 10, shell->height / 2.0, 2.2, 0, 2 * G_PI);
+            fill_sheen(cr, px, 8, box_width, h - 16, 7, UI_ACCENT_DEEP, 0.92, 0.08);
+            stroke_hairline(cr, px, 8, box_width, h - 16, 7, UI_ACCENT, 0.35);
+        } else if (hovered) {
+            rounded_rect(cr, px, 8, box_width, h - 16, 7);
+            cairo_set_source_rgba(cr, 1, 1, 1, 0.06);
             cairo_fill(cr);
-            draw_text_color(cr, name, x + 17, 10, true, 10, 0.94, 0.98, 1.0);
-        } else {
-            draw_text_color(cr, name, x + 11, 10, false, 10,
-                hovered ? 0.88 : 0.70,
-                hovered ? 0.93 : 0.77,
-                hovered ? 0.98 : 0.86);
         }
-        x += box_width + 5.0;
+        PangoLayout *layout = make_layout(cr, name, active);
+        double ty = layout_center_y(layout, 0, h);
+        if (active) {
+            cairo_set_source_rgba(cr, UI_ACCENT.r, UI_ACCENT.g, UI_ACCENT.b, 1.0);
+            cairo_arc(cr, px + 10, h / 2.0, 2.2, 0, 2 * G_PI);
+            cairo_fill(cr);
+            draw_layout_alpha(cr, layout, px + 17, ty, UI_TEXT, 0.98);
+        } else {
+            draw_layout_alpha(cr, layout, px + 11, ty, UI_TEXT, hovered ? 0.85 : 0.55);
+        }
+        g_object_unref(layout);
     }
+    x = ws_x;
 
     shell->task_region_count = 0;
-    double task_limit = shell->width - 116.0;
+    double task_limit = shell->width - 150.0;
     for (size_t i = 0; i < shell->window_count && x + 72.0 < task_limit; i++) {
         struct shell_window *window = &shell->windows[i];
         if (window->workspace[0] && shell->active_workspace[0] &&
@@ -487,9 +681,9 @@ static void draw_bar(struct shell *shell) {
         const char *label = window->title[0] ? window->title : window->app_id;
         if (!label[0]) label = "Window";
         int measured = text_width(cr, label, window->focused);
-        double box_width = measured + 28.0;
+        double box_width = measured + 36.0;
         if (box_width < 92.0) box_width = 92.0;
-        if (box_width > 190.0) box_width = 190.0;
+        if (box_width > 200.0) box_width = 200.0;
         if (x + box_width > task_limit) box_width = task_limit - x;
         if (box_width < 72.0) break;
 
@@ -499,51 +693,58 @@ static void draw_bar(struct shell *shell) {
         shell->task_regions[region].window_id = window->id;
         bool hovered = shell->hovered_task == (int)region;
 
-        cairo_set_source_rgba(cr,
-            window->focused ? 0.065 : (hovered ? 0.045 : 0.030),
-            window->focused ? 0.235 : (hovered ? 0.110 : 0.055),
-            window->focused ? 0.350 : (hovered ? 0.165 : 0.085),
-            window->focused ? 0.96 : 0.88);
-        rounded_rect(cr, x, 6, box_width, shell->height - 12, 8);
-        cairo_fill(cr);
         if (window->focused) {
-            cairo_set_source_rgba(cr, 0.20, 0.72, 0.96, 1.0);
-            rounded_rect(cr, x, shell->height - 8, box_width, 2, 1);
+            fill_sheen(cr, x, 6, box_width, h - 12, 9, UI_ACCENT_DEEP, 0.90, 0.08);
+            stroke_hairline(cr, x, 6, box_width, h - 12, 9, UI_ACCENT, 0.38);
+        } else {
+            rounded_rect(cr, x, 6, box_width, h - 12, 9);
+            cairo_set_source_rgba(cr, 1, 1, 1, hovered ? 0.06 : 0.025);
             cairo_fill(cr);
+            stroke_hairline(cr, x, 6, box_width, h - 12, 9,
+                (struct ui_rgb){ 1, 1, 1 }, hovered ? 0.12 : 0.06);
         }
+        draw_pip(cr, x + 13, h / 2.0, 3.0, window->focused);
 
         PangoLayout *layout = make_layout(cr, label, window->focused);
         pango_layout_set_ellipsize(layout, PANGO_ELLIPSIZE_END);
-        pango_layout_set_width(layout, (int)(box_width - 20.0) * PANGO_SCALE);
-        draw_layout(cr, layout, x + 10, 10,
-            window->focused ? 0.94 : 0.72,
-            window->focused ? 0.98 : 0.79,
-            window->focused ? 1.00 : 0.87);
+        pango_layout_set_width(layout, (int)(box_width - 32.0) * PANGO_SCALE);
+        draw_layout_alpha(cr, layout, x + 23, layout_center_y(layout, 0, h),
+            UI_TEXT, window->focused ? 0.97 : (hovered ? 0.82 : 0.60));
         g_object_unref(layout);
-        x += box_width + 5.0;
+        x += box_width + 6.0;
     }
 
     char clock_text[64] = {0};
+    char date_text[64] = {0};
     time_t now = time(NULL);
     struct tm local;
     localtime_r(&now, &local);
     strftime(clock_text, sizeof(clock_text), "%H:%M", &local);
+    strftime(date_text, sizeof(date_text), "%a %d %b", &local);
 
     PangoLayout *clock = make_layout(cr, clock_text, true);
-    int clock_width = 0;
-    int clock_height = 0;
-    pango_layout_get_pixel_size(clock, &clock_width, &clock_height);
-    double clock_x = shell->width - clock_width - 22.0;
-    shell->clock_x0 = clock_x - 10;
+    PangoLayout *date = make_layout(cr, date_text, false);
+    int clock_width = 0, date_width = 0;
+    pango_layout_get_pixel_size(clock, &clock_width, NULL);
+    pango_layout_get_pixel_size(date, &date_width, NULL);
+    double clock_x = w - clock_width - 22.0;
+    double date_x = clock_x - date_width - 10.0;
+    shell->clock_x0 = date_x - 12;
     shell->clock_x1 = clock_x + clock_width + 10;
-    cairo_set_source_rgba(cr, shell->quick_visible ? 0.070 : 0.045,
-        shell->quick_visible ? 0.190 : 0.075,
-        shell->quick_visible ? 0.285 : 0.115, 0.92);
-    rounded_rect(cr, shell->clock_x0, 6,
-        shell->clock_x1 - shell->clock_x0, shell->height - 12, 8);
-    cairo_fill(cr);
-    draw_layout(cr, clock, clock_x,
-        (shell->height - clock_height) / 2.0, 0.80, 0.88, 0.95);
+    double pill_w = shell->clock_x1 - shell->clock_x0;
+    if (shell->quick_visible) {
+        fill_sheen(cr, shell->clock_x0, 6, pill_w, h - 12, 9, UI_ACCENT_DEEP, 0.92, 0.08);
+        stroke_hairline(cr, shell->clock_x0, 6, pill_w, h - 12, 9, UI_ACCENT, 0.38);
+    } else {
+        rounded_rect(cr, shell->clock_x0, 6, pill_w, h - 12, 9);
+        cairo_set_source_rgba(cr, 1, 1, 1, 0.03);
+        cairo_fill(cr);
+        stroke_hairline(cr, shell->clock_x0, 6, pill_w, h - 12, 9,
+            (struct ui_rgb){ 1, 1, 1 }, 0.07);
+    }
+    draw_layout_alpha(cr, date, date_x, layout_center_y(date, 0, h), UI_TEXT_DIM, 0.95);
+    draw_layout_alpha(cr, clock, clock_x, layout_center_y(clock, 0, h), UI_TEXT, 0.98);
+    g_object_unref(date);
     g_object_unref(clock);
 
     cairo_destroy(cr);
@@ -570,37 +771,58 @@ static void draw_launcher(struct shell *shell) {
         (int)shell->launcher_width, (int)shell->launcher_height,
         (int)shell->launcher_width * 4);
     cairo_t *cr = cairo_create(image);
+    const double lw = shell->launcher_width;
 
-    cairo_set_operator(cr, CAIRO_OPERATOR_SOURCE);
-    cairo_set_source_rgba(cr, 0, 0, 0, 0);
-    cairo_paint(cr);
-    cairo_set_operator(cr, CAIRO_OPERATOR_OVER);
+    draw_panel(cr, lw, shell->launcher_height, 18);
 
-    cairo_set_source_rgba(cr, 0.018, 0.026, 0.050, 0.985);
-    rounded_rect(cr, 0, 0, shell->launcher_width, shell->launcher_height, 18);
-    cairo_fill(cr);
-    cairo_set_source_rgba(cr, 0.10, 0.34, 0.50, 0.9);
+    cairo_pattern_t *badge = cairo_pattern_create_linear(22, 18, 56, 52);
+    cairo_pattern_add_color_stop_rgba(badge, 0.0, UI_ACCENT.r, UI_ACCENT.g, UI_ACCENT.b, 1.0);
+    cairo_pattern_add_color_stop_rgba(badge, 1.0, UI_ACCENT_2.r, UI_ACCENT_2.g, UI_ACCENT_2.b, 1.0);
     rounded_rect(cr, 22, 18, 34, 34, 10);
+    cairo_set_source(cr, badge);
     cairo_fill(cr);
-    draw_text_color(cr, "S", 34, 25, true, 11, 0.88, 0.96, 1.0);
-    draw_text_color(cr, "Applications", 68, 19, true, 13, 0.94, 0.97, 1.0);
-    draw_text_color(cr, "Launch something", 68, 37, false, 9, 0.48, 0.59, 0.70);
-    draw_text_color(cr, "Esc  close", shell->launcher_width - 82, 27,
-        false, 8, 0.45, 0.55, 0.66);
+    cairo_pattern_destroy(badge);
+    stroke_hairline(cr, 22, 18, 34, 34, 10, (struct ui_rgb){ 1, 1, 1 }, 0.25);
+    draw_text_color(cr, "S", 34, 24, true, 12, 0.02, 0.06, 0.10);
+    draw_text_color(cr, "Applications", 68, 18, true, 13,
+        UI_TEXT.r, UI_TEXT.g, UI_TEXT.b);
+    draw_text_color(cr, "Launch something", 68, 38, false, 9,
+        UI_TEXT_DIM.r, UI_TEXT_DIM.g, UI_TEXT_DIM.b);
+    /* Keycap hint. */
+    PangoLayout *esc = make_layout_sized(cr, "Esc", true, 8);
+    int esc_w = 0;
+    pango_layout_get_pixel_size(esc, &esc_w, NULL);
+    double esc_x = lw - 22 - esc_w - 12;
+    rounded_rect(cr, esc_x, 24, esc_w + 12, 20, 5);
+    cairo_set_source_rgba(cr, 1, 1, 1, 0.05);
+    cairo_fill(cr);
+    stroke_hairline(cr, esc_x, 24, esc_w + 12, 20, 5, UI_TEXT, 0.14);
+    draw_layout_alpha(cr, esc, esc_x + 6, layout_center_y(esc, 24, 20), UI_TEXT_DIM, 1.0);
+    g_object_unref(esc);
 
-    cairo_set_source_rgba(cr, 0.035, 0.060, 0.095, 0.98);
-    rounded_rect(cr, 22, 68, shell->launcher_width - 44, 48, 12);
+    /* Search field: recessed well with an accent focus ring. */
+    rounded_rect(cr, 22, 68, lw - 44, 48, 12);
+    cairo_set_source_rgba(cr, 0, 0, 0, 0.30);
     cairo_fill(cr);
-    cairo_set_source_rgba(cr, 0.11, 0.30, 0.43, 0.85);
-    cairo_set_line_width(cr, 1.0);
-    rounded_rect(cr, 22.5, 68.5, shell->launcher_width - 45, 47, 12);
-    cairo_stroke(cr);
-    draw_text_color(cr, "⌕", 38, 80, false, 13, 0.48, 0.72, 0.84);
-    if (shell->search[0])
-        draw_text_color(cr, shell->search, 62, 83, true, 10, 0.92, 0.96, 1.0);
-    else
-        draw_text_color(cr, "Search applications…", 62, 83, false, 10,
-            0.43, 0.53, 0.64);
+    stroke_hairline(cr, 22, 68, lw - 44, 48, 12, UI_ACCENT, 0.42);
+    stroke_hairline(cr, 20, 66, lw - 40, 52, 14, UI_ACCENT, 0.10);
+    draw_text_color(cr, "⌕", 38, 79, false, 13,
+        UI_ACCENT.r, UI_ACCENT.g, UI_ACCENT.b);
+    if (shell->search[0]) {
+        PangoLayout *query = make_layout_sized(cr, shell->search, true, 10);
+        int query_w = 0;
+        pango_layout_get_pixel_size(query, &query_w, NULL);
+        draw_layout_alpha(cr, query, 62, layout_center_y(query, 68, 48), UI_TEXT, 1.0);
+        g_object_unref(query);
+        /* Caret after the query. */
+        cairo_set_source_rgba(cr, UI_ACCENT.r, UI_ACCENT.g, UI_ACCENT.b, 0.9);
+        cairo_rectangle(cr, 64 + query_w, 82, 1.5, 20);
+        cairo_fill(cr);
+    } else {
+        PangoLayout *hint = make_layout_sized(cr, "Search applications…", false, 10);
+        draw_layout_alpha(cr, hint, 62, layout_center_y(hint, 68, 48), UI_TEXT_DIM, 0.75);
+        g_object_unref(hint);
+    }
 
     size_t matches[LAUNCHER_RESULTS];
     size_t count = launcher_matching_indices(shell, matches);
@@ -612,38 +834,61 @@ static void draw_launcher(struct shell *shell) {
         const struct launcher_app *app = &shell->apps[matches[i]];
         bool selected = i == shell->selected_result;
         bool hovered = shell->hovered_result == (int)i;
-        if (selected || hovered) {
-            cairo_set_source_rgba(cr,
-                selected ? 0.055 : 0.035,
-                selected ? 0.185 : 0.085,
-                selected ? 0.285 : 0.130,
-                selected ? 0.98 : 0.90);
-            rounded_rect(cr, 22, y - 7, shell->launcher_width - 44, 46, 11);
-            cairo_fill(cr);
-        }
+        if (selected || hovered)
+            draw_row_highlight(cr, 22, y - 7, lw - 44, 46, 11, selected, false);
+
+        /* Monogram tile stands in for an app icon. */
+        char initial[8] = {0};
+        gunichar first = g_utf8_get_char_validated(app->name, -1);
+        if (first != (gunichar)-1 && first != (gunichar)-2 && first != 0)
+            g_unichar_to_utf8(g_unichar_toupper(first), initial);
+        else
+            initial[0] = '?';
+        fill_sheen(cr, 34, y - 1, 34, 34, 9,
+            selected ? ui_mix(UI_ACCENT_DEEP, UI_ACCENT, 0.18) : ui_mix(UI_SURFACE, UI_TEXT, 0.07),
+            1.0, 0.10);
+        stroke_hairline(cr, 34, y - 1, 34, 34, 9,
+            selected ? UI_ACCENT : UI_TEXT, selected ? 0.45 : 0.10);
+        PangoLayout *glyph = make_layout_sized(cr, initial, true, 11);
+        int glyph_w = 0;
+        pango_layout_get_pixel_size(glyph, &glyph_w, NULL);
+        draw_layout_alpha(cr, glyph, 51 - glyph_w * 0.5,
+            layout_center_y(glyph, y - 1, 34), UI_TEXT, selected ? 1.0 : 0.75);
+        g_object_unref(glyph);
+
+        PangoLayout *name = make_layout_sized(cr, app->name, selected, 10);
+        pango_layout_set_ellipsize(name, PANGO_ELLIPSIZE_END);
+        pango_layout_set_width(name, (int)(lw - 140) * PANGO_SCALE);
+        draw_layout_alpha(cr, name, 80, y, UI_TEXT, selected ? 1.0 : 0.84);
+        g_object_unref(name);
+        PangoLayout *exec = make_layout_sized(cr, app->exec, false, 8);
+        pango_layout_set_ellipsize(exec, PANGO_ELLIPSIZE_END);
+        pango_layout_set_width(exec, (int)(lw - 140) * PANGO_SCALE);
+        draw_layout_alpha(cr, exec, 80, y + 18, UI_TEXT_DIM, selected ? 0.9 : 0.65);
+        g_object_unref(exec);
         if (selected) {
-            cairo_set_source_rgba(cr, 0.24, 0.72, 0.94, 1.0);
-            rounded_rect(cr, 22, y - 7, 3, 46, 1.5);
-            cairo_fill(cr);
+            PangoLayout *enter = make_layout_sized(cr, "↵", true, 10);
+            draw_layout_alpha(cr, enter, lw - 52, layout_center_y(enter, y - 7, 46),
+                UI_ACCENT, 0.85);
+            g_object_unref(enter);
         }
-        draw_text_color(cr, app->name, 38, y, selected, 10,
-            selected ? 0.95 : 0.82,
-            selected ? 0.98 : 0.87,
-            selected ? 1.0 : 0.93);
-        draw_text_color(cr, app->exec, 38, y + 17, false, 8,
-            0.43, 0.53, 0.63);
         y += 50.0;
     }
 
     if (count == 0) {
         draw_text_color(cr, "No applications found", 38, 145, true, 10,
-            0.78, 0.84, 0.90);
+            UI_TEXT.r, UI_TEXT.g, UI_TEXT.b);
         draw_text_color(cr, "Try another name or executable", 38, 165, false, 9,
-            0.43, 0.53, 0.63);
+            UI_TEXT_DIM.r, UI_TEXT_DIM.g, UI_TEXT_DIM.b);
     }
 
-    draw_text_color(cr, "↑ ↓  navigate    Enter  launch", 24,
-        shell->launcher_height - 30, false, 8, 0.42, 0.52, 0.62);
+    /* Footer: hairline divider and keyboard hints. */
+    double fy = shell->launcher_height - 44.0;
+    cairo_set_source_rgba(cr, 1, 1, 1, 0.06);
+    cairo_rectangle(cr, 22, fy, lw - 44, 1);
+    cairo_fill(cr);
+    draw_text_color(cr, "↑ ↓  navigate     ↵  launch     Esc  close", 24,
+        fy + 14, false, 8, UI_TEXT_DIM.r, UI_TEXT_DIM.g, UI_TEXT_DIM.b);
 
     cairo_destroy(cr);
     cairo_surface_flush(image);
@@ -789,28 +1034,37 @@ static void draw_context(struct shell *shell) {
         (int)shell->context_width, (int)shell->context_height,
         (int)shell->context_width * 4);
     cairo_t *cr = cairo_create(image);
-    cairo_set_source_rgba(cr, 0.018, 0.026, 0.039, 0.97);
-    rounded_rect(cr, 0, 0, shell->context_width, shell->context_height, 10);
-    cairo_fill(cr);
+    const double cw = shell->context_width;
+    draw_panel(cr, cw, shell->context_height, 11);
 
     size_t rows = context_row_count(shell);
     for (size_t row = 0; row < rows; row++) {
         double y = row * CONTEXT_ROW_HEIGHT;
         bool hovered = shell->hovered_context_row == (int)row;
-        if (hovered) {
-            cairo_set_source_rgba(cr, 0.06, 0.20, 0.29, 0.96);
-            rounded_rect(cr, 6, y + 3, shell->context_width - 12,
-                CONTEXT_ROW_HEIGHT - 6, 7);
+        bool destructive = row + 1 == rows;
+        bool workspace_row = row >= 3 && row < 3 + shell->workspace_count;
+        /* Group dividers: window actions | move targets | close. */
+        if (row == 3 || destructive) {
+            cairo_set_source_rgba(cr, 1, 1, 1, 0.07);
+            cairo_rectangle(cr, 12, y, cw - 24, 1);
             cairo_fill(cr);
         }
+        if (hovered)
+            draw_row_highlight(cr, 6, y + 3, cw - 12, CONTEXT_ROW_HEIGHT - 6, 7,
+                true, destructive);
         char label_buf[WORKSPACE_NAME_MAX + 32];
         const char *label = context_row_label(shell, window, row,
             label_buf, sizeof(label_buf));
-        bool destructive = row + 1 == rows;
-        draw_text_color(cr, label, 14, y + 9, false, 9,
-            destructive ? 0.96 : 0.82,
-            destructive ? 0.40 : 0.88,
-            destructive ? 0.40 : 0.94);
+        bool current = workspace_row && window &&
+            strcmp(window->workspace, shell->workspaces[row - 3]) == 0;
+        if (workspace_row)
+            draw_pip(cr, 18, y + CONTEXT_ROW_HEIGHT / 2.0, 2.5, current);
+        PangoLayout *layout = make_layout_sized(cr, label, hovered, 9);
+        draw_layout_alpha(cr, layout, workspace_row ? 28 : 14,
+            layout_center_y(layout, y, CONTEXT_ROW_HEIGHT),
+            destructive ? UI_DANGER : UI_TEXT,
+            hovered ? 1.0 : (destructive ? 0.85 : 0.78));
+        g_object_unref(layout);
     }
 
     cairo_destroy(cr);
@@ -902,10 +1156,8 @@ static const char *quick_row_label(struct shell *shell, size_t row,
     if (row == 0) return "Launcher";
     if (row == 1) return "Next window";
     if (row < 2 + shell->workspace_count) {
-        size_t ws = row - 2;
-        bool active = strcmp(shell->workspaces[ws], shell->active_workspace) == 0;
-        snprintf(buffer, size, "%sWorkspace: %s",
-            active ? "• " : "", shell->workspaces[ws]);
+        /* The active workspace is marked with a pip, not text. */
+        snprintf(buffer, size, "Workspace  %s", shell->workspaces[row - 2]);
         return buffer;
     }
     return "Quit Shady";
@@ -924,30 +1176,42 @@ static void draw_quick(struct shell *shell) {
         (int)shell->quick_width, (int)shell->quick_height,
         (int)shell->quick_width * 4);
     cairo_t *cr = cairo_create(image);
-    cairo_set_source_rgba(cr, 0.018, 0.026, 0.043, 0.985);
-    rounded_rect(cr, 0, 0, shell->quick_width, shell->quick_height, 12);
+    const double qw = shell->quick_width;
+    draw_panel(cr, qw, shell->quick_height, 13);
+    PangoLayout *title = make_layout_sized(cr, "Quick settings", true, 10);
+    draw_layout_alpha(cr, title, 16, layout_center_y(title, 0, 34), UI_TEXT, 0.96);
+    g_object_unref(title);
+    cairo_set_source_rgba(cr, 1, 1, 1, 0.07);
+    cairo_rectangle(cr, 12, 33, qw - 24, 1);
     cairo_fill(cr);
-    draw_text_color(cr, "Quick settings", 14, 10, true, 10,
-        0.90, 0.96, 1.0);
 
     size_t rows = quick_row_count(shell);
     for (size_t row = 0; row < rows; row++) {
         double y = 34 + row * QUICK_ROW_HEIGHT;
         bool hovered = shell->hovered_quick_row == (int)row;
-        if (hovered) {
-            cairo_set_source_rgba(cr, 0.055, 0.19, 0.29, 0.96);
-            rounded_rect(cr, 7, y + 2, shell->quick_width - 14,
-                QUICK_ROW_HEIGHT - 5, 8);
+        bool destructive = row + 1 == rows;
+        bool workspace_row = row >= 2 && row < 2 + shell->workspace_count;
+        if (destructive) {
+            cairo_set_source_rgba(cr, 1, 1, 1, 0.07);
+            cairo_rectangle(cr, 12, y + 1, qw - 24, 1);
             cairo_fill(cr);
         }
+        if (hovered)
+            draw_row_highlight(cr, 7, y + 3, qw - 14, QUICK_ROW_HEIGHT - 6, 8,
+                true, destructive);
         char label_buf[WORKSPACE_NAME_MAX + 32];
         const char *label = quick_row_label(shell, row,
             label_buf, sizeof(label_buf));
-        bool destructive = row + 1 == rows;
-        draw_text_color(cr, label, 16, y + 11, false, 9,
-            destructive ? 0.96 : 0.82,
-            destructive ? 0.40 : 0.88,
-            destructive ? 0.40 : 0.95);
+        bool active = workspace_row &&
+            strcmp(shell->workspaces[row - 2], shell->active_workspace) == 0;
+        if (workspace_row)
+            draw_pip(cr, 21, y + QUICK_ROW_HEIGHT / 2.0, 2.8, active);
+        PangoLayout *layout = make_layout_sized(cr, label, hovered || active, 9);
+        draw_layout_alpha(cr, layout, workspace_row ? 32 : 16,
+            layout_center_y(layout, y, QUICK_ROW_HEIGHT),
+            destructive ? UI_DANGER : UI_TEXT,
+            hovered || active ? 1.0 : (destructive ? 0.85 : 0.78));
+        g_object_unref(layout);
     }
 
     cairo_destroy(cr);
@@ -1095,6 +1359,12 @@ static void protocol_window(void *data, struct shady_shell_v1 *protocol,
     copy_text(window->title, sizeof(window->title), title);
     copy_text(window->workspace, sizeof(window->workspace), workspace);
     window->focused = focused != 0;
+    /* Focus is exclusive, but the compositor only re-sends the newly focused
+     * window, so clear the previous holder here. */
+    if (window->focused) {
+        for (size_t i = 0; i < shell->window_count; i++)
+            if (&shell->windows[i] != window) shell->windows[i].focused = false;
+    }
     if (shell->snapshot_done) draw_bar(shell);
 }
 
@@ -1676,6 +1946,7 @@ static void shell_finish(struct shell *shell) {
 
 int main(void) {
     signal(SIGCHLD, SIG_IGN);
+    ui_load_theme();
     struct shell shell = {0};
     if (!shell_init(&shell)) {
         shell_finish(&shell);

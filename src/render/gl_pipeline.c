@@ -19,6 +19,7 @@
 
 #define WOBBLE_MESH_X 16
 #define WOBBLE_MESH_Y 16
+#define SIDE_CORNER_SEGMENTS 4
 
 
 static char *read_shader_file(const char *name) {
@@ -404,10 +405,19 @@ static bool create_side_mesh(struct shady_gl_pipeline *pipeline) {
 	 * follow the same flexible deformation as the front surface.
 	 */
 	const int segments = WOBBLE_MESH_X;
+	/*
+	 * Each wall also carries SIDE_CORNER_SEGMENTS extra segments per end.
+	 * Their varying coordinate is encoded outside [0, 1] ([-1, 0] for the
+	 * start corner, [1, 2] for the end corner); side.vert bends them onto a
+	 * 45-degree slice of the rounded frame corner, so two neighbouring walls
+	 * meet on the diagonal and the 3D shell follows the rounded front face.
+	 */
+	const int corner_segments = SIDE_CORNER_SEGMENTS;
+	const int wall_segments = segments + corner_segments * 2;
 	/* Keep only the four thickness walls. A solid back plate becomes visible
 	 * behind the flexible front face when wobble bows the window, producing
 	 * a large dark rectangle instead of revealing the environment. */
-	const int wall_vertex_count = segments * 4 * 6;
+	const int wall_vertex_count = wall_segments * 4 * 6;
 	const int vertex_count = wall_vertex_count;
 	GLfloat *v = calloc((size_t)vertex_count * 6, sizeof(GLfloat));
 	if (!v) return false;
@@ -420,8 +430,18 @@ static bool create_side_mesh(struct shady_gl_pipeline *pipeline) {
 	SIDE_VERTEX(x0,y0,z0,nx,ny,nz); SIDE_VERTEX(x1,y1,z1,nx,ny,nz); SIDE_VERTEX(x2,y2,z2,nx,ny,nz); \
 	SIDE_VERTEX(x2,y2,z2,nx,ny,nz); SIDE_VERTEX(x1,y1,z1,nx,ny,nz); SIDE_VERTEX(x3,y3,z3,nx,ny,nz); \
 } while (0)
-	for (int i = 0; i < segments; ++i) {
-		float a=(float)i/segments, b=(float)(i+1)/segments;
+	for (int i = 0; i < wall_segments; ++i) {
+		float a, b;
+		if (i < corner_segments) {
+			a = -1.f + (float)i / corner_segments;
+			b = -1.f + (float)(i + 1) / corner_segments;
+		} else if (i < corner_segments + segments) {
+			a = (float)(i - corner_segments) / segments;
+			b = (float)(i - corner_segments + 1) / segments;
+		} else {
+			a = 1.f + (float)(i - corner_segments - segments) / corner_segments;
+			b = 1.f + (float)(i - corner_segments - segments + 1) / corner_segments;
+		}
 		SIDE_QUAD(0,a,0, 0,a,-1, 0,b,0, 0,b,-1, -1,0,0);
 		SIDE_QUAD(1,a,0, 1,b,0, 1,a,-1, 1,b,-1, 1,0,0);
 		SIDE_QUAD(a,0,0, b,0,0, a,0,-1, b,0,-1, 0,-1,0);
@@ -579,6 +599,8 @@ bool shady_gl_pipeline_init(
 	pipeline->u_brightness_2d = glGetUniformLocation(pipeline->prog_2d, "u_brightness");
 	pipeline->u_frame_rect_2d = glGetUniformLocation(pipeline->prog_2d, "u_frame_rect");
 	pipeline->u_use_vertex_uv_2d = glGetUniformLocation(pipeline->prog_2d, "u_use_vertex_uv");
+	pipeline->u_frame_px_2d = glGetUniformLocation(pipeline->prog_2d, "u_frame_px");
+	pipeline->u_frame_shape_2d = glGetUniformLocation(pipeline->prog_2d, "u_frame_shape");
 
 	/*
 	 * EGL external texture uniforms.
@@ -633,6 +655,8 @@ bool shady_gl_pipeline_init(
 	pipeline->u_brightness_ext = glGetUniformLocation(pipeline->prog_ext, "u_brightness");
 	pipeline->u_frame_rect_ext = glGetUniformLocation(pipeline->prog_ext, "u_frame_rect");
 	pipeline->u_use_vertex_uv_ext = glGetUniformLocation(pipeline->prog_ext, "u_use_vertex_uv");
+	pipeline->u_frame_px_ext = glGetUniformLocation(pipeline->prog_ext, "u_frame_px");
+	pipeline->u_frame_shape_ext = glGetUniformLocation(pipeline->prog_ext, "u_frame_shape");
 
 	pipeline->titlebar_prog = link_program_files("titlebar.vert", "titlebar.frag", "titlebar");
 	if (!pipeline->titlebar_prog) {
@@ -679,6 +703,8 @@ bool shady_gl_pipeline_init(
 	pipeline->side_u_light_dir = glGetUniformLocation(pipeline->side_prog, "u_light_dir");
 	pipeline->side_u_base_color = glGetUniformLocation(pipeline->side_prog, "u_base_color");
 	pipeline->side_u_wobble = glGetUniformLocation(pipeline->side_prog, "u_wobble");
+	pipeline->side_u_corner = glGetUniformLocation(pipeline->side_prog, "u_corner");
+	pipeline->side_u_edge_color = glGetUniformLocation(pipeline->side_prog, "u_edge_color");
 
 	pipeline->background_prog = link_program_files(
 		"background.vert", "background.frag", "background gradient");
@@ -702,6 +728,7 @@ bool shady_gl_pipeline_init(
 	pipeline->floor_u_major_strength = glGetUniformLocation(pipeline->floor_prog, "u_major_strength");
 	pipeline->floor_u_fade_start = glGetUniformLocation(pipeline->floor_prog, "u_fade_start");
 	pipeline->floor_u_fade_end = glGetUniformLocation(pipeline->floor_prog, "u_fade_end");
+	pipeline->floor_u_fog = glGetUniformLocation(pipeline->floor_prog, "u_fog");
 
 	pipeline->shadow_prog = link_program_files("shadow.vert", "shadow.frag", "window shadow");
 	if (!pipeline->shadow_prog) {
@@ -897,8 +924,20 @@ void shady_gl_pipeline_draw_window(
 	GLint u_brightness = external ? pipeline->u_brightness_ext : pipeline->u_brightness_2d;
 	GLint u_frame_rect = external ? pipeline->u_frame_rect_ext : pipeline->u_frame_rect_2d;
 	GLint u_use_vertex_uv = external ? pipeline->u_use_vertex_uv_ext : pipeline->u_use_vertex_uv_2d;
+	GLint u_frame_px = external ? pipeline->u_frame_px_ext : pipeline->u_frame_px_2d;
+	GLint u_frame_shape = external ? pipeline->u_frame_shape_ext : pipeline->u_frame_shape_2d;
+	/* Mesh representations carry their own UV layout, so the frame-space
+	 * rounded rectangle does not describe their silhouette. */
+	bool rounded_frame = !pipeline->mesh_use_vertex_uv &&
+		pipeline->frame_px[0] > 0.f && pipeline->frame_px[1] > 0.f;
 
 	glUseProgram(prog);
+	if (u_frame_px >= 0)
+		glUniform2f(u_frame_px,
+			rounded_frame ? pipeline->frame_px[0] : 0.f,
+			rounded_frame ? pipeline->frame_px[1] : 0.f);
+	if (u_frame_shape >= 0)
+		glUniform2f(u_frame_shape, pipeline->frame_radius, pipeline->frame_border);
 
 	glUniformMatrix4fv(u_mvp, 1, GL_FALSE, mvp);
 	glUniformMatrix4fv(u_model, 1, GL_FALSE, model);
@@ -988,6 +1027,13 @@ void shady_gl_pipeline_draw_window(
 		);
 
 		glDepthMask(GL_FALSE);
+	} else if (rounded_frame && pipeline->frame_radius > 0.f) {
+		/* Opaque surface with anti-aliased rounded corners: blend only the
+		 * coverage fringe. Fully transparent corner fragments are discarded
+		 * in the shader, so depth writes stay correct for the solid body. */
+		glEnable(GL_BLEND);
+		glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+		glDepthMask(GL_TRUE);
 	} else {
 		glDisable(GL_BLEND);
 		glDepthMask(GL_TRUE);
@@ -1031,6 +1077,24 @@ void shady_gl_pipeline_draw_window(
 	);
 
 	glUseProgram(0);
+}
+
+void shady_gl_pipeline_set_frame_style(
+		struct shady_gl_pipeline *pipeline, float frame_width,
+		float frame_height, float corner_radius, float border_px,
+		const float edge_color[4]) {
+	if (!pipeline) return;
+	bool enabled = frame_width > 0.f && frame_height > 0.f;
+	float max_radius = enabled ?
+		0.5f * (frame_width < frame_height ? frame_width : frame_height) : 0.f;
+	if (corner_radius < 0.f) corner_radius = 0.f;
+	if (corner_radius > max_radius) corner_radius = max_radius;
+	pipeline->frame_px[0] = enabled ? frame_width : 0.f;
+	pipeline->frame_px[1] = enabled ? frame_height : 0.f;
+	pipeline->frame_radius = enabled ? corner_radius : 0.f;
+	pipeline->frame_border = enabled && border_px > 0.f ? border_px : 0.f;
+	for (int i = 0; i < 4; ++i)
+		pipeline->frame_edge_color[i] = edge_color ? edge_color[i] : 0.f;
 }
 
 bool shady_gl_pipeline_prepare_dynamic_mesh(
@@ -1139,6 +1203,16 @@ void shady_gl_pipeline_draw_sides(
 	/* A fixed world-space key light from upper-left and slightly forward. */
 	glUniform3f(pipeline->side_u_light_dir, -0.45f, 0.72f, 0.53f);
 	glUniform4f(pipeline->side_u_base_color, 0.16f, 0.21f, 0.31f, 1.0f);
+	/* Corner radius normalized per axis; zero keeps the square box shell. */
+	float corner_x = 0.f, corner_y = 0.f;
+	if (pipeline->frame_px[0] > 0.f && pipeline->frame_px[1] > 0.f) {
+		corner_x = pipeline->frame_radius / pipeline->frame_px[0];
+		corner_y = pipeline->frame_radius / pipeline->frame_px[1];
+	}
+	if (pipeline->side_u_corner >= 0)
+		glUniform2f(pipeline->side_u_corner, corner_x, corner_y);
+	if (pipeline->side_u_edge_color >= 0)
+		glUniform4fv(pipeline->side_u_edge_color, 1, pipeline->frame_edge_color);
 	glUniform2f(pipeline->side_u_wobble, wobble_x, wobble_y);
 
 	glDisable(GL_BLEND);
@@ -1198,7 +1272,8 @@ void shady_gl_pipeline_draw_floor(
 	float grid_strength,
 	float major_strength,
 	float fade_start,
-	float fade_end
+	float fade_end,
+	float horizon_fog
 ) {
 	(void)floor;
 	glUseProgram(pipeline->floor_prog);
@@ -1209,7 +1284,11 @@ void shady_gl_pipeline_draw_floor(
 	glUniform1f(pipeline->floor_u_major_strength, major_strength);
 	glUniform1f(pipeline->floor_u_fade_start, fade_start);
 	glUniform1f(pipeline->floor_u_fade_end, fade_end);
-	glDisable(GL_BLEND);
+	glUniform1f(pipeline->floor_u_fog, horizon_fog);
+	/* Horizon fog fades floor coverage (premultiplied), so the far floor
+	 * dissolves into whatever sky was drawn behind it. */
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 	glDepthMask(GL_TRUE);
 	glBindBuffer(GL_ARRAY_BUFFER, pipeline->floor_vbo);
 	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(GLfloat), (void *)0);
@@ -1217,6 +1296,7 @@ void shady_gl_pipeline_draw_floor(
 	glDrawArrays(GL_TRIANGLES, 0, pipeline->floor_vertex_count);
 	glDisableVertexAttribArray(0);
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
+	glDisable(GL_BLEND);
 	glUseProgram(0);
 }
 

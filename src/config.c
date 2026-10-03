@@ -32,11 +32,13 @@ void shady_config_defaults(struct shady_config *c) {
 		.floor_major_strength = 0.28f,
 		.floor_fade_start = 1.4f,
 		.floor_fade_end = 5.2f,
+		.floor_horizon_fog = 1.0f,
 		.window_tint = { 0.85f, 0.90f, 1.10f },
 		.window_effect_strength = 1.0f,
 		.window_brightness = 1.0f,
 		.window_opacity = 1.0f,
 		.window_border_width = 3.0f,
+		.window_corner_radius = 10.0f,
 		.window_border_color = { 0.055f, 0.20f, 0.30f },
 		.window_border_focus_color = { 0.10f, 0.65f, 1.0f },
 		.window_titlebar = true,
@@ -153,11 +155,13 @@ bool shady_config_set(struct shady_config *c,const char *key,const char *value){
 	if(!strcmp(key,"floor_major_strength"))return parse_float_range(value,0.f,2.f,&c->floor_major_strength);
 	if(!strcmp(key,"floor_fade_start"))return parse_float_range(value,0.f,20.f,&c->floor_fade_start);
 	if(!strcmp(key,"floor_fade_end"))return parse_float_range(value,0.01f,40.f,&c->floor_fade_end);
+	if(!strcmp(key,"floor_horizon_fog"))return parse_float_range(value,0.f,1.f,&c->floor_horizon_fog);
 	if(!strcmp(key,"window_tint"))return parse_color(value,c->window_tint);
 	if(!strcmp(key,"window_effect_strength"))return parse_float_range(value,0.f,1.f,&c->window_effect_strength);
 	if(!strcmp(key,"window_brightness"))return parse_float_range(value,0.25f,3.f,&c->window_brightness);
 	if(!strcmp(key,"window_opacity"))return parse_float_range(value,0.f,1.f,&c->window_opacity);
 	if(!strcmp(key,"window_border_width"))return parse_float_range(value,0.f,32.f,&c->window_border_width);
+	if(!strcmp(key,"window_corner_radius"))return parse_float_range(value,0.f,48.f,&c->window_corner_radius);
 	if(!strcmp(key,"window_border_color"))return parse_color(value,c->window_border_color);
 	if(!strcmp(key,"window_border_focus_color"))return parse_color(value,c->window_border_focus_color);
 	if(!strcmp(key,"window_titlebar_height"))return parse_float_range(value,16.f,64.f,&c->window_titlebar_height);

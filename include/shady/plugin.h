@@ -45,7 +45,22 @@ struct shady_render_context {
 	float logical_width;
 	float logical_height;
 	float time_seconds;
+	/* Append-only camera description for view-dependent effects such as
+	 * procedural skies. All vectors are world space; forward/right/up are
+	 * unit length. A fragment at NDC (x, y) of the *output image* looks along
+	 * forward + right * x * tan_half_fov_y * aspect - up * y * tan_half_fov_y
+	 * (Shady renders with a flipped Y). Check with SHADY_RENDER_CONTEXT_HAS. */
+	float camera_position[3];
+	float camera_forward[3];
+	float camera_right[3];
+	float camera_up[3];
+	float tan_half_fov_y;
+	float aspect;
 };
+
+#define SHADY_RENDER_CONTEXT_HAS(ctx, member) \
+	((ctx) && (ctx)->struct_size >= offsetof(struct shady_render_context, member) + \
+		sizeof((ctx)->member))
 
 typedef void (*shady_render_callback)(shady_host host,
 	const struct shady_render_context *context, void *user_data);

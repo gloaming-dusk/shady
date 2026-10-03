@@ -23,14 +23,14 @@ nix develop -c ninja -C "$BUILD_DIR" \
   libshady-plugin-fps-cube.so \
   libshady-plugin-fps-folded-paper.so \
   libshady-plugin-fps-origami.so \
-  libshady-plugin-astral-loom.so \
   libshady-plugin-counter.so \
   libshady-plugin-counter-bad.so \
   libshady-plugin-motion-contract.so \
   libshady-plugin-focus-depth.so \
   libshady-plugin-spatial-overview.so \
   libshady-plugin-water-windows.so \
-  libshady-plugin-close-slide-fade.so
+  libshady-plugin-close-slide-fade.so \
+  libshady-plugin-afterglow.so
 
 export SHADY_FPS_REPRESENTATION_PLUGIN="$ROOT/$BUILD_DIR/libshady-plugin-fps-cube.so"
 
@@ -45,18 +45,6 @@ SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
 
 SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
   nix develop -c bash ./tests/headless-spatial-plugin-rollback.sh
-
-SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
-  nix develop -c bash ./tests/headless-astral-loom-daily.sh
-
-SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
-  nix develop -c bash ./tests/headless-astral-loom-stress.sh
-
-SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
-  nix develop -c bash ./tests/headless-astral-input-focus-stress.sh
-
-SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
-  nix develop -c bash ./tests/headless-astral-reload-stress.sh
 
 SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
   nix develop -c bash ./tests/headless-motion.sh
@@ -89,6 +77,6 @@ SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
   nix develop -c bash ./tests/headless-neon-quit.sh
 
 SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
-  nix develop -c bash ./tests/headless-astral-loom.sh
+  nix develop -c bash ./tests/headless-afterglow.sh
 
 echo "spatial-suite: PASS"

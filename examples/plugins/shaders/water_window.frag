@@ -1,3 +1,6 @@
+#ifdef GL_OES_standard_derivatives
+#extension GL_OES_standard_derivatives : enable
+#endif
 precision mediump float;
 
 uniform sampler2D u_tex;
@@ -17,10 +20,32 @@ uniform vec4 u_border_color;
 uniform vec2 u_border_width; /* normalized x/y thickness */
 uniform float u_close_progress;
 uniform vec4 u_close_effect; /* style, strength, direction_x, direction_y */
+uniform vec4 u_frame_rect; /* this pass's sub-rect inside the decorated frame */
+uniform vec2 u_frame_px; /* decorated frame size in px; 0 = legacy border */
+uniform vec2 u_frame_shape; /* corner radius px, border px */
 
 varying vec2 v_uv;
 varying vec3 v_normal;
 varying float v_water_wave;
+
+/* Signed distance to the decorated frame's rounded rectangle, in frame px.
+ * Negative inside. Uses the undeformed mesh UV so the silhouette stays
+ * attached to the window perimeter under wobble and water refraction. */
+float frame_distance() {
+	vec2 frame_uv = u_frame_rect.xy + vec2(v_uv.x, 1.0 - v_uv.y) * u_frame_rect.zw;
+	vec2 half_size = u_frame_px * 0.5;
+	float r = min(u_frame_shape.x, min(half_size.x, half_size.y));
+	vec2 q = abs(frame_uv * u_frame_px - half_size) - (half_size - vec2(r));
+	return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
+}
+
+float frame_aa(float d) {
+#ifdef GL_OES_standard_derivatives
+	return max(fwidth(d), 0.0001);
+#else
+	return 1.0;
+#endif
+}
 
 void main() {
 	vec2 uv = v_uv;
@@ -191,11 +216,28 @@ void main() {
 	/* Window border uses the original mesh UV, not refracted UV, so it stays
 	 * locked to the physical window perimeter even when the water surface
 	 * bends application contents underneath it. */
-	float border_enabled = step(0.000001, max(u_border_width.x, u_border_width.y));
+	float frame_enabled = step(0.5, min(u_frame_px.x, u_frame_px.y));
+	float border_enabled = step(0.000001, max(u_border_width.x, u_border_width.y)) *
+		(1.0 - frame_enabled);
 	float border_x = min(v_uv.x, 1.0 - v_uv.x) / max(u_border_width.x, 0.000001);
 	float border_y = min(v_uv.y, 1.0 - v_uv.y) / max(u_border_width.y, 0.000001);
 	float border_mask = (1.0 - smoothstep(0.72, 1.0, min(border_x, border_y))) *
 		border_enabled;
+	float frame_coverage = 1.0;
+	if (frame_enabled > 0.5) {
+		/* Rounded decorated frame: one continuous anti-aliased outline around
+		 * title bar and client together, plus a faint inner glow so focused
+		 * accents read as light rather than a flat painted stroke. */
+		float d = frame_distance();
+		float aa = frame_aa(d);
+		frame_coverage = clamp(0.5 - d / aa, 0.0, 1.0);
+		float border_px = u_frame_shape.y;
+		float inner = max(-d - border_px, 0.0);
+		border_mask = step(0.0001, border_px) *
+			clamp(0.5 + (d + border_px) / aa, 0.0, 1.0);
+		float glow = step(0.0001, border_px) * exp(-inner / 5.0) * 0.16;
+		color.rgb += u_border_color.rgb * u_border_color.a * glow * color.a;
+	}
 	float border_alpha = clamp(border_mask * u_border_color.a, 0.0, 1.0);
 	color.rgb = color.rgb * (1.0 - border_alpha) + u_border_color.rgb * border_alpha;
 	color.a = color.a + border_alpha * (1.0 - color.a);
@@ -205,6 +247,10 @@ void main() {
 	float close_fade = mix(1.0, 1.0 - smoothstep(0.08, 1.0, close_p), slide_close);
 	color.rgb *= close_fade;
 	color.a *= close_fade;
+
+	/* Premultiplied output: coverage scales colour and alpha together. */
+	if (frame_coverage <= 0.0) discard;
+	color *= frame_coverage;
 
 	gl_FragColor = color;
 }

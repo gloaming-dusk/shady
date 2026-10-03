@@ -82,11 +82,13 @@ struct shady_config {
 	float floor_major_strength;
 	float floor_fade_start;
 	float floor_fade_end;
+	float floor_horizon_fog;
 	float window_tint[3];
 	float window_effect_strength;
 	float window_brightness;
 	float window_opacity;
 	float window_border_width;
+	float window_corner_radius;
 	float window_border_color[3];
 	float window_border_focus_color[3];
 	bool window_titlebar;

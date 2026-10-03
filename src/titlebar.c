@@ -59,6 +59,13 @@ static bool titlebar_focused(const struct shady_toplevel *toplevel) {
         toplevel->server->toplevels.next == &toplevel->link;
 }
 
+/*
+ * Title bars are rasterized at twice their logical size. In spatial mode a
+ * window close to the camera magnifies its title bar, and the extra texels
+ * keep the label crisp; the scene-graph path downsamples via dest size.
+ */
+#define SHADY_TITLEBAR_SCALE 2
+
 static struct shady_titlebar_buffer *render_titlebar(
         struct shady_toplevel *toplevel, int width, int height) {
     if (width <= 0 || height <= 0) return NULL;
@@ -66,18 +73,21 @@ static struct shady_titlebar_buffer *render_titlebar(
     struct shady_titlebar_buffer *buffer = calloc(1, sizeof(*buffer));
     if (!buffer) return NULL;
 
-    buffer->stride = (size_t)width * 4;
-    buffer->pixels = calloc((size_t)height, buffer->stride);
+    const int scale = SHADY_TITLEBAR_SCALE;
+    const int buf_w = width * scale;
+    const int buf_h = height * scale;
+    buffer->stride = (size_t)buf_w * 4;
+    buffer->pixels = calloc((size_t)buf_h, buffer->stride);
     if (!buffer->pixels) {
         free(buffer);
         return NULL;
     }
 
-    wlr_buffer_init(&buffer->base, &titlebar_buffer_impl, width, height);
+    wlr_buffer_init(&buffer->base, &titlebar_buffer_impl, buf_w, buf_h);
 
     cairo_surface_t *surface = cairo_image_surface_create_for_data(
         (unsigned char *)buffer->pixels, CAIRO_FORMAT_ARGB32,
-        width, height, (int)buffer->stride);
+        buf_w, buf_h, (int)buffer->stride);
     if (cairo_surface_status(surface) != CAIRO_STATUS_SUCCESS) {
         cairo_surface_destroy(surface);
         wlr_buffer_drop(&buffer->base);
@@ -85,27 +95,84 @@ static struct shady_titlebar_buffer *render_titlebar(
     }
 
     cairo_t *cr = cairo_create(surface);
-    const float *bg = titlebar_focused(toplevel)
-        ? toplevel->server->config.window_titlebar_focus_color
-        : toplevel->server->config.window_titlebar_color;
-    const float *fg = toplevel->server->config.window_titlebar_text_color;
+    cairo_scale(cr, scale, scale);
+    const struct shady_config *config = &toplevel->server->config;
+    const bool focused = titlebar_focused(toplevel);
+    const float *bg = focused
+        ? config->window_titlebar_focus_color
+        : config->window_titlebar_color;
+    const float *fg = config->window_titlebar_text_color;
+    const float *accent = focused
+        ? config->window_border_focus_color
+        : config->window_border_color;
 
+    /* Soft vertical sheen: a touch lighter at the top, base colour below. */
     cairo_set_operator(cr, CAIRO_OPERATOR_SOURCE);
-    cairo_set_source_rgba(cr, bg[0], bg[1], bg[2], 0.96);
+    cairo_pattern_t *sheen = cairo_pattern_create_linear(0, 0, 0, height);
+    cairo_pattern_add_color_stop_rgba(sheen, 0.0,
+        bg[0] + (1.0 - bg[0]) * 0.06, bg[1] + (1.0 - bg[1]) * 0.06,
+        bg[2] + (1.0 - bg[2]) * 0.06, 0.97);
+    cairo_pattern_add_color_stop_rgba(sheen, 1.0, bg[0], bg[1], bg[2], 0.97);
+    cairo_set_source(cr, sheen);
     cairo_paint(cr);
+    cairo_pattern_destroy(sheen);
+
+    cairo_set_operator(cr, CAIRO_OPERATOR_OVER);
+    cairo_set_line_width(cr, 1.0);
+    /* Hairline highlight along the top edge, as if light catches a bevel. */
+    cairo_set_source_rgba(cr, 1.0, 1.0, 1.0, focused ? 0.07 : 0.04);
+    cairo_move_to(cr, 0, 0.5);
+    cairo_line_to(cr, width, 0.5);
+    cairo_stroke(cr);
+    /* Separator between title bar and client contents. */
+    cairo_set_source_rgba(cr, 0.0, 0.0, 0.0, 0.32);
+    cairo_move_to(cr, 0, height - 0.5);
+    cairo_line_to(cr, width, height - 0.5);
+    cairo_stroke(cr);
 
     const char *title = toplevel->xdg_toplevel->title;
     if (!title || !*title) title = toplevel->xdg_toplevel->app_id;
     if (!title || !*title) title = "Shady";
 
+    /* Status pip: lit with the focus accent, a dim ring otherwise. Inset so
+     * it clears the rounded frame corner. */
+    const double pip_r = height >= 24 ? 3.5 : 3.0;
+    const double pip_x = 16.0;
+    const double pip_y = height * 0.5;
+    if (focused) {
+        cairo_pattern_t *halo = cairo_pattern_create_radial(
+            pip_x, pip_y, 0, pip_x, pip_y, pip_r * 3.2);
+        cairo_pattern_add_color_stop_rgba(halo, 0.0,
+            accent[0], accent[1], accent[2], 0.45);
+        cairo_pattern_add_color_stop_rgba(halo, 1.0,
+            accent[0], accent[1], accent[2], 0.0);
+        cairo_set_source(cr, halo);
+        cairo_arc(cr, pip_x, pip_y, pip_r * 3.2, 0, 2 * G_PI);
+        cairo_fill(cr);
+        cairo_pattern_destroy(halo);
+        cairo_set_source_rgba(cr, accent[0], accent[1], accent[2], 1.0);
+        cairo_arc(cr, pip_x, pip_y, pip_r, 0, 2 * G_PI);
+        cairo_fill(cr);
+    } else {
+        cairo_set_source_rgba(cr, fg[0], fg[1], fg[2], 0.28);
+        cairo_arc(cr, pip_x, pip_y, pip_r - 0.5, 0, 2 * G_PI);
+        cairo_stroke(cr);
+    }
+
     PangoLayout *layout = pango_cairo_create_layout(cr);
-    PangoFontDescription *font =
-        pango_font_description_from_string("Sans SemiBold 10");
+    PangoFontDescription *font = pango_font_description_from_string(
+        focused ? "Sans SemiBold 9.5" : "Sans Medium 9.5");
     pango_layout_set_font_description(layout, font);
     pango_font_description_free(font);
+    PangoAttrList *attrs = pango_attr_list_new();
+    pango_attr_list_insert(attrs, pango_attr_letter_spacing_new(PANGO_SCALE / 4));
+    pango_layout_set_attributes(layout, attrs);
+    pango_attr_list_unref(attrs);
     pango_layout_set_text(layout, title, -1);
     pango_layout_set_ellipsize(layout, PANGO_ELLIPSIZE_END);
-    pango_layout_set_width(layout, (width > 28 ? width - 28 : width) * PANGO_SCALE);
+    const double text_x = pip_x + pip_r + 9.0;
+    int avail = width - (int)text_x - 14;
+    pango_layout_set_width(layout, (avail > 8 ? avail : 8) * PANGO_SCALE);
 
     int text_w = 0, text_h = 0;
     pango_layout_get_pixel_size(layout, &text_w, &text_h);
@@ -113,9 +180,8 @@ static struct shady_titlebar_buffer *render_titlebar(
     double y = (height - text_h) * 0.5;
     if (y < 0) y = 0;
 
-    cairo_set_operator(cr, CAIRO_OPERATOR_OVER);
-    cairo_set_source_rgba(cr, fg[0], fg[1], fg[2], 1.0);
-    cairo_move_to(cr, 10.0, y);
+    cairo_set_source_rgba(cr, fg[0], fg[1], fg[2], focused ? 0.96 : 0.58);
+    cairo_move_to(cr, text_x, y);
     pango_cairo_show_layout(cr, layout);
     g_object_unref(layout);
 

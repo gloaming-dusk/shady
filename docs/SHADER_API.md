@@ -131,8 +131,27 @@ If declared by the shader, Shady automatically supplies:
 | `u_effect_strength` | float | configured effect strength |
 | `u_brightness` | float | configured/focus-adjusted brightness |
 | `u_light_dir` | vec3 | compositor light direction |
+| `u_frame_px` | vec2 | decorated frame (title bar + client) size in logical px; `0,0` when the rounded frame does not apply |
+| `u_frame_shape` | vec2 | rounded-frame corner radius and border width, both in px |
 
 Uniforms are optional. Shady checks whether each uniform exists before assigning it.
+
+### Rounded frames
+
+Free-floating decorated windows are drawn as one rounded rectangle
+(`window_corner_radius`) whose outline runs around the title bar and client
+together. Shaders opt in by declaring `u_frame_px`; Shady then also blends opaque
+clients so the shader can anti-alias the corners. `u_frame_px` is `0,0` for
+maximized/fullscreen windows, folded and MESH representations, in which case the
+legacy `u_border_width` client border applies. When the rounded frame is active,
+`u_border_width` is still supplied for the client pass but shaders should draw the
+outline from `u_frame_shape.y` instead, so it continues across the title bar pass.
+
+`shaders/window.frag` contains a reference `frame_distance()` helper: it maps the
+pass's `v_uv` into frame coordinates through `u_frame_rect`, evaluates a rounded-box
+signed distance in px, discards fragments outside it and scales premultiplied colour
+by the anti-aliased coverage. Shaders that do not declare `u_frame_px` keep
+rendering square windows.
 
 ### Vertex coordinates
 

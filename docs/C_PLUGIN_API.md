@@ -185,6 +185,32 @@ Stages:
 
 Remove with `render_hook_remove`.
 
+#### Camera-aware hooks
+
+The render context also describes the spatial camera, so a hook can build a
+world-space view ray per pixel (procedural skies, horizon effects). These
+fields were appended to the struct; check for them with
+`SHADY_RENDER_CONTEXT_HAS(ctx, aspect)` before use.
+
+| Field | Meaning |
+|---|---|
+| `camera_position[3]` | eye position in world space |
+| `camera_forward[3]`, `camera_right[3]`, `camera_up[3]` | unit camera basis in world space |
+| `tan_half_fov_y` | tangent of half the vertical field of view |
+| `aspect` | output width / height |
+
+Shady renders with a flipped Y, so the ray for a fragment at output NDC `(x, y)`
+(`gl_FragCoord.xy / resolution * 2 - 1`) is:
+
+```glsl
+vec3 d = normalize(fwd + right * x * tan_half_fov_y * aspect - up * y * tan_half_fov_y);
+```
+
+`examples/plugins/afterglow.c` with `shaders/afterglow_sky.frag` is a complete
+example: a sky and sea that stay fixed in the world while the camera orbits.
+The floor's horizon fog fades floor coverage rather than painting a colour, so
+an `AFTER_BACKGROUND` sky shows through the distant floor seamlessly.
+
 ### Live auxiliary window samplers
 
 A custom window shader can sample another mapped window without receiving any raw GL object handles. Attach a normal custom shader to the target, then assign a source window:

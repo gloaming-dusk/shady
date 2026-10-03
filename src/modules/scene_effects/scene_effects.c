@@ -18,7 +18,8 @@ void shady_scene_effects_draw_floor(struct shady_server *server,
 			server->config.floor_grid_strength,
 			server->config.floor_major_strength,
 			server->config.floor_fade_start,
-			server->config.floor_fade_end);
+			server->config.floor_fade_end,
+			server->config.floor_horizon_fog);
 	}
 }
 

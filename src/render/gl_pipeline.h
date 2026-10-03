@@ -52,6 +52,21 @@ struct shady_gl_pipeline {
 	GLint u_brightness_ext;
 	GLint u_frame_rect_ext;
 	GLint u_use_vertex_uv_ext;
+	GLint u_frame_px_2d;
+	GLint u_frame_shape_2d;
+	GLint u_frame_px_ext;
+	GLint u_frame_shape_ext;
+
+	/*
+	 * Per-window frame style shared by the window, title bar and side-wall
+	 * passes. frame_px is the full decorated frame (title bar + client) in
+	 * logical pixels; a zero size disables the rounded-frame path so mesh
+	 * representations and screen-space windows keep their legacy edges.
+	 */
+	float frame_px[2];
+	float frame_radius;
+	float frame_border;
+	float frame_edge_color[4];
 
 	/* Unlit compositor-side title bar texture. */
 	GLuint titlebar_prog;
@@ -80,6 +95,8 @@ struct shady_gl_pipeline {
 	GLint side_u_light_dir;
 	GLint side_u_base_color;
 	GLint side_u_wobble;
+	GLint side_u_corner;
+	GLint side_u_edge_color;
 	GLuint side_vbo;
 	GLsizei side_vertex_count;
 
@@ -98,6 +115,7 @@ struct shady_gl_pipeline {
 	GLint floor_u_major_strength;
 	GLint floor_u_fade_start;
 	GLint floor_u_fade_end;
+	GLint floor_u_fog;
 	GLuint floor_vbo;
 	GLsizei floor_vertex_count;
 
@@ -145,6 +163,20 @@ void shady_gl_pipeline_draw_window(
 	const float tint[4],
 	float effect_strength,
 	float brightness
+);
+
+/*
+ * Set the decorated-frame shape used by subsequent window, title bar and
+ * side-wall draws. Pass width/height <= 0 (or radius and border <= 0) to
+ * fall back to the legacy rectangular client border.
+ */
+void shady_gl_pipeline_set_frame_style(
+	struct shady_gl_pipeline *pipeline,
+	float frame_width,
+	float frame_height,
+	float corner_radius,
+	float border_px,
+	const float edge_color[4]
 );
 
 bool shady_gl_pipeline_prepare_dynamic_mesh(
@@ -212,7 +244,8 @@ void shady_gl_pipeline_draw_floor(
 	float grid_strength,
 	float major_strength,
 	float fade_start,
-	float fade_end
+	float fade_end,
+	float horizon_fog
 );
 
 void shady_gl_pipeline_draw_shadow(

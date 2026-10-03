@@ -50,6 +50,24 @@ int main(void) {
     expect_float(config.window_border_focus_color[1], 0xD7 / 255.0f, "focus green custom");
     expect_float(config.window_border_focus_color[2], 1.0f, "focus blue custom");
 
+    expect_float(config.window_corner_radius, 10.0f, "default corner radius");
+    expect_true(shady_config_set(&config, "window_corner_radius", "16"),
+        "set corner radius");
+    expect_float(config.window_corner_radius, 16.0f, "stored corner radius");
+    expect_true(shady_config_set(&config, "window_corner_radius", "0"),
+        "allow square frames");
+    expect_true(!shady_config_set(&config, "window_corner_radius", "-2"),
+        "reject negative corner radius");
+    expect_true(!shady_config_set(&config, "window_corner_radius", "49"),
+        "reject oversized corner radius");
+
+    expect_float(config.floor_horizon_fog, 1.0f, "default horizon fog");
+    expect_true(shady_config_set(&config, "floor_horizon_fog", "0.4"),
+        "set horizon fog");
+    expect_float(config.floor_horizon_fog, 0.4f, "stored horizon fog");
+    expect_true(!shady_config_set(&config, "floor_horizon_fog", "1.5"),
+        "reject horizon fog above 1");
+
     if (failures) return 1;
     puts("config-border: PASS");
     return 0;
