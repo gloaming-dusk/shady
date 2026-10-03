@@ -14,6 +14,25 @@ struct wlr_pointer_axis_event;
 struct wlr_surface;
 typedef uint32_t xkb_keysym_t;
 
+/* Stable public input values for native modules/plugins. These mirror the
+ * modifier bits and key states delivered to shady_module.key without requiring
+ * plugins to include wlroots' unstable headers. */
+enum shady_key_state {
+	SHADY_KEY_RELEASED = 0,
+	SHADY_KEY_PRESSED = 1,
+};
+
+enum shady_modifier_mask {
+	SHADY_MODIFIER_SHIFT = 1u << 0,
+	SHADY_MODIFIER_CAPS = 1u << 1,
+	SHADY_MODIFIER_CTRL = 1u << 2,
+	SHADY_MODIFIER_ALT = 1u << 3,
+	SHADY_MODIFIER_MOD2 = 1u << 4,
+	SHADY_MODIFIER_MOD3 = 1u << 5,
+	SHADY_MODIFIER_LOGO = 1u << 6,
+	SHADY_MODIFIER_MOD5 = 1u << 7,
+};
+
 #define SHADY_MAX_MODULES 32
 
 struct shady_module {
