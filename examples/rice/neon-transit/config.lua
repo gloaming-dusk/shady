@@ -62,6 +62,7 @@ shady.plugin(os.getenv("SHADY_FPS_REPRESENTATION_PLUGIN") or
 -- skips the default overview plugin unless a depth mode is explicitly requested.
 local magnetic_enabled = os.getenv("SHADY_NEON_MAGNETIC") == "1"
 local constellation_enabled = os.getenv("SHADY_NEON_CONSTELLATION") == "1"
+local portal_enabled = os.getenv("SHADY_NEON_PORTAL") == "1"
 if magnetic_enabled and constellation_enabled then
     shady.log("Neon Transit: constellation takes precedence over magnetic window motion")
     magnetic_enabled = false
@@ -93,11 +94,21 @@ if constellation_enabled then
         (root .. "/build/libshady-plugin-window-constellation.so"))
 end
 
+-- Live window portal. Super+P opens/cycles the focused window's source and
+-- Super+Shift+P closes it. Portal and water both own a custom window shader,
+-- so portal mode intentionally takes precedence over the default water effect.
+if portal_enabled then
+    shady.plugin(os.getenv("SHADY_PORTAL_PLUGIN") or
+        (root .. "/build/libshady-plugin-window-portal.so"))
+end
+
 -- Native liquid-surface effect is part of the Neon Transit look by default.
 -- Set SHADY_NEON_WATER=0 to disable it when battery/idle usage matters more.
-if os.getenv("SHADY_NEON_WATER") ~= "0" then
+if not portal_enabled and os.getenv("SHADY_NEON_WATER") ~= "0" then
     shady.plugin(os.getenv("SHADY_WATER_PLUGIN") or
         (root .. "/build/libshady-plugin-water-windows.so"))
+elseif portal_enabled and os.getenv("SHADY_NEON_WATER") ~= "0" then
+    shady.log("Neon Transit: portal mode takes precedence over the water window shader")
 end
 
 -- Close style stays on the built-in crumple by default. Opt into the example

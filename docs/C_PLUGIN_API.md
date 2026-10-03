@@ -185,6 +185,21 @@ Stages:
 
 Remove with `render_hook_remove`.
 
+### Live auxiliary window samplers
+
+A custom window shader can sample another mapped window without receiving any raw GL object handles. Attach a normal custom shader to the target, then assign a source window:
+
+```c
+api->window_set_shader(host, target, program);
+api->window_set_shader_source(host, target, source);
+```
+
+The renderer binds the source's current client surface as `u_portal_tex` on texture unit 1 and provides `u_portal_available` plus `u_portal_size`. External EGL textures are copied to a normal 2D texture by the host before the shader runs. The source must be a different live window, and the plugin setting the source must also own the target's custom shader.
+
+Reset the auxiliary source with `window_reset_shader_source`; `window_reset_shader` also clears a source owned by the same plugin. Plugin unload and shader-owner cleanup remove these bindings automatically, and destroying a source window clears every target that referenced it before the source object is freed.
+
+`examples/plugins/window_portal.c` demonstrates the full path: `Super+P` attaches/cycles a live source window behind a circular refractive portal lens, while `Super+Shift+P` detaches it. The plugin never receives a GLuint or wlroots texture pointer.
+
 ## Spatial window representations
 
 FPS interaction and folded-window geometry are separate concerns. A plugin can assign

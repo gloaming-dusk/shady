@@ -1171,6 +1171,11 @@ static bool host_window_reset_shader(shady_host host, shady_window window) {
 		return false;
 	toplevel->plugin_shader_program = 0;
 	toplevel->plugin_shader_owner = NULL;
+	if (!toplevel->plugin_shader_source_owner ||
+			toplevel->plugin_shader_source_owner == owner) {
+		toplevel->plugin_shader_source = NULL;
+		toplevel->plugin_shader_source_owner = NULL;
+	}
 	if (HOST(host)->renderer) shady_render_schedule_all_outputs(HOST(host));
 	return true;
 }
@@ -1178,6 +1183,40 @@ static bool host_window_reset_shader(shady_host host, shady_window window) {
 static shady_shader_program host_window_shader(shady_window window) {
 	struct shady_toplevel *toplevel = WINDOW(window);
 	return toplevel ? toplevel->plugin_shader_program : 0;
+}
+
+static bool host_window_set_shader_source(shady_host host, shady_window target,
+		shady_window source) {
+	if (!host_window_valid(host, target) || !host_window_valid(host, source) ||
+			target == source)
+		return false;
+	void *owner = plugin_owner_from_address(__builtin_return_address(0));
+	if (!owner) return false;
+	struct shady_toplevel *toplevel = WINDOW(target);
+	if (!toplevel->plugin_shader_program || toplevel->plugin_shader_owner != owner)
+		return false;
+	toplevel->plugin_shader_source = WINDOW(source);
+	toplevel->plugin_shader_source_owner = owner;
+	if (HOST(host)->renderer) shady_render_schedule_all_outputs(HOST(host));
+	return true;
+}
+
+static bool host_window_reset_shader_source(shady_host host, shady_window target) {
+	if (!host_window_valid(host, target)) return false;
+	void *owner = plugin_owner_from_address(__builtin_return_address(0));
+	struct shady_toplevel *toplevel = WINDOW(target);
+	if (toplevel->plugin_shader_source_owner && owner &&
+			toplevel->plugin_shader_source_owner != owner)
+		return false;
+	toplevel->plugin_shader_source = NULL;
+	toplevel->plugin_shader_source_owner = NULL;
+	if (HOST(host)->renderer) shady_render_schedule_all_outputs(HOST(host));
+	return true;
+}
+
+static shady_window host_window_shader_source(shady_window target) {
+	struct shady_toplevel *toplevel = WINDOW(target);
+	return toplevel ? (shady_window)toplevel->plugin_shader_source : NULL;
 }
 
 static bool host_window_set_representation(shady_host host, shady_window window,
@@ -1402,6 +1441,9 @@ static const struct shady_plugin_api_v1 plugin_api = {
 	.window_set_representation_provider = host_window_set_representation_provider,
 	.window_reset_representation_provider = host_window_reset_representation_provider,
 	.window_representation_state = host_window_representation_state,
+	.window_set_shader_source = host_window_set_shader_source,
+	.window_reset_shader_source = host_window_reset_shader_source,
+	.window_shader_source = host_window_shader_source,
 };
 
 static bool list_contains(const char *const *items, const char *value) {

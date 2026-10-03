@@ -508,6 +508,13 @@ static void xdg_toplevel_destroy(struct wl_listener *listener, void *data) {
 		reset_cursor_mode(toplevel->server);
 	}
 	shady_event_emit_window(toplevel->server, SHADY_EVENT_WINDOW_DESTROYED, toplevel);
+	struct shady_toplevel *other;
+	wl_list_for_each(other, &toplevel->server->all_toplevels, all_link) {
+		if (other->plugin_shader_source == toplevel) {
+			other->plugin_shader_source = NULL;
+			other->plugin_shader_source_owner = NULL;
+		}
+	}
 	shady_modules_toplevel_destroy(toplevel);
 	shady_plugin_window_cleanup(toplevel);
 

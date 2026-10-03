@@ -99,7 +99,9 @@ api->window_reset_shader(host, window);
 
 The current window content is bound to texture unit 0 as a normal `GL_TEXTURE_2D` sampler named `u_tex`.
 
-If the client texture is an external EGL texture, Shady copies it to an ordinary 2D texture before the custom shader runs. This extra copy occurs only on the custom-shader path.
+A plugin may also assign another live window as an auxiliary shader source with `window_set_shader_source`. When that source is renderable, Shady binds its current client surface to texture unit 1 as `u_portal_tex`, sets `u_portal_available` to 1, and supplies its pixel size through `u_portal_size`. If no live source is available, `u_portal_available` is 0 and shaders must ignore `u_portal_tex`.
+
+If either client texture is an external EGL texture, Shady copies it to an ordinary 2D texture before the custom shader runs. This extra copy occurs only on the custom-shader path.
 
 ### Host-provided uniforms
 
@@ -107,7 +109,10 @@ If declared by the shader, Shady automatically supplies:
 
 | Uniform | Type | Meaning |
 |---|---|---|
-| `u_tex` | sampler2D | current client content |
+| `u_tex` | sampler2D | current client content on texture unit 0 |
+| `u_portal_tex` | sampler2D | optional live source-window content on texture unit 1 |
+| `u_portal_available` | float | 1 when the auxiliary source is live/renderable, otherwise 0 |
+| `u_portal_size` | vec2 | auxiliary source texture width/height in pixels |
 | `u_mvp` | mat4 | full model-view-projection matrix |
 | `u_model` | mat4 | window model matrix |
 | `u_frame_rect` | vec4 | x, y, width, height sub-rect inside full frame coordinates |

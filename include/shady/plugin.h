@@ -324,7 +324,8 @@ struct shady_plugin_api_v1 {
 	 * present: u_mvp, u_model, u_frame_rect, u_time, u_resolution,
 	 * u_window_size, u_has_alpha, u_wobble, u_water, u_water_surface,
 	 * u_border_color, u_border_width, u_close_progress, u_close_effect,
-	 * u_tint, u_effect_strength, u_brightness and u_light_dir. */
+	 * u_tint, u_effect_strength, u_brightness, u_light_dir and optional
+	 * live-source uniforms u_portal_tex, u_portal_available, u_portal_size. */
 	bool (*window_set_shader)(shady_host host, shady_window window,
 		shady_shader_program program);
 	bool (*window_reset_shader)(shady_host host, shady_window window);
@@ -352,6 +353,14 @@ struct shady_plugin_api_v1 {
 	void *(*window_representation_state)(shady_host host, shady_window window,
 		const struct shady_window_representation_provider *provider,
 		size_t *state_size);
+
+	/* Optional live auxiliary window sampler for custom window shaders. The host
+	 * exposes the source surface as `u_portal_tex` on texture unit 1 and sets
+	 * `u_portal_available`/`u_portal_size` when the source is renderable. */
+	bool (*window_set_shader_source)(shady_host host, shady_window target,
+		shady_window source);
+	bool (*window_reset_shader_source)(shady_host host, shady_window target);
+	shady_window (*window_shader_source)(shady_window target);
 };
 
 typedef const struct shady_module *(*shady_plugin_entry_v1_fn)(

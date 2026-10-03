@@ -262,10 +262,39 @@ bool shady_render_plugin_shader_uniform_vec4(struct shady_server *server, void *
 	return true;
 }
 
+static bool plugin_shader_source_texture(struct shady_server *server,
+		struct shady_toplevel *target, GLenum *texture_target, GLuint *texture_id,
+		int *width, int *height) {
+	if (!server || !target || !target->plugin_shader_source) return false;
+	struct shady_toplevel *source = NULL;
+	struct shady_toplevel *candidate;
+	wl_list_for_each(candidate, &server->all_toplevels, all_link) {
+		if (candidate == target->plugin_shader_source) {
+			source = candidate;
+			break;
+		}
+	}
+	if (!source || !source->xdg_toplevel || !source->scene_tree ||
+			!source->scene_tree->node.enabled) return false;
+	struct wlr_surface *surface = source->xdg_toplevel->base->surface;
+	if (!surface || !surface->mapped) return false;
+	struct wlr_texture *texture = wlr_surface_get_texture(surface);
+	if (!texture || !wlr_texture_is_gles2(texture)) return false;
+	struct wlr_gles2_texture_attribs attribs;
+	wlr_gles2_texture_get_attribs(texture, &attribs);
+	if (texture_target) *texture_target = attribs.target;
+	if (texture_id) *texture_id = attribs.tex;
+	if (width) *width = texture->width;
+	if (height) *height = texture->height;
+	return true;
+}
+
 static bool plugin_shader_draw_window(struct shady_server *server,
 		shady_shader_program shader_program, void *shader_owner,
 		GLenum source_target, GLuint source_texture,
 		int texture_width, int texture_height, bool has_alpha,
+		GLenum portal_target, GLuint portal_texture,
+		int portal_width, int portal_height,
 		const float mvp[16], const float model[16], const float frame_rect[4],
 		float time_seconds, float output_width, float output_height,
 		float window_width, float window_height, float wobble_x, float wobble_y,
@@ -282,14 +311,26 @@ static bool plugin_shader_draw_window(struct shady_server *server,
 
 	GLuint sampled_texture = source_texture;
 	GLuint copied_texture = 0;
+	GLuint sampled_portal_texture = portal_texture;
+	GLuint copied_portal_texture = 0;
 	if (source_target != GL_TEXTURE_2D) {
 		if (!shady_gl_pipeline_copy_texture(&pipeline, source_target, source_texture,
 				texture_width, texture_height, &copied_texture))
 			return false;
 		sampled_texture = copied_texture;
 	}
+	bool portal_available = portal_texture != 0 && portal_width > 0 && portal_height > 0;
+	if (portal_available && portal_target != GL_TEXTURE_2D) {
+		if (!shady_gl_pipeline_copy_texture(&pipeline, portal_target, portal_texture,
+				portal_width, portal_height, &copied_portal_texture)) {
+			if (copied_texture) glDeleteTextures(1, &copied_texture);
+			return false;
+		}
+		sampled_portal_texture = copied_portal_texture;
+	}
 
-	GLint old_program = 0, old_buffer = 0, old_texture = 0, old_active_texture = 0;
+	GLint old_program = 0, old_buffer = 0, old_texture = 0,
+		old_portal_texture = 0, old_active_texture = 0;
 	GLboolean depth = glIsEnabled(GL_DEPTH_TEST);
 	GLboolean blend = glIsEnabled(GL_BLEND);
 	GLboolean depth_mask = GL_TRUE;
@@ -298,6 +339,9 @@ static bool plugin_shader_draw_window(struct shady_server *server,
 	glGetIntegerv(GL_ACTIVE_TEXTURE, &old_active_texture);
 	glActiveTexture(GL_TEXTURE0);
 	glGetIntegerv(GL_TEXTURE_BINDING_2D, &old_texture);
+	glActiveTexture(GL_TEXTURE1);
+	glGetIntegerv(GL_TEXTURE_BINDING_2D, &old_portal_texture);
+	glActiveTexture(GL_TEXTURE0);
 	glGetBooleanv(GL_DEPTH_WRITEMASK, &depth_mask);
 
 	glUseProgram(slot->program);
@@ -339,12 +383,28 @@ static bool plugin_shader_draw_window(struct shady_server *server,
 	if (loc >= 0) glUniform3f(loc, -0.45f, 0.72f, 0.53f);
 	loc = glGetUniformLocation(slot->program, "u_tex");
 	if (loc >= 0) glUniform1i(loc, 0);
+	loc = glGetUniformLocation(slot->program, "u_portal_tex");
+	if (loc >= 0) glUniform1i(loc, 1);
+	loc = glGetUniformLocation(slot->program, "u_portal_available");
+	if (loc >= 0) glUniform1f(loc, portal_available ? 1.f : 0.f);
+	loc = glGetUniformLocation(slot->program, "u_portal_size");
+	if (loc >= 0) glUniform2f(loc, (float)portal_width, (float)portal_height);
 
+	glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_2D, sampled_texture);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	if (portal_available) {
+		glActiveTexture(GL_TEXTURE1);
+		glBindTexture(GL_TEXTURE_2D, sampled_portal_texture);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+		glActiveTexture(GL_TEXTURE0);
+	}
 
 	if (has_alpha) {
 		glEnable(GL_BLEND);
@@ -378,6 +438,9 @@ static bool plugin_shader_draw_window(struct shady_server *server,
 	if (use_mesh_uv) glDisableVertexAttribArray(2);
 
 	glBindBuffer(GL_ARRAY_BUFFER, (GLuint)old_buffer);
+	glActiveTexture(GL_TEXTURE1);
+	glBindTexture(GL_TEXTURE_2D, (GLuint)old_portal_texture);
+	glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_2D, (GLuint)old_texture);
 	glActiveTexture((GLenum)old_active_texture);
 	glUseProgram((GLuint)old_program);
@@ -385,6 +448,7 @@ static bool plugin_shader_draw_window(struct shady_server *server,
 	if (depth) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
 	if (blend) glEnable(GL_BLEND); else glDisable(GL_BLEND);
 	if (copied_texture) glDeleteTextures(1, &copied_texture);
+	if (copied_portal_texture) glDeleteTextures(1, &copied_portal_texture);
 	return true;
 }
 
@@ -463,6 +527,10 @@ void shady_render_plugin_cleanup_owner(struct shady_server *server, void *owner)
 			if (toplevel->plugin_shader_owner == owner) {
 				toplevel->plugin_shader_program = 0;
 				toplevel->plugin_shader_owner = NULL;
+			}
+			if (toplevel->plugin_shader_source_owner == owner) {
+				toplevel->plugin_shader_source = NULL;
+				toplevel->plugin_shader_source_owner = NULL;
 			}
 			if (toplevel->plugin_representation_owner == owner) {
 				toplevel->plugin_representation_override = false;
@@ -1613,11 +1681,17 @@ void shady_render_output_frame(
 			close_state->direction_y,
 		};
 		bool custom_drawn = false;
+		GLenum portal_target = 0;
+		GLuint portal_texture = 0;
+		int portal_width = 0, portal_height = 0;
+		plugin_shader_source_texture(server, toplevel,
+			&portal_target, &portal_texture, &portal_width, &portal_height);
 		if (toplevel->plugin_shader_program && toplevel->plugin_shader_owner) {
 			custom_drawn = plugin_shader_draw_window(
 				server, toplevel->plugin_shader_program, toplevel->plugin_shader_owner,
 				attribs.target, attribs.tex,
 				texture->width, texture->height, attribs.has_alpha,
+				portal_target, portal_texture, portal_width, portal_height,
 				mvp, model, client_frame_rect, time_seconds,
 				(float)buf_w, (float)buf_h, tw, th, wobble_x, wobble_y,
 				water, water_surface, border_color, border_width,
@@ -1698,6 +1772,7 @@ void shady_render_output_frame(
 						toplevel->plugin_shader_owner,
 						GL_TEXTURE_2D, title_attribs.tex,
 						toplevel->titlebar_width, toplevel->titlebar_height, true,
+						0, 0, 0, 0,
 						mvp, model, title_frame_rect, time_seconds,
 						(float)buf_w, (float)buf_h,
 						tw, frame_title_h, wobble_x, wobble_y,
@@ -1816,6 +1891,7 @@ void shady_render_output_frame(
 				server, snapshot->plugin_shader_program, snapshot->plugin_shader_owner,
 				GL_TEXTURE_2D, snapshot->texture,
 				snapshot->texture_width, snapshot->texture_height, snapshot->has_alpha,
+				0, 0, 0, 0,
 				mvp, model, full_frame_rect, time_seconds,
 				(float)buf_w, (float)buf_h, snapshot->width, snapshot->height,
 				0.f, 0.f, no_water, no_water_surface,

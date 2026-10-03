@@ -240,6 +240,8 @@ struct shady_toplevel {
 	float close_effect_direction_y;
 	shady_shader_program plugin_shader_program;
 	void *plugin_shader_owner;
+	struct shady_toplevel *plugin_shader_source;
+	void *plugin_shader_source_owner;
 	bool plugin_representation_override;
 	struct shady_window_representation plugin_representation;
 	void *plugin_representation_owner;
