@@ -42,9 +42,17 @@ shady.modules({
     ["lua"] = true,
 })
 
--- Native C plugin: smooth focus-driven Z-depth without Lua animation logic.
-shady.plugin(os.getenv("SHADY_FOCUS_DEPTH_PLUGIN") or
-    (root .. "/build/libshady-plugin-focus-depth.so"))
+-- Native C spatial mode. Overview is the default because it gives Neon Transit
+-- an explicit 3D workspace switcher without competing Z writers. Set
+-- SHADY_NEON_DEPTH_MODE=focus to use the older focus-depth behavior instead.
+local depth_mode = os.getenv("SHADY_NEON_DEPTH_MODE") or "overview"
+if depth_mode == "focus" then
+    shady.plugin(os.getenv("SHADY_FOCUS_DEPTH_PLUGIN") or
+        (root .. "/build/libshady-plugin-focus-depth.so"))
+else
+    shady.plugin(os.getenv("SHADY_OVERVIEW_PLUGIN") or
+        (root .. "/build/libshady-plugin-spatial-overview.so"))
+end
 
 shady.bind("quit", "Super+Shift+Escape")
 shady.bind("cycle_windows", "Super+Tab")

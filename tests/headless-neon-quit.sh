@@ -28,6 +28,7 @@ export SHADY_ROOT="$ROOT"
 export SHADY_LUA_INIT="$ROOT/tests/headless-neon-quit.lua"
 export SHADY_AUTOMATION_PROBE="$ROOT/$PROBE"
 export SHADY_FOCUS_DEPTH_PLUGIN="$ROOT/$BUILD_DIR/libshady-plugin-focus-depth.so"
+export SHADY_OVERVIEW_PLUGIN="$ROOT/$BUILD_DIR/libshady-plugin-spatial-overview.so"
 export ASAN_OPTIONS="${ASAN_OPTIONS:-abort_on_error=1:halt_on_error=1:detect_leaks=0}"
 export UBSAN_OPTIONS="${UBSAN_OPTIONS:-halt_on_error=1:print_stacktrace=1}"
 

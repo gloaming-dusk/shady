@@ -2,7 +2,7 @@
 
 A high-contrast Shady rice built around a near-black world, violet horizon, electric-cyan floor grid and a closer workstation-style camera.
 
-Compared with **Night Observatory**, Neon Transit deliberately keeps physics and wobble off by default. It is meant to feel like a sharp futuristic desktop first and a 3D playground second. A native C `focus-depth` plugin keeps the focused window slightly forward in Z and smoothly pushes background windows into a depth stack.
+Compared with **Night Observatory**, Neon Transit deliberately keeps physics and wobble off by default. It is meant to feel like a sharp futuristic desktop first and a 3D playground second. By default it loads the native C `spatial-overview` plugin: `Super+O` spreads visible windows into a 3D grid, arrow keys move the highlighted selection, Enter focuses the selected window, and Escape cancels back to the saved layout. Set `SHADY_NEON_DEPTH_MODE=focus` to use the alternate native `focus-depth` style instead.
 
 ## Run
 
@@ -28,6 +28,10 @@ Both launchers start `shady-shell` plus one terminal when no extra Shady argumen
 | Super + Return | Open terminal |
 | Super + D | Toggle launcher |
 | Super + Tab | Cycle windows |
+| Super + O | Toggle native 3D overview |
+| Arrow keys | Move overview selection |
+| Enter | Focus selected overview window |
+| Escape | Cancel overview and restore layout |
 | Super + 1 / 2 / 3 | Switch main / code / comms |
 | Super + Shift + 1 / 2 / 3 | Move focused window and follow |
 | Super + M | Toggle maximize |
@@ -51,4 +55,4 @@ Both launchers start `shady-shell` plus one terminal when no extra Shady argumen
 - window tint: `#F8F5FF`
 - shell accents remain cyan, which intentionally ties the standalone shell into the world palette.
 
-The floor has a stronger minor/major grid than Night Observatory and fades farther into depth. Application textures stay bright while Shady's spatial effect is present but restrained. The `focus-depth` behavior lives in `examples/plugins/focus_depth.c` and uses the native plugin API (`focused_window`, `window_position`, `window_set_position`, event subscriptions, and module `tick`) rather than Lua animation code.
+The floor has a stronger minor/major grid than Night Observatory and fades farther into depth. Application textures stay bright while Shady's spatial effect is present but restrained. The default overview behavior lives in `examples/plugins/spatial_overview.c`; the optional focus style lives in `examples/plugins/focus_depth.c`. Both use the native C plugin API rather than Lua animation code.
