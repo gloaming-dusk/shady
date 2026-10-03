@@ -1,6 +1,8 @@
 ---
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import astral from '../../../../examples/rice/astral-loom/hero.png';
+import astralWebm from '../../../../examples/rice/astral-loom/hero.webm?url';
+import astralMp4 from '../../../../examples/rice/astral-loom/hero.mp4?url';
 
 const shortcuts = [
   ['Super + J', 'Toggle animated layout / restore original X/Y/Z'],
@@ -33,7 +35,10 @@ const shortcuts = [
   <div class="page-content">
     <div class="shell">
       <figure class="demo-frame">
-        <img src={astral.src} width={astral.width} height={astral.height} alt="Four colored Wayland clients rendered by Astral Loom as curved spatial panels" />
+        <video class="astral-video" autoplay muted loop playsinline controls preload="metadata" poster={astral.src} aria-label="Astral Loom rendering six live Wayland clients as curved spatial panels">
+          <source src={astralWebm} type="video/webm" />
+          <source src={astralMp4} type="video/mp4" />
+        </video>
       </figure>
 
       <section class="section">

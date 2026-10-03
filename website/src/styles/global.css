@@ -210,7 +210,9 @@ h3 { font-size: 1.2rem; }
 }
 
 .hero-visual img,
-.demo-frame img {
+.hero-visual video,
+.demo-frame img,
+.demo-frame video {
   display: block;
   width: 100%;
   height: auto;
