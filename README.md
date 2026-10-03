@@ -10,6 +10,14 @@ Windows can move through depth, fold into cubes, collide with authored environme
 
 The project is intentionally experimental. The imported TinyWL example is CC0; see [its license](LICENSES/tinywl-CC0.txt).
 
+## API documentation
+
+- [API overview](docs/API.md)
+- [Lua API](docs/LUA_API.md)
+- [Headless / automation API](docs/HEADLESS_API.md)
+- [C plugin API](docs/C_PLUGIN_API.md)
+- [Shader API](docs/SHADER_API.md)
+
 ## Highlights
 
 - Custom GLES2 renderer for Wayland surfaces in a perspective 3D world
