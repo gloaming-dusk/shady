@@ -166,6 +166,7 @@ struct shady_output {
 	uint64_t profile_submit_ns;
 	uint64_t continuous_camera_frames;
 	uint64_t continuous_motion_frames;
+	uint64_t continuous_effect_frames;
 	uint64_t continuous_physics_frames;
 	uint64_t continuous_close_frames;
 	uint64_t continuous_snapshot_frames;
@@ -199,6 +200,11 @@ struct shady_toplevel {
 	bool fullscreen_restore_maximized;
 	bool restore_geometry_valid;
 	struct wlr_box restore_geometry;
+	/* Optional native-plugin driven surface wave effect. Zero amplitude means off. */
+	float water_amplitude;
+	float water_frequency;
+	float water_speed;
+	float water_phase;
 	/* Opaque per-module extension state. The core toplevel does not know
 	 * which optional modules attach data here. */
 	void *module_state[SHADY_MAX_MODULES];

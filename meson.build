@@ -256,6 +256,13 @@ shared_module('shady-plugin-spatial-overview',
   build_by_default: true,
   install: false)
 
+shared_module('shady-plugin-water-windows',
+  'examples/plugins/water_windows.c',
+  include_directories: include_directories('include'),
+  dependencies: [dependency('xkbcommon')],
+  build_by_default: true,
+  install: false)
+
 module_resolver_test = executable('module-resolver-test',
   [
     'tests/module-resolver.c',

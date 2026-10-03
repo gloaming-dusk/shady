@@ -344,6 +344,35 @@ static void host_output_schedule_render(shady_host host, shady_output output) {
 	if (server->renderer) shady_render_schedule_output(OUTPUT(output));
 }
 
+static bool host_window_set_water_effect(shady_host host, shady_window window,
+		float amplitude, float frequency, float speed, float phase) {
+	if (!host_window_valid(host, window)) return false;
+	struct shady_toplevel *toplevel = WINDOW(window);
+	if (amplitude < 0.f) amplitude = 0.f;
+	if (amplitude > 0.18f) amplitude = 0.18f;
+	if (frequency < 0.1f) frequency = 0.1f;
+	if (frequency > 30.f) frequency = 30.f;
+	if (speed < -12.f) speed = -12.f;
+	if (speed > 12.f) speed = 12.f;
+	toplevel->water_amplitude = amplitude;
+	toplevel->water_frequency = frequency;
+	toplevel->water_speed = speed;
+	toplevel->water_phase = phase;
+	if (HOST(host)->renderer) shady_render_schedule_all_outputs(HOST(host));
+	return true;
+}
+
+static bool host_window_water_effect(shady_window window,
+		float *amplitude, float *frequency, float *speed, float *phase) {
+	struct shady_toplevel *toplevel = WINDOW(window);
+	if (!toplevel) return false;
+	if (amplitude) *amplitude = toplevel->water_amplitude;
+	if (frequency) *frequency = toplevel->water_frequency;
+	if (speed) *speed = toplevel->water_speed;
+	if (phase) *phase = toplevel->water_phase;
+	return true;
+}
+
 static void host_terminate(shady_host host) {
 	struct shady_server *server = HOST(host);
 	if (server->wl_display) wl_display_terminate(server->wl_display);
@@ -393,6 +422,8 @@ static const struct shady_plugin_api_v1 plugin_api = {
 	.window_workspace = host_window_workspace,
 	.window_move_to_workspace = host_window_move_to_workspace,
 	.output_schedule_render = host_output_schedule_render,
+	.window_set_water_effect = host_window_set_water_effect,
+	.window_water_effect = host_window_water_effect,
 	.event_name = host_event_name,
 	.subscribe_event = host_subscribe_event,
 	.subscribe_event_handle = host_subscribe_event_handle,

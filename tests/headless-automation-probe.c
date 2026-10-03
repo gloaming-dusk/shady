@@ -35,6 +35,7 @@ struct probe {
 	bool scroll_seen;
 	bool pointer_down;
 	uint32_t base_color;
+	bool pattern;
 	const char *app_id;
 	const char *status_path;
 };
@@ -63,6 +64,11 @@ static void draw(struct probe *p) {
 	for (int y = 0; y < HEIGHT; y++) {
 		for (int x = 0; x < WIDTH; x++) {
 			uint32_t c = p->base_color;
+			if (p->pattern) {
+				int cell = ((x / 24) + (y / 24)) & 1;
+				c = cell ? 0xff1f6f8bu : 0xffd7eef7u;
+				if ((x % 80) < 4 || (y % 64) < 4) c = 0xff163447u;
+			}
 			if (p->key_seen && y < HEIGHT / 2) c = 0xff2e8b57u;
 			if (p->click_seen && x < 48) c = 0xffb33a3au;
 			if (p->scroll_seen && x >= WIDTH - 48) c = 0xff3a64b3u;
@@ -293,6 +299,7 @@ int main(void) {
 		.status_path = getenv("SHADY_AUTOMATION_PROBE_STATUS"),
 		.app_id = app_id && *app_id ? app_id : "shady-automation-probe",
 		.base_color = color && *color ? (uint32_t)strtoul(color, NULL, 0) : 0xff20242au,
+		.pattern = getenv("SHADY_AUTOMATION_PROBE_PATTERN") != NULL,
 	};
 	p.display = wl_display_connect(NULL);
 	if (!p.display) return 1;

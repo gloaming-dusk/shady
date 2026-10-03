@@ -2,7 +2,7 @@
 
 A high-contrast Shady rice built around a near-black world, violet horizon, electric-cyan floor grid and a closer workstation-style camera.
 
-Compared with **Night Observatory**, Neon Transit deliberately keeps physics and wobble off by default. It is meant to feel like a sharp futuristic desktop first and a 3D playground second. By default it loads the native C `spatial-overview` plugin: `Super+O` spreads visible windows into a 3D grid, arrow keys move the highlighted selection, Enter focuses the selected window, and Escape cancels back to the saved layout. Set `SHADY_NEON_DEPTH_MODE=focus` to use the alternate native `focus-depth` style instead.
+Compared with **Night Observatory**, Neon Transit deliberately keeps physics and wobble off by default. It is meant to feel like a sharp futuristic desktop first and a 3D playground second. By default it loads the native C `spatial-overview` plugin: `Super+O` spreads visible windows into a 3D grid, arrow keys move the highlighted selection, Enter focuses the selected window, and Escape cancels back to the saved layout. Set `SHADY_NEON_DEPTH_MODE=focus` to use the alternate native `focus-depth` style instead. For animated liquid window surfaces, launch with `SHADY_NEON_WATER=1`; `Super+W` then toggles the effect at runtime.
 
 ## Run
 
@@ -45,6 +45,7 @@ Both launchers start `shady-shell` plus one terminal when no extra Shady argumen
 | Super + 0 | Reset camera |
 | Super + +/- | Zoom |
 | Super + Q | Close focused window |
+| Super + W | Toggle water-window effect when enabled |
 | Super + Shift + Escape | Quit Shady |
 
 ## Palette
@@ -55,4 +56,4 @@ Both launchers start `shady-shell` plus one terminal when no extra Shady argumen
 - window tint: `#F8F5FF`
 - shell accents remain cyan, which intentionally ties the standalone shell into the world palette.
 
-The floor has a stronger minor/major grid than Night Observatory and fades farther into depth. Application textures stay bright while Shady's spatial effect is present but restrained. The default overview behavior lives in `examples/plugins/spatial_overview.c`; the optional focus style lives in `examples/plugins/focus_depth.c`. Both use the native C plugin API rather than Lua animation code.
+The floor has a stronger minor/major grid than Night Observatory and fades farther into depth. Application textures stay bright while Shady's spatial effect is present but restrained. The default overview behavior lives in `examples/plugins/spatial_overview.c`; the optional focus style lives in `examples/plugins/focus_depth.c`, and the liquid-surface effect lives in `examples/plugins/water_windows.c`. All three use the native C plugin API rather than Lua animation code. The water effect intentionally requests continuous frames while active and returns to demand-driven idle immediately when disabled.

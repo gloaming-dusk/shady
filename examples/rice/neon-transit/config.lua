@@ -54,6 +54,13 @@ else
         (root .. "/build/libshady-plugin-spatial-overview.so"))
 end
 
+-- Optional native liquid-surface effect. It keeps the renderer active while
+-- enabled, so opt in explicitly when you want the animated look.
+if os.getenv("SHADY_NEON_WATER") == "1" then
+    shady.plugin(os.getenv("SHADY_WATER_PLUGIN") or
+        (root .. "/build/libshady-plugin-water-windows.so"))
+end
+
 shady.bind("quit", "Super+Shift+Escape")
 shady.bind("cycle_windows", "Super+Tab")
 shady.bind("close_window", "Super+q")

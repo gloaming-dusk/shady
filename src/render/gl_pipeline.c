@@ -729,6 +729,7 @@ bool shady_gl_pipeline_init(
 			pipeline->prog_2d,
 			"u_wobble"
 		);
+	pipeline->u_water_2d = glGetUniformLocation(pipeline->prog_2d, "u_water");
 
 	pipeline->u_close_progress_2d =
 		glGetUniformLocation(pipeline->prog_2d, "u_close_progress");
@@ -775,6 +776,7 @@ bool shady_gl_pipeline_init(
 			pipeline->prog_ext,
 			"u_wobble"
 		);
+	pipeline->u_water_ext = glGetUniformLocation(pipeline->prog_ext, "u_water");
 
 	pipeline->u_close_progress_ext =
 		glGetUniformLocation(pipeline->prog_ext, "u_close_progress");
@@ -978,6 +980,7 @@ void shady_gl_pipeline_draw_window(
 	float time_seconds,
 	float wobble_x,
 	float wobble_y,
+	const float water[4],
 	float close_progress,
 	const float tint[4],
 	float effect_strength,
@@ -1021,6 +1024,7 @@ void shady_gl_pipeline_draw_window(
 			? pipeline->u_wobble_ext
 			: pipeline->u_wobble_2d;
 
+	GLint u_water = external ? pipeline->u_water_ext : pipeline->u_water_2d;
 	GLint u_close_progress = external ? pipeline->u_close_progress_ext : pipeline->u_close_progress_2d;
 	GLint u_model = external ? pipeline->u_model_ext : pipeline->u_model_2d;
 	GLint u_light_dir = external ? pipeline->u_light_dir_ext : pipeline->u_light_dir_2d;
@@ -1056,6 +1060,7 @@ void shady_gl_pipeline_draw_window(
 		wobble_x,
 		wobble_y
 	);
+	glUniform4fv(u_water, 1, water);
 
 	glUniform1f(
 		u_close_progress,

@@ -11,12 +11,20 @@ uniform float u_time;
 uniform vec3 u_light_dir;
 uniform float u_effect_strength;
 uniform float u_brightness;
+uniform vec4 u_water; /* amplitude, frequency, speed, phase */
 
 varying vec2 v_uv;
 varying vec3 v_normal;
 
 void main() {
 	vec2 uv = v_uv;
+	float water_phase = u_time * u_water.z + u_water.w;
+	float water_edge = sin(uv.x * 3.14159265) * sin(uv.y * 3.14159265);
+	vec2 water_offset = vec2(
+		sin(uv.y * u_water.y + water_phase),
+		cos(uv.x * u_water.y * 0.91 - water_phase * 0.77)
+	) * (u_water.x * 0.055) * water_edge;
+	uv = clamp(uv + water_offset, 0.0, 1.0);
 
 	/*
 	 * Subtle animated chromatic aberration.

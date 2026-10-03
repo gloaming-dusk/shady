@@ -98,11 +98,12 @@ static void output_destroy(struct wl_listener *listener, void *data) {
 				(double)output->profile_submit_ns / output->profile_samples / 1000.0);
 			wlr_log(WLR_INFO,
 				"render-continuous output=%s camera=%" PRIu64
-				" motion=%" PRIu64 " physics=%" PRIu64
+				" motion=%" PRIu64 " effect=%" PRIu64 " physics=%" PRIu64
 				" close=%" PRIu64 " snapshot=%" PRIu64,
 				output->wlr_output->name ? output->wlr_output->name : "<unnamed>",
 				output->continuous_camera_frames,
 				output->continuous_motion_frames,
+				output->continuous_effect_frames,
 				output->continuous_physics_frames,
 				output->continuous_close_frames,
 				output->continuous_snapshot_frames);

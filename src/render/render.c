@@ -314,6 +314,7 @@ enum shady_continuous_reason {
 	SHADY_CONTINUOUS_NONE = 0,
 	SHADY_CONTINUOUS_CAMERA,
 	SHADY_CONTINUOUS_MOTION,
+	SHADY_CONTINUOUS_EFFECT,
 	SHADY_CONTINUOUS_PHYSICS,
 	SHADY_CONTINUOUS_CLOSE,
 	SHADY_CONTINUOUS_SNAPSHOT,
@@ -338,6 +339,9 @@ static enum shady_continuous_reason spatial_continuous_reason(
 	wl_list_for_each(toplevel, &server->toplevels, link) {
 		if (!toplevel->scene_tree || !toplevel->scene_tree->node.enabled ||
 				!toplevel->xdg_toplevel->base->surface->mapped) continue;
+
+		if (toplevel->water_amplitude > 0.00005f)
+			return SHADY_CONTINUOUS_EFFECT;
 
 		const struct shady_window_motion_state *motion =
 			shady_window_motion_state_for_const(toplevel);
@@ -570,11 +574,18 @@ static void render_spatial_subsurface_buffer(struct wlr_scene_buffer *buffer,
 		1.0f,
 	};
 
+	float water[4] = {
+		ctx->screen_space ? 0.f : ctx->toplevel->water_amplitude,
+		ctx->toplevel->water_frequency,
+		ctx->toplevel->water_speed,
+		ctx->toplevel->water_phase,
+	};
 	shady_gl_pipeline_draw_window(&pipeline,
 		attribs.target, attribs.tex, attribs.has_alpha,
 		mvp, model, ctx->time_seconds,
 		wobble_x,
 		wobble_y,
+		water,
 		shady_close_state_for_const(ctx->toplevel)->progress,
 		tint, server->config.window_effect_strength,
 		server->config.window_brightness * (focused ? 1.08f : 1.0f));
@@ -1020,6 +1031,12 @@ void shady_render_output_frame(
 			window_tint[2] * (focused ? 1.16f : 1.0f),
 			1.0f,
 		};
+		float water[4] = {
+			screen_space ? 0.f : toplevel->water_amplitude,
+			toplevel->water_frequency,
+			toplevel->water_speed,
+			toplevel->water_phase,
+		};
 		shady_gl_pipeline_draw_window(
 			&pipeline,
 			attribs.target,
@@ -1030,6 +1047,7 @@ void shady_render_output_frame(
 			time_seconds,
 			wobble_x,
 			wobble_y,
+			water,
 			shady_close_state_for_const(toplevel)->progress,
 			focused_tint,
 			server->config.window_effect_strength,
@@ -1103,6 +1121,7 @@ void shady_render_output_frame(
 		shady_scene_effects_draw_sides(server, &pipeline, mvp, model,
 			snapshot->wobble_x, snapshot->wobble_y, snapshot->progress);
 
+		const float no_water[4] = {0.f, 1.f, 0.f, 0.f};
 		shady_gl_pipeline_draw_window(
 			&pipeline,
 			GL_TEXTURE_2D,
@@ -1113,6 +1132,7 @@ void shady_render_output_frame(
 			time_seconds,
 			0.0f,
 			0.0f,
+			no_water,
 			snapshot->progress,
 			window_tint,
 			server->config.window_effect_strength,
@@ -1272,6 +1292,7 @@ void shady_render_output_frame(
 		switch (continuous) {
 		case SHADY_CONTINUOUS_CAMERA: output->continuous_camera_frames++; break;
 		case SHADY_CONTINUOUS_MOTION: output->continuous_motion_frames++; break;
+		case SHADY_CONTINUOUS_EFFECT: output->continuous_effect_frames++; break;
 		case SHADY_CONTINUOUS_PHYSICS: output->continuous_physics_frames++; break;
 		case SHADY_CONTINUOUS_CLOSE: output->continuous_close_frames++; break;
 		case SHADY_CONTINUOUS_SNAPSHOT: output->continuous_snapshot_frames++; break;

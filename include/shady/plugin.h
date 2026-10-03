@@ -98,6 +98,11 @@ struct shady_plugin_api_v1 {
 	bool (*window_move_to_workspace)(shady_host host, shady_window window,
 		const char *name);
 	void (*output_schedule_render)(shady_host host, shady_output output);
+	/* Per-window animated surface wave. Amplitude <= 0 disables the effect. */
+	bool (*window_set_water_effect)(shady_host host, shady_window window,
+		float amplitude, float frequency, float speed, float phase);
+	bool (*window_water_effect)(shady_window window,
+		float *amplitude, float *frequency, float *speed, float *phase);
 };
 
 typedef const struct shady_module *(*shady_plugin_entry_v1_fn)(
