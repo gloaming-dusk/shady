@@ -32,6 +32,7 @@ export SHADY_AUTOMATION_PROBE="$ROOT/$PROBE"
 export SHADY_FPS_TOGGLE_STATUS="$status"
 export SHADY_FOCUS_DEPTH_PLUGIN="$ROOT/$BUILD_DIR/libshady-plugin-focus-depth.so"
 export SHADY_OVERVIEW_PLUGIN="$ROOT/$BUILD_DIR/libshady-plugin-spatial-overview.so"
+export SHADY_NEON_WATER=0
 export ASAN_OPTIONS="${ASAN_OPTIONS:-abort_on_error=1:halt_on_error=1:detect_leaks=0}"
 export UBSAN_OPTIONS="${UBSAN_OPTIONS:-halt_on_error=1:print_stacktrace=1}"
 

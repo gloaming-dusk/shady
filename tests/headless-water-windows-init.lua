@@ -11,20 +11,26 @@ end
 shady.on("window.mapped", function(window)
     if started or window.app_id ~= "water-probe" then return end
     started = true
+    assert(window:maximize(), "failed to maximize water probe")
 
-    shady.automation.after(350, function()
+    shady.automation.after(500, function()
         mark("WATER_ON_A")
         shady.automation.after(650, function()
             mark("WATER_ON_B")
             shady.automation.after(350, function()
                 assert(shady.automation.key("Super+w"),
                     "water plugin did not handle Super+W")
-                mark("WATER_OFF_A")
-                shady.automation.after(650, function()
-                    mark("WATER_OFF_B")
-                    shady.automation.after(300, function()
-                        mark("DONE")
-                        shady.quit()
+                -- Let the final toggle-triggered frame land before comparing
+                -- disabled captures. After that, demand-driven rendering
+                -- should leave the image stable.
+                shady.automation.after(250, function()
+                    mark("WATER_OFF_A")
+                    shady.automation.after(650, function()
+                        mark("WATER_OFF_B")
+                        shady.automation.after(300, function()
+                            mark("DONE")
+                            shady.quit()
+                        end)
                     end)
                 end)
             end)

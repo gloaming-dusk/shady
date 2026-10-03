@@ -39,6 +39,9 @@ SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
   nix develop -c bash ./tests/headless-water-windows.sh
 
 SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
+  nix develop -c bash ./tests/headless-neon-water.sh
+
+SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
   nix develop -c bash ./tests/headless-neon-overview.sh
 
 SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \

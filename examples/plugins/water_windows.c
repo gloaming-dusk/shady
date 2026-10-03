@@ -2,6 +2,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdlib.h>
 
 #include <xkbcommon/xkbcommon-keysyms.h>
 
@@ -13,6 +14,7 @@ static shady_host host;
 
 struct water_state {
 	bool enabled;
+	float strength;
 };
 
 static struct water_state *state(void) {
@@ -24,7 +26,6 @@ static bool managed(shady_window window) {
 		api->window_valid(host, window) &&
 		api->window_mapped(window) &&
 		api->window_visible(window) &&
-		!api->window_maximized(window) &&
 		!api->window_fullscreen(window);
 }
 
@@ -39,9 +40,13 @@ static void apply_window(shady_window window, size_t rank) {
 	}
 
 	shady_window focused = api->focused_window(host);
-	float amplitude = window == focused ? 0.050f : 0.034f;
-	float frequency = 8.2f + (float)(rank % 3) * 0.65f;
-	float speed = 1.35f + (float)(rank % 2) * 0.18f;
+	/* Strong enough to read as liquid on real application contents. The
+	 * shader keeps the outer perimeter anchored so interaction still feels
+	 * stable even when the interior visibly refracts. */
+	float base = window == focused ? 0.120f : 0.086f;
+	float amplitude = base * s->strength;
+	float frequency = 7.4f + (float)(rank % 3) * 0.70f;
+	float speed = 1.18f + (float)(rank % 2) * 0.16f;
 	float phase = (float)rank * 1.73f;
 	api->window_set_water_effect(host, window,
 		amplitude, frequency, speed, phase);
@@ -100,6 +105,14 @@ static void start(struct shady_server *server) {
 	struct water_state *s = state();
 	if (!s) return;
 	s->enabled = true;
+	s->strength = 1.f;
+	const char *strength_env = getenv("SHADY_WATER_STRENGTH");
+	if (strength_env && *strength_env) {
+		char *end = NULL;
+		float parsed = strtof(strength_env, &end);
+		if (end != strength_env && parsed >= 0.25f && parsed <= 1.5f)
+			s->strength = parsed;
+	}
 	apply_all();
 	api->log(SHADY_PLUGIN_LOG_INFO,
 		"water-windows: Super+W toggles animated liquid window surfaces");

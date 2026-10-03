@@ -109,8 +109,8 @@ void main() {
 	float water_b = cos((uv.x * 0.47 - uv.y * 1.12) * u_water.y * 1.31 - water_phase * 0.73);
 	float water_wave = water_a * 0.68 + water_b * 0.32;
 	pos.z += u_water.x * water_wave * water_edge;
-	pos.x += u_water.x * 0.10 * cos(water_phase + uv.y * u_water.y) * water_edge;
-	pos.y += u_water.x * 0.08 * sin(water_phase * 0.83 + uv.x * u_water.y) * water_edge;
+	pos.x += u_water.x * 0.16 * cos(water_phase + uv.y * u_water.y) * water_edge;
+	pos.y += u_water.x * 0.13 * sin(water_phase * 0.83 + uv.x * u_water.y) * water_edge;
 
 	/*
 	 * ------------------------------------------------------------

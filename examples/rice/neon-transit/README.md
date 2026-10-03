@@ -2,7 +2,7 @@
 
 A high-contrast Shady rice built around a near-black world, violet horizon, electric-cyan floor grid and a closer workstation-style camera.
 
-Compared with **Night Observatory**, Neon Transit deliberately keeps physics and wobble off by default. It is meant to feel like a sharp futuristic desktop first and a 3D playground second. By default it loads the native C `spatial-overview` plugin: `Super+O` spreads visible windows into a 3D grid, arrow keys move the highlighted selection, Enter focuses the selected window, and Escape cancels back to the saved layout. Set `SHADY_NEON_DEPTH_MODE=focus` to use the alternate native `focus-depth` style instead. For animated liquid window surfaces, launch with `SHADY_NEON_WATER=1`; `Super+W` then toggles the effect at runtime.
+Compared with **Night Observatory**, Neon Transit deliberately keeps physics and wobble off by default. It is meant to feel like a sharp futuristic desktop first and a 3D playground second. By default it loads the native C `spatial-overview` plugin and the native `water-windows` effect. `Super+O` spreads visible windows into a 3D grid, arrow keys move the highlighted selection, Enter focuses the selected window, and Escape cancels back to the saved layout. `Super+W` toggles the liquid surface at runtime. Set `SHADY_NEON_DEPTH_MODE=focus` to use the alternate native `focus-depth` style, `SHADY_NEON_WATER=0` to disable the animated water effect, or tune its intensity with `SHADY_WATER_STRENGTH` from `0.25` to `1.5` (default `1.0`).
 
 ## Run
 
@@ -45,7 +45,7 @@ Both launchers start `shady-shell` plus one terminal when no extra Shady argumen
 | Super + 0 | Reset camera |
 | Super + +/- | Zoom |
 | Super + Q | Close focused window |
-| Super + W | Toggle water-window effect when enabled |
+| Super + W | Toggle water-window effect |
 | Super + Shift + Escape | Quit Shady |
 
 ## Palette

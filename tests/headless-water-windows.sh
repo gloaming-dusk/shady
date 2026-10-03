@@ -8,6 +8,7 @@ BUILD_DIR="${SHADY_SPATIAL_TEST_BUILD_DIR:-build-spatial-asan}"
 COMPOSITOR="$BUILD_DIR/shady"
 PROBE="$BUILD_DIR/headless-automation-probe"
 PLUGIN="$BUILD_DIR/libshady-plugin-water-windows.so"
+CONFIG="${SHADY_WATER_TEST_CONFIG:-$ROOT/tests/headless-water-windows-config.lua}"
 GRIM="${GRIM:-$(command -v grim || true)}"
 if [[ -z "$GRIM" ]]; then
   echo "water-windows: grim not found" >&2
@@ -41,7 +42,7 @@ export SHADY_WATER_STATUS="$status"
 export ASAN_OPTIONS="${ASAN_OPTIONS:-abort_on_error=1:halt_on_error=1:detect_leaks=0}"
 export UBSAN_OPTIONS="${UBSAN_OPTIONS:-halt_on_error=1:print_stacktrace=1}"
 
-"$COMPOSITOR" -c "$ROOT/tests/headless-water-windows-config.lua" >"$log" 2>&1 &
+"$COMPOSITOR" -c "$CONFIG" >"$log" 2>&1 &
 comp=$!
 trap 'kill "$comp" 2>/dev/null || true; wait "$comp" 2>/dev/null || true; rm -rf "$tmp"' EXIT
 
@@ -87,9 +88,13 @@ if cmp -s "$tmp/on-a.png" "$tmp/on-b.png"; then
   exit 1
 fi
 
-if ! cmp -s "$tmp/off-a.png" "$tmp/off-b.png"; then
-  echo "water-windows: FAIL disabled frames still change" >&2
-  exit 1
+if [[ "${SHADY_WATER_TEST_DYNAMIC_BASE:-0}" != "1" ]]; then
+  if ! cmp -s "$tmp/off-a.png" "$tmp/off-b.png"; then
+    echo "water-windows: FAIL disabled frames still change" >&2
+    exit 1
+  fi
+else
+  grep -q "water-windows: disabled" "$log"
 fi
 
 echo "WATER_ANIMATION=PASS"

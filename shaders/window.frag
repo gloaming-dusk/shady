@@ -23,7 +23,7 @@ void main() {
 	vec2 water_offset = vec2(
 		sin(uv.y * u_water.y + water_phase),
 		cos(uv.x * u_water.y * 0.91 - water_phase * 0.77)
-	) * (u_water.x * 0.055) * water_edge;
+	) * (u_water.x * 0.10) * water_edge;
 	uv = clamp(uv + water_offset, 0.0, 1.0);
 
 	/*

@@ -12,6 +12,7 @@ fi
 export SHADY_ROOT="$ROOT"
 export SHADY_LUA_INIT="$ROOT/examples/rice/neon-transit/init.lua"
 export WLR_BACKENDS="${WLR_BACKENDS:-wayland}"
+export SHADY_NEON_WATER="${SHADY_NEON_WATER:-1}"
 
 if [[ $# -eq 0 ]]; then
   default_startup="'$ROOT/build/shady-shell' & exec ${TERMINAL:-foot}"

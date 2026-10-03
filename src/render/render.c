@@ -575,7 +575,7 @@ static void render_spatial_subsurface_buffer(struct wlr_scene_buffer *buffer,
 	};
 
 	float water[4] = {
-		ctx->screen_space ? 0.f : ctx->toplevel->water_amplitude,
+		ctx->toplevel->fullscreen ? 0.f : ctx->toplevel->water_amplitude,
 		ctx->toplevel->water_frequency,
 		ctx->toplevel->water_speed,
 		ctx->toplevel->water_phase,
@@ -1032,7 +1032,7 @@ void shady_render_output_frame(
 			1.0f,
 		};
 		float water[4] = {
-			screen_space ? 0.f : toplevel->water_amplitude,
+			toplevel->fullscreen ? 0.f : toplevel->water_amplitude,
 			toplevel->water_frequency,
 			toplevel->water_speed,
 			toplevel->water_phase,
