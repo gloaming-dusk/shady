@@ -4,6 +4,7 @@ attribute vec3 a_pos;
 
 uniform mat4 u_mvp;
 uniform mat4 u_model;
+uniform vec4 u_frame_rect; /* x, y, width, height in full-frame local coords */
 
 uniform vec2 u_wobble;
 uniform vec4 u_water; /* amplitude, frequency, speed, phase */
@@ -21,14 +22,15 @@ varying vec3 v_normal;
 varying float v_water_wave;
 
 void main() {
-	vec2 uv = a_pos.xy;
+	vec2 local_uv = a_pos.xy;
+	vec2 uv = u_frame_rect.xy + local_uv * u_frame_rect.zw;
 
 	v_uv = vec2(
-		uv.x,
-		1.0 - uv.y
+		local_uv.x,
+		1.0 - local_uv.y
 	);
 
-	vec3 pos = a_pos;
+	vec3 pos = vec3(uv, a_pos.z);
 
 	float cx =
 		uv.x - 0.5;

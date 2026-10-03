@@ -762,6 +762,7 @@ bool shady_gl_pipeline_init(
 	pipeline->u_light_dir_2d = glGetUniformLocation(pipeline->prog_2d, "u_light_dir");
 	pipeline->u_effect_strength_2d = glGetUniformLocation(pipeline->prog_2d, "u_effect_strength");
 	pipeline->u_brightness_2d = glGetUniformLocation(pipeline->prog_2d, "u_brightness");
+	pipeline->u_frame_rect_2d = glGetUniformLocation(pipeline->prog_2d, "u_frame_rect");
 
 	/*
 	 * EGL external texture uniforms.
@@ -814,6 +815,7 @@ bool shady_gl_pipeline_init(
 	pipeline->u_light_dir_ext = glGetUniformLocation(pipeline->prog_ext, "u_light_dir");
 	pipeline->u_effect_strength_ext = glGetUniformLocation(pipeline->prog_ext, "u_effect_strength");
 	pipeline->u_brightness_ext = glGetUniformLocation(pipeline->prog_ext, "u_brightness");
+	pipeline->u_frame_rect_ext = glGetUniformLocation(pipeline->prog_ext, "u_frame_rect");
 
 	pipeline->titlebar_prog = link_program(TITLEBAR_VERT, TITLEBAR_FRAG, "titlebar");
 	if (!pipeline->titlebar_prog) {
@@ -1021,6 +1023,7 @@ void shady_gl_pipeline_draw_window(
 	bool has_alpha,
 	const float mvp[16],
 	const float model[16],
+	const float frame_rect[4],
 	float time_seconds,
 	float wobble_x,
 	float wobble_y,
@@ -1082,6 +1085,7 @@ void shady_gl_pipeline_draw_window(
 	GLint u_light_dir = external ? pipeline->u_light_dir_ext : pipeline->u_light_dir_2d;
 	GLint u_effect_strength = external ? pipeline->u_effect_strength_ext : pipeline->u_effect_strength_2d;
 	GLint u_brightness = external ? pipeline->u_brightness_ext : pipeline->u_brightness_2d;
+	GLint u_frame_rect = external ? pipeline->u_frame_rect_ext : pipeline->u_frame_rect_2d;
 
 	glUseProgram(prog);
 
@@ -1090,6 +1094,7 @@ void shady_gl_pipeline_draw_window(
 	glUniform3f(u_light_dir, -0.45f, 0.72f, 0.53f);
 	glUniform1f(u_effect_strength, effect_strength);
 	glUniform1f(u_brightness, brightness);
+	glUniform4fv(u_frame_rect, 1, frame_rect);
 
 	glUniform4fv(
 		u_tint,

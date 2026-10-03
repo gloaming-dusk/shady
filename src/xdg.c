@@ -153,11 +153,18 @@ static void apply_toplevel_state_values(struct shady_toplevel *toplevel,
 			} else {
 				shady_output_work_area(server, output, &box);
 			}
-			wlr_scene_node_set_position(&toplevel->scene_tree->node, box.x, box.y);
-			wlr_xdg_toplevel_set_size(xdg, box.width, box.height);
+			int title_h = 0;
+			if (want_maximized && server->config.window_titlebar) {
+				title_h = (int)(server->config.window_titlebar_height + 0.5f);
+				if (title_h < 0) title_h = 0;
+				if (title_h > box.height) title_h = box.height;
+			}
+			wlr_scene_node_set_position(&toplevel->scene_tree->node,
+				box.x, box.y + title_h);
+			wlr_xdg_toplevel_set_size(xdg, box.width, box.height - title_h);
 			/* xdg_toplevel.configure_bounds was added in xdg-shell v4. */
 			if (xdg->base->client->shell->version >= 4) {
-				wlr_xdg_toplevel_set_bounds(xdg, box.width, box.height);
+				wlr_xdg_toplevel_set_bounds(xdg, box.width, box.height - title_h);
 			}
 		}
 	} else if (toplevel->restore_geometry_valid) {
@@ -287,10 +294,43 @@ void focus_toplevel(struct shady_toplevel *toplevel) {
 	shady_event_emit_window(server, SHADY_EVENT_WINDOW_FOCUSED, toplevel);
 }
 
-static void begin_interactive(struct shady_toplevel *toplevel,
+void shady_toplevel_begin_interactive(struct shady_toplevel *toplevel,
 		enum shady_cursor_mode mode, uint32_t edges) {
-	if (toplevel->maximized || toplevel->fullscreen) return;
+	if (toplevel->fullscreen) return;
 	struct shady_server *server = toplevel->server;
+
+	if (mode == SHADY_CURSOR_MOVE && toplevel->maximized) {
+		/*
+		 * Dragging a maximized server-side title bar should restore the
+		 * window and continue the drag instead of silently doing nothing.
+		 * Keep the pointer at roughly the same horizontal fraction and
+		 * place it in the middle of the restored title bar.
+		 */
+		struct wlr_surface *surface = toplevel->xdg_toplevel->base->surface;
+		double old_width = surface && surface->current.width > 0
+			? surface->current.width : 1.0;
+		double fraction = (server->cursor->x - toplevel->scene_tree->node.x) /
+			old_width;
+		if (fraction < 0.0) fraction = 0.0;
+		if (fraction > 1.0) fraction = 1.0;
+
+		struct wlr_box restore = toplevel->restore_geometry;
+		bool have_restore = toplevel->restore_geometry_valid;
+		shady_toplevel_set_maximized(toplevel, false);
+
+		int restored_width = have_restore && restore.width > 0
+			? restore.width : (surface ? surface->current.width : 0);
+		int title_h = toplevel->titlebar_height > 0
+			? toplevel->titlebar_height
+			: (int)(server->config.window_titlebar_height + 0.5f);
+		if (restored_width > 0) {
+			int x = (int)(server->cursor->x - fraction * restored_width);
+			int y = (int)(server->cursor->y + title_h * 0.5);
+			wlr_scene_node_set_position(&toplevel->scene_tree->node, x, y);
+		}
+	} else if (toplevel->maximized) {
+		return;
+	}
 
 	server->grabbed_toplevel = toplevel;
 	server->cursor_mode = mode;
@@ -497,14 +537,14 @@ static void xdg_toplevel_request_move(
 		struct wl_listener *listener, void *data) {
 	(void)data;
 	struct shady_toplevel *toplevel = wl_container_of(listener, toplevel, request_move);
-	begin_interactive(toplevel, SHADY_CURSOR_MOVE, 0);
+	shady_toplevel_begin_interactive(toplevel, SHADY_CURSOR_MOVE, 0);
 }
 
 static void xdg_toplevel_request_resize(
 		struct wl_listener *listener, void *data) {
 	struct wlr_xdg_toplevel_resize_event *event = data;
 	struct shady_toplevel *toplevel = wl_container_of(listener, toplevel, request_resize);
-	begin_interactive(toplevel, SHADY_CURSOR_RESIZE, event->edges);
+	shady_toplevel_begin_interactive(toplevel, SHADY_CURSOR_RESIZE, event->edges);
 }
 
 static void xdg_toplevel_request_maximize(

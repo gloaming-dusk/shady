@@ -295,6 +295,8 @@ bool shady_config_set(struct shady_config *config,const char *key,const char *va
 
 /* Shared helpers used across compositor modules */
 void focus_toplevel(struct shady_toplevel *toplevel);
+void shady_toplevel_begin_interactive(struct shady_toplevel *toplevel,
+	enum shady_cursor_mode mode, uint32_t edges);
 void shady_toplevel_set_maximized(struct shady_toplevel *toplevel, bool enabled);
 void shady_toplevel_set_fullscreen(struct shady_toplevel *toplevel, bool enabled);
 void shady_toplevel_refresh_state(struct shady_toplevel *toplevel);

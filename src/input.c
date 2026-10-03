@@ -106,6 +106,22 @@ static void process_cursor_resize(struct shady_server *server) {
 	wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, new_width, new_height);
 }
 
+static struct shady_toplevel *desktop_titlebar_at(struct shady_server *server,
+		double lx, double ly) {
+	struct wlr_scene_node *node = wlr_scene_node_at(&server->scene->tree.node,
+		lx, ly, NULL, NULL);
+	if (!node || node->type != WLR_SCENE_NODE_BUFFER) return NULL;
+	struct wlr_scene_buffer *buffer = wlr_scene_buffer_from_node(node);
+	struct shady_toplevel *toplevel;
+	wl_list_for_each(toplevel, &server->toplevels, link) {
+		if (toplevel->titlebar_scene_buffer == buffer &&
+				toplevel->mapped && !toplevel->fullscreen) {
+			return toplevel;
+		}
+	}
+	return NULL;
+}
+
 static struct shady_toplevel *desktop_toplevel_at(struct shady_server *server,
 		double lx, double ly, struct wlr_surface **surface, double *sx, double *sy) {
 	*surface = NULL;
@@ -511,6 +527,22 @@ void server_cursor_button(struct wl_listener *listener, void *data) {
 	if (shady_modules_pointer_button(server, event, mods))
 		return;
 
+	if (event->button == BTN_LEFT) {
+		struct shady_toplevel *titlebar = desktop_titlebar_at(server,
+			server->cursor->x, server->cursor->y);
+		if (titlebar) {
+			if (event->state == WL_POINTER_BUTTON_STATE_PRESSED) {
+				focus_toplevel(titlebar);
+				shady_toplevel_begin_interactive(titlebar, SHADY_CURSOR_MOVE, 0);
+			} else if (server->cursor_mode == SHADY_CURSOR_MOVE &&
+					server->grabbed_toplevel == titlebar) {
+				reset_cursor_mode(server);
+			}
+			wlr_seat_pointer_clear_focus(server->seat);
+			return;
+		}
+	}
+
 	wlr_seat_pointer_notify_button(server->seat,
 			event->time_msec, event->button, event->state);
 	if (event->state == WL_POINTER_BUTTON_STATE_RELEASED) {
@@ -584,6 +616,22 @@ void shady_input_automation_pointer_button(struct shady_server *server,
 
 	uint32_t mods = seat_modifiers(server);
 	if (!shady_modules_pointer_button(server, &event, mods)) {
+		if (button == BTN_LEFT) {
+			struct shady_toplevel *titlebar = desktop_titlebar_at(server,
+				server->cursor->x, server->cursor->y);
+			if (titlebar) {
+				if (pressed) {
+					focus_toplevel(titlebar);
+					shady_toplevel_begin_interactive(titlebar, SHADY_CURSOR_MOVE, 0);
+				} else if (server->cursor_mode == SHADY_CURSOR_MOVE &&
+						server->grabbed_toplevel == titlebar) {
+					reset_cursor_mode(server);
+				}
+				wlr_seat_pointer_clear_focus(server->seat);
+				wlr_seat_pointer_notify_frame(server->seat);
+				return;
+			}
+		}
 		wlr_seat_pointer_notify_button(server->seat,
 			event.time_msec, event.button, event.state);
 		if (!pressed) {

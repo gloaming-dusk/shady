@@ -3,6 +3,7 @@
 #include <linux/input-event-codes.h>
 #include <math.h>
 #include <wayland-server-core.h>
+#include <wlr/types/wlr_cursor.h>
 #include <wlr/types/wlr_keyboard.h>
 #include <wlr/types/wlr_pointer.h>
 #include <wlr/types/wlr_seat.h>
@@ -127,6 +128,24 @@ static bool spatial_pointer_motion(struct shady_server *server,
 
 static bool spatial_pointer_button(struct shady_server *server,
 		struct wlr_pointer_button_event *event, uint32_t modifiers) {
+	if (event->button == BTN_LEFT) {
+		if (event->state == WL_POINTER_BUTTON_STATE_RELEASED &&
+				server->cursor_mode == SHADY_CURSOR_MOVE && server->grabbed_toplevel) {
+			reset_cursor_mode(server);
+			return true;
+		}
+		if (event->state == WL_POINTER_BUTTON_STATE_PRESSED &&
+				!shady_spatial_state(server)->runtime.camera.first_person) {
+			struct shady_toplevel *titlebar = shady_titlebar_at_3d(server,
+				server->cursor->x, server->cursor->y);
+			if (titlebar) {
+				focus_toplevel(titlebar);
+				shady_toplevel_begin_interactive(titlebar, SHADY_CURSOR_MOVE, 0);
+				wlr_seat_pointer_clear_focus(server->seat);
+				return true;
+			}
+		}
+	}
 	if (shady_spatial_state(server)->runtime.camera.first_person) return false;
 	if (event->button == BTN_RIGHT ||
 			(event->button == BTN_MIDDLE && (modifiers & WLR_MODIFIER_ALT))) {

@@ -14,6 +14,82 @@
 #include "../modules/fps/state.h"
 #include "../modules/window_motion/state.h"
 
+struct shady_toplevel *shady_titlebar_at_3d(struct shady_server *server,
+		double lx, double ly) {
+	struct wlr_output *wlr_output =
+		wlr_output_layout_output_at(server->output_layout, lx, ly);
+	if (!wlr_output || wlr_output->scale <= 0.f) return NULL;
+
+	double ox = 0, oy = 0;
+	wlr_output_layout_output_coords(server->output_layout, wlr_output, &ox, &oy);
+	double local_x = lx + ox;
+	double local_y = ly + oy;
+	float logical_w = (float)wlr_output->width / wlr_output->scale;
+	float logical_h = (float)wlr_output->height / wlr_output->scale;
+	if (logical_w <= 0.f || logical_h <= 0.f) return NULL;
+
+	float ndc_x = (float)(local_x / logical_w) * 2.f - 1.f;
+	float ndc_y = 1.f - (float)(local_y / logical_h) * 2.f;
+	float view[16], proj[16];
+	shady_render_camera_matrices(server, wlr_output->width, wlr_output->height,
+		view, proj);
+	struct shady_ray ray;
+	shady_ray_from_ndc(&ray, ndc_x, ndc_y, view, proj);
+
+	struct shady_toplevel *best = NULL;
+	float best_t = 1e30f;
+	struct shady_toplevel *toplevel;
+	wl_list_for_each(toplevel, &server->toplevels, link) {
+		struct wlr_surface *surf = toplevel->xdg_toplevel->base->surface;
+		if (!surf || !surf->mapped || !toplevel->scene_tree->node.enabled ||
+				toplevel->fullscreen ||
+				!server->config.window_titlebar || toplevel->titlebar_height <= 0)
+			continue;
+		if (shady_spatial_state(server)->runtime.camera.first_person &&
+				!shady_fps_toplevel_state_const(toplevel)->expanded)
+			continue;
+
+		float tw = (float)surf->current.width;
+		float th = (float)surf->current.height;
+		if (tw <= 0.f || th <= 0.f) continue;
+		float layout_x = (float)(toplevel->scene_tree->node.x + ox);
+		float layout_y = (float)(toplevel->scene_tree->node.y + oy);
+		float title_h = (float)toplevel->titlebar_height;
+
+		if (toplevel->maximized &&
+				!shady_spatial_state(server)->runtime.camera.first_person) {
+			double global_title_x = (double)toplevel->scene_tree->node.x;
+			double global_title_y = (double)toplevel->scene_tree->node.y - title_h;
+			if (lx >= global_title_x && lx < global_title_x + tw &&
+					ly >= global_title_y && ly < global_title_y + title_h)
+				return toplevel;
+			continue;
+		}
+
+		float frame_h = th + title_h;
+		float client_fraction = frame_h > 0.f ? th / frame_h : 1.f;
+		float model[16];
+		shady_window_model(model, layout_x, layout_y - title_h, tw, frame_h,
+			logical_w, logical_h, shady_spatial_toplevel_state(toplevel)->z,
+			shady_window_motion_state_for_const(toplevel)->tilt_x,
+			shady_window_motion_state_for_const(toplevel)->tilt_y);
+
+		float t, u, v;
+		bool front_hit = false;
+		if (!shady_ray_window_shell_hit(&ray, model,
+				shady_window_motion_state_for_const(toplevel)->wobble_x,
+				shady_window_motion_state_for_const(toplevel)->wobble_y,
+				&t, &u, &v, &front_hit) || !front_hit ||
+				v < client_fraction)
+			continue;
+		if (t < best_t) {
+			best_t = t;
+			best = toplevel;
+		}
+	}
+	return best;
+}
+
 struct shady_toplevel *shady_toplevel_at_3d(struct shady_server *server,
 		double lx, double ly, struct wlr_surface **surface, double *sx, double *sy) {
 	*surface = NULL;
@@ -94,16 +170,30 @@ struct shady_toplevel *shady_toplevel_at_3d(struct shady_server *server,
 		float layout_y = (float)(toplevel->scene_tree->node.y + oy);
 
 		float model[16];
+		float client_fraction = 1.f;
 		if(shady_spatial_state(server)->runtime.camera.first_person&&!shady_fps_toplevel_state_const(toplevel)->expanded){
 			float cx=(layout_x+tw*.5f-logical_w*.5f)/logical_h,cy=.5f-(layout_y+th*.5f)/logical_h;
 			shady_window_cube_model(model,cx,cy,shady_spatial_toplevel_state(toplevel)->z,SHADY_FPS_CUBE_SIZE,shady_window_motion_state_for_const(toplevel)->tilt_x,shady_window_motion_state_for_const(toplevel)->tilt_y);
-		}else shady_window_model(model,layout_x,layout_y,tw,th,logical_w,logical_h,shady_spatial_toplevel_state(toplevel)->z,shady_window_motion_state_for_const(toplevel)->tilt_x,shady_window_motion_state_for_const(toplevel)->tilt_y);
+		}else{
+			float title_h = (!toplevel->fullscreen && server->config.window_titlebar &&
+				toplevel->titlebar_height > 0) ? (float)toplevel->titlebar_height : 0.f;
+			float frame_h = th + title_h;
+			client_fraction = frame_h > 0.f ? th / frame_h : 1.f;
+			shady_window_model(model,layout_x,layout_y-title_h,tw,frame_h,logical_w,logical_h,
+				shady_spatial_toplevel_state(toplevel)->z,
+				shady_window_motion_state_for_const(toplevel)->tilt_x,
+				shady_window_motion_state_for_const(toplevel)->tilt_y);
+		}
 
 		float t, u, v;
 		bool front_hit = false;
 		if (!shady_ray_window_shell_hit(&ray, model, shady_window_motion_state_for_const(toplevel)->wobble_x,
 				shady_window_motion_state_for_const(toplevel)->wobble_y, &t, &u, &v, &front_hit)) {
 			continue;
+		}
+		if (client_fraction < 1.f) {
+			if (v > client_fraction) continue;
+			v /= client_fraction;
 		}
 		if (t < best_t) {
 			best_t = t;

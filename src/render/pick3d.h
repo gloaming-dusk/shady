@@ -8,6 +8,8 @@ struct wlr_output;
 
 struct shady_toplevel *shady_toplevel_at_3d(struct shady_server *server,
 	double lx, double ly, struct wlr_surface **surface, double *sx, double *sy);
+struct shady_toplevel *shady_titlebar_at_3d(struct shady_server *server,
+	double lx, double ly);
 
 /* Pick the nearest window along the first-person camera's center ray. */
 struct shady_toplevel *shady_toplevel_at_camera_center(

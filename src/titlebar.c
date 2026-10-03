@@ -177,7 +177,7 @@ void shady_titlebar_refresh(struct shady_toplevel *toplevel) {
     wlr_scene_buffer_set_opacity(toplevel->titlebar_scene_buffer,
         toplevel->server->config.window_opacity);
     wlr_scene_node_set_position(&toplevel->titlebar_tree->node,
-        0, toplevel->maximized ? 0 : -height);
+        0, -height);
 
     if (toplevel->titlebar_buffer) {
         wlr_buffer_drop(toplevel->titlebar_buffer);

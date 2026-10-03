@@ -601,9 +601,10 @@ static void render_spatial_subsurface_buffer(struct wlr_scene_buffer *buffer,
 		close_state->direction_x,
 		close_state->direction_y,
 	};
+	const float full_frame_rect[4] = {0.f, 0.f, 1.f, 1.f};
 	shady_gl_pipeline_draw_window(&pipeline,
 		attribs.target, attribs.tex, attribs.has_alpha,
-		mvp, model, ctx->time_seconds,
+		mvp, model, full_frame_rect, ctx->time_seconds,
 		wobble_x,
 		wobble_y,
 		water,
@@ -1016,13 +1017,32 @@ void shady_render_output_frame(
 			}
 		}
 
+		bool cube_titlebar_hidden = shady_spatial_state(server)->runtime.camera.first_person &&
+			!shady_fps_toplevel_state_const(toplevel)->expanded;
+		bool frame_has_titlebar = !toplevel->fullscreen && !cube_titlebar_hidden &&
+			server->config.window_titlebar && toplevel->titlebar_texture &&
+			wlr_texture_is_gles2(toplevel->titlebar_texture) &&
+			toplevel->titlebar_height > 0;
+		float frame_title_h = frame_has_titlebar ? (float)toplevel->titlebar_height : 0.f;
+		float frame_x = layout_x;
+		float frame_y = layout_y - frame_title_h;
+		float frame_w = tw;
+		float frame_h = th + frame_title_h;
+		if (frame_h <= 0.f) frame_h = th;
+		const float client_frame_rect[4] = {
+			0.f,
+			0.f,
+			1.f,
+			frame_h > 0.f ? th / frame_h : 1.f,
+		};
+
 		bool screen_space = !shady_spatial_state(server)->runtime.camera.first_person &&
 			(toplevel->fullscreen || toplevel->maximized);
 		float wobble_x = shady_window_motion_state_for_const(toplevel)->wobble_x;
 		float wobble_y = shady_window_motion_state_for_const(toplevel)->wobble_y;
 		if (screen_space) {
 			shady_mat4_identity(model);
-			shady_screen_space_model(mvp, layout_x, layout_y, tw, th,
+			shady_screen_space_model(mvp, frame_x, frame_y, frame_w, frame_h,
 				logical_w, logical_h);
 			wobble_x = 0.f;
 			wobble_y = 0.f;
@@ -1035,10 +1055,10 @@ void shady_render_output_frame(
 			}else{
 				shady_window_model(
 				model,
-				layout_x,
-				layout_y,
-				tw,
-				th,
+				frame_x,
+				frame_y,
+				frame_w,
+				frame_h,
 				logical_w,
 				logical_h,
 				shady_spatial_toplevel_state(toplevel)->z,
@@ -1096,6 +1116,7 @@ void shady_render_output_frame(
 			attribs.has_alpha,
 			mvp,
 			model,
+			client_frame_rect,
 			time_seconds,
 			wobble_x,
 			wobble_y,
@@ -1110,61 +1131,50 @@ void shady_render_output_frame(
 			server->config.window_brightness * (focused ? 1.08f : 1.0f)
 		);
 
-		bool cube_titlebar_hidden = shady_spatial_state(server)->runtime.camera.first_person &&
-			!shady_fps_toplevel_state_const(toplevel)->expanded;
-		if (!toplevel->fullscreen && !cube_titlebar_hidden &&
-				server->config.window_titlebar && toplevel->titlebar_texture &&
-				wlr_texture_is_gles2(toplevel->titlebar_texture) &&
-				toplevel->titlebar_height > 0) {
+		if (frame_has_titlebar) {
 			struct wlr_gles2_texture_attribs title_attribs;
 			wlr_gles2_texture_get_attribs(toplevel->titlebar_texture, &title_attribs);
 			if (title_attribs.target == GL_TEXTURE_2D) {
-				float title_model[16], title_mvp[16];
-				float title_x = layout_x;
-				float title_y = toplevel->maximized
-					? layout_y
-					: layout_y - (float)toplevel->titlebar_height;
-				float title_w = tw;
-				float title_h = (float)toplevel->titlebar_height;
-				float title_opacity = server->config.window_opacity;
-				float close_p = fminf(fmaxf(close_state->progress, 0.f), 1.f);
-				if (close_p > 0.f) {
-					if (close_state->style == 1) {
-						float slide_p = close_p * fminf(fmaxf(close_state->strength, 0.f), 2.f);
-						if (slide_p > 1.f) slide_p = 1.f;
-						float scale = 1.f - slide_p * .14f;
-						float old_w = title_w, old_h = title_h;
-						title_w *= scale;
-						title_h *= scale;
-						title_x += (old_w - title_w) * .5f +
-							close_state->direction_x * slide_p * tw * .32f;
-						title_y += (old_h - title_h) * .5f +
-							close_state->direction_y * slide_p * th * .32f;
-						float fade_t = (slide_p - .08f) / .92f;
-						if (fade_t < 0.f) fade_t = 0.f;
-						if (fade_t > 1.f) fade_t = 1.f;
-						float fade = fade_t * fade_t * (3.f - 2.f * fade_t);
-						title_opacity *= 1.f - fade;
-					} else {
-						title_opacity *= 1.f - fminf(close_p * 2.2f, 1.f);
-					}
-				}
-				if (screen_space) {
-					shady_mat4_identity(title_model);
-					shady_screen_space_model(title_mvp, title_x, title_y,
-						title_w, title_h,
-						logical_w, logical_h);
-				} else {
-					shady_window_model(title_model,
-						title_x, title_y, title_w, title_h,
-						logical_w, logical_h,
-						shady_spatial_toplevel_state(toplevel)->z,
-						shady_window_motion_state_for_const(toplevel)->tilt_x,
-						shady_window_motion_state_for_const(toplevel)->tilt_y);
-					shady_mat4_multiply(title_mvp, vp, title_model);
-				}
-				shady_gl_pipeline_draw_titlebar(&pipeline, title_attribs.tex,
-					title_mvp, title_opacity);
+				float client_fraction = frame_h > 0.f ? th / frame_h : 1.f;
+				const float title_frame_rect[4] = {
+					0.f,
+					client_fraction,
+					1.f,
+					1.f - client_fraction,
+				};
+				const float no_border_color[4] = {0.f, 0.f, 0.f, 0.f};
+				const float no_border_width[2] = {0.f, 0.f};
+				const float title_tint[4] = {
+					1.f, 1.f, 1.f, server->config.window_opacity
+				};
+
+				/*
+				 * The title bar is now a sub-rect of the same full-frame model
+				 * as the client surface. Both therefore share the same pivot,
+				 * tilt, wobble/water deformation and close animation instead of
+				 * behaving like two independent quads.
+				 */
+				shady_gl_pipeline_draw_window(
+					&pipeline,
+					GL_TEXTURE_2D,
+					title_attribs.tex,
+					true,
+					mvp,
+					model,
+					title_frame_rect,
+					time_seconds,
+					wobble_x,
+					wobble_y,
+					water,
+					water_surface,
+					no_border_color,
+					no_border_width,
+					close_state->progress,
+					close_effect,
+					title_tint,
+					0.f,
+					1.f
+				);
 			}
 		}
 
@@ -1245,6 +1255,7 @@ void shady_render_output_frame(
 			snapshot->close_direction_x,
 			snapshot->close_direction_y,
 		};
+		const float full_frame_rect[4] = {0.f, 0.f, 1.f, 1.f};
 		shady_gl_pipeline_draw_window(
 			&pipeline,
 			GL_TEXTURE_2D,
@@ -1252,6 +1263,7 @@ void shady_render_output_frame(
 			snapshot->has_alpha,
 			mvp,
 			model,
+			full_frame_rect,
 			time_seconds,
 			0.0f,
 			0.0f,

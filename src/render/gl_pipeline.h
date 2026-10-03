@@ -29,6 +29,7 @@ struct shady_gl_pipeline {
 	GLint u_light_dir_2d;
 	GLint u_effect_strength_2d;
 	GLint u_brightness_2d;
+	GLint u_frame_rect_2d;
 
 	GLint u_mvp_ext;
 	GLint u_tex_ext;
@@ -46,6 +47,7 @@ struct shady_gl_pipeline {
 	GLint u_light_dir_ext;
 	GLint u_effect_strength_ext;
 	GLint u_brightness_ext;
+	GLint u_frame_rect_ext;
 
 	/* Unlit compositor-side title bar texture. */
 	GLuint titlebar_prog;
@@ -123,6 +125,7 @@ void shady_gl_pipeline_draw_window(
 	bool has_alpha,
 	const float mvp[16],
 	const float model[16],
+	const float frame_rect[4],
 	float time_seconds,
 	float wobble_x,
 	float wobble_y,
