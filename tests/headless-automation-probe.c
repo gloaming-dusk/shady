@@ -314,7 +314,9 @@ int main(void) {
 	p.toplevel = xdg_surface_get_toplevel(p.xdg_surface);
 	xdg_toplevel_add_listener(p.toplevel, &toplevel_listener, &p);
 	xdg_toplevel_set_app_id(p.toplevel, p.app_id);
-	xdg_toplevel_set_title(p.toplevel, "Shady Automation Probe");
+	const char *title = getenv("SHADY_AUTOMATION_PROBE_TITLE");
+	xdg_toplevel_set_title(p.toplevel,
+		title && *title ? title : "Shady Automation Probe");
 	xdg_toplevel_set_min_size(p.toplevel, WIDTH, HEIGHT);
 	xdg_toplevel_set_max_size(p.toplevel, WIDTH, HEIGHT);
 	wl_surface_commit(p.surface);

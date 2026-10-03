@@ -1,27 +1,32 @@
 # shady
 
-![Shady 3D desktop](screenshots/Screenshot.png)
+![Shady Neon Transit desktop with native 3D overview and water-window effects](screenshots/Screenshot.png)
 
-Shady is a small experimental **3D Wayland compositor** built on wlroots 0.20.2 and inspired by TinyWL.
+*Neon Transit rice: standalone shell, native 3D overview, translucent windows, and shader-backed liquid surfaces.*
 
-Normal xdg-shell applications become physical objects in a shared 3D world. Windows can fold into cubes, move through depth, wobble, collide with authored 3D environments, and be picked up and thrown while you walk around the desktop.
+Shady is an experimental **3D Wayland compositor** built on wlroots 0.20.2 and inspired by TinyWL. It can run as a conventional compositor through its wlroots scene-graph path, or turn normal xdg-shell applications into objects inside a shared perspective 3D world.
+
+Windows can move through depth, fold into cubes, collide with authored environments, be picked up and thrown, or receive native-plugin-driven surface effects. Shady also includes a standalone layer-shell desktop shell, Lua configuration/runtime scripting, and a public C plugin API for extending spatial behavior without putting every experiment into the compositor core.
 
 The project is intentionally experimental. The imported TinyWL example is CC0; see [its license](LICENSES/tinywl-CC0.txt).
 
 ## Highlights
 
 - Custom GLES2 renderer for Wayland surfaces in a perspective 3D world
+- Native C plugin API with module state, window state, events, input hooks and render controls
+- Native **3D overview** (`Super+O`) with keyboard selection, focus confirmation and layout restore
+- Native **water-window** effect (`Super+W`) with mesh waves, UV refraction, Fresnel light, specular glints, caustics and size-adaptive reflections
+- Configurable global window opacity with premultiplied-alpha blending in both spatial and safe scene-graph paths
+- Standalone `shady-shell` with taskbar, workspaces, launcher, window context menu and Quick Settings
 - First-person WASD + mouse-look navigation, jumping and player collision
 - Windows fold into physical cubes in FPS mode and can be grabbed, carried and thrown
 - Window gravity, bounce, friction, wobble and collision response
-- OBJ environment loading with authored `collision_*` geometry
-- Triangle-vs-cube SAT collision for OBJ environments
-- Built-in floor plus reusable world/collider abstraction
-- Equirectangular P6 PPM sky environment
-- Floor grid, projected shadows and lit 3D window shells
+- OBJ environment loading with authored `collision_*` geometry and SAT collision
+- Built-in floor, cyan grid, projected shadows, lit 3D window shells and sky/environment support
 - Orbit camera with 3D ray-picking
 - Animated crumple-style window closing
-- **Lua 5.4 scripting** for configuration, key bindings and runtime events
+- **Lua 5.4 scripting** for bootstrap configuration, key bindings, runtime events and automation
+- Headless UI automation plus ASan/UBSan daily-driver and spatial regression suites
 - Window recovery tools and automatic respawn when a cube falls out of the world
 
 ## Controls
