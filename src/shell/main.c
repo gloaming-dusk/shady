@@ -38,6 +38,8 @@
 #define SEARCH_MAX 128
 #define MAX_WINDOWS 64
 #define TASK_LABEL_MAX 256
+#define CONTEXT_WIDTH 230
+#define CONTEXT_ROW_HEIGHT 34
 
 struct shell_buffer {
     struct wl_buffer *wl_buffer;
@@ -61,6 +63,8 @@ struct shell_window {
     char title[WINDOW_TEXT_MAX];
     char workspace[WORKSPACE_NAME_MAX];
     bool focused;
+    bool maximized;
+    bool fullscreen;
 };
 
 struct task_region {
@@ -68,6 +72,9 @@ struct task_region {
     double x1;
     uint32_t window_id;
 };
+
+struct shell;
+static struct shell_window *find_window(struct shell *shell, uint32_t id);
 
 struct shell {
     struct wl_display *display;
@@ -86,6 +93,8 @@ struct shell {
     struct zwlr_layer_surface_v1 *layer_surface;
     struct wl_surface *launcher_surface;
     struct zwlr_layer_surface_v1 *launcher_layer_surface;
+    struct wl_surface *context_surface;
+    struct zwlr_layer_surface_v1 *context_layer_surface;
 
     uint32_t width;
     uint32_t height;
@@ -114,6 +123,12 @@ struct shell {
     bool launcher_configured;
     uint32_t launcher_width;
     uint32_t launcher_height;
+    bool context_visible;
+    bool context_configured;
+    uint32_t context_width;
+    uint32_t context_height;
+    uint32_t context_window_id;
+    int hovered_context_row;
     char search[SEARCH_MAX];
     size_t selected_result;
     int hovered_workspace;
@@ -711,6 +726,142 @@ static struct shell_window *find_window(struct shell *shell, uint32_t id) {
     return NULL;
 }
 
+static size_t context_row_count(struct shell *shell) {
+    return 4 + shell->workspace_count;
+}
+
+static void context_hide(struct shell *shell) {
+    if (shell->context_layer_surface) {
+        zwlr_layer_surface_v1_destroy(shell->context_layer_surface);
+        shell->context_layer_surface = NULL;
+    }
+    if (shell->context_surface) {
+        wl_surface_destroy(shell->context_surface);
+        shell->context_surface = NULL;
+    }
+    shell->context_visible = false;
+    shell->context_configured = false;
+    shell->context_window_id = 0;
+    shell->hovered_context_row = -1;
+}
+
+static const char *context_row_label(struct shell *shell,
+        struct shell_window *window, size_t row, char *buffer, size_t size) {
+    if (row == 0) return "Focus";
+    if (row == 1) return window && window->maximized ? "Restore" : "Maximize";
+    if (row == 2) return window && window->fullscreen ? "Exit fullscreen" : "Fullscreen";
+    if (row < 3 + shell->workspace_count) {
+        size_t ws = row - 3;
+        snprintf(buffer, size, "Move to %s", shell->workspaces[ws]);
+        return buffer;
+    }
+    return "Close";
+}
+
+static void draw_context(struct shell *shell) {
+    if (!shell->context_visible || !shell->context_configured ||
+            !shell->context_surface || shell->context_width == 0 ||
+            shell->context_height == 0) return;
+    struct shell_window *window = find_window(shell, shell->context_window_id);
+    if (!window) { context_hide(shell); return; }
+
+    struct shell_buffer *buffer = create_buffer(shell,
+        shell->context_width, shell->context_height);
+    if (!buffer) return;
+    cairo_surface_t *image = cairo_image_surface_create_for_data(
+        buffer->data, CAIRO_FORMAT_ARGB32,
+        (int)shell->context_width, (int)shell->context_height,
+        (int)shell->context_width * 4);
+    cairo_t *cr = cairo_create(image);
+    cairo_set_source_rgba(cr, 0.018, 0.026, 0.039, 0.97);
+    rounded_rect(cr, 0, 0, shell->context_width, shell->context_height, 10);
+    cairo_fill(cr);
+
+    size_t rows = context_row_count(shell);
+    for (size_t row = 0; row < rows; row++) {
+        double y = row * CONTEXT_ROW_HEIGHT;
+        bool hovered = shell->hovered_context_row == (int)row;
+        if (hovered) {
+            cairo_set_source_rgba(cr, 0.06, 0.20, 0.29, 0.96);
+            rounded_rect(cr, 6, y + 3, shell->context_width - 12,
+                CONTEXT_ROW_HEIGHT - 6, 7);
+            cairo_fill(cr);
+        }
+        char label_buf[WORKSPACE_NAME_MAX + 32];
+        const char *label = context_row_label(shell, window, row,
+            label_buf, sizeof(label_buf));
+        bool destructive = row + 1 == rows;
+        draw_text_color(cr, label, 14, y + 9, false, 9,
+            destructive ? 0.96 : 0.82,
+            destructive ? 0.40 : 0.88,
+            destructive ? 0.40 : 0.94);
+    }
+
+    cairo_destroy(cr);
+    cairo_surface_flush(image);
+    cairo_surface_destroy(image);
+    wl_surface_attach(shell->context_surface, buffer->wl_buffer, 0, 0);
+    wl_surface_damage_buffer(shell->context_surface, 0, 0,
+        (int)shell->context_width, (int)shell->context_height);
+    wl_surface_commit(shell->context_surface);
+}
+
+static void context_configure(void *data,
+        struct zwlr_layer_surface_v1 *layer_surface,
+        uint32_t serial, uint32_t width, uint32_t height) {
+    struct shell *shell = data;
+    zwlr_layer_surface_v1_ack_configure(layer_surface, serial);
+    shell->context_width = width ? width : CONTEXT_WIDTH;
+    shell->context_height = height ? height :
+        (uint32_t)(context_row_count(shell) * CONTEXT_ROW_HEIGHT);
+    shell->context_configured = true;
+    draw_context(shell);
+}
+
+static void context_closed(void *data,
+        struct zwlr_layer_surface_v1 *layer_surface) {
+    (void)layer_surface;
+    context_hide(data);
+}
+
+static const struct zwlr_layer_surface_v1_listener context_layer_listener = {
+    .configure = context_configure,
+    .closed = context_closed,
+};
+
+static void context_show(struct shell *shell, uint32_t window_id, int x) {
+    if (!shell->layer_shell || !shell->compositor) return;
+    context_hide(shell);
+    shell->context_surface = wl_compositor_create_surface(shell->compositor);
+    if (!shell->context_surface) return;
+    shell->context_layer_surface = zwlr_layer_shell_v1_get_layer_surface(
+        shell->layer_shell, shell->context_surface, NULL,
+        ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY, "shady-window-menu");
+    if (!shell->context_layer_surface) {
+        wl_surface_destroy(shell->context_surface);
+        shell->context_surface = NULL;
+        return;
+    }
+    shell->context_window_id = window_id;
+    shell->context_visible = true;
+    shell->context_configured = false;
+    shell->hovered_context_row = -1;
+    uint32_t height = (uint32_t)(context_row_count(shell) * CONTEXT_ROW_HEIGHT);
+    zwlr_layer_surface_v1_add_listener(shell->context_layer_surface,
+        &context_layer_listener, shell);
+    zwlr_layer_surface_v1_set_size(shell->context_layer_surface,
+        CONTEXT_WIDTH, height);
+    zwlr_layer_surface_v1_set_anchor(shell->context_layer_surface,
+        ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP |
+        ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT);
+    zwlr_layer_surface_v1_set_margin(shell->context_layer_surface,
+        BAR_HEIGHT + 4, 0, 0, x < 0 ? 0 : x);
+    zwlr_layer_surface_v1_set_exclusive_zone(shell->context_layer_surface, 0);
+    zwlr_layer_surface_v1_set_keyboard_interactivity(shell->context_layer_surface,
+        ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE);
+    wl_surface_commit(shell->context_surface);
+}
+
 static struct shell_window *ensure_window(struct shell *shell, uint32_t id) {
     struct shell_window *window = find_window(shell, id);
     if (window) return window;
@@ -722,6 +873,7 @@ static struct shell_window *ensure_window(struct shell *shell, uint32_t id) {
 }
 
 static void remove_window(struct shell *shell, uint32_t id) {
+    if (shell->context_window_id == id) context_hide(shell);
     for (size_t i = 0; i < shell->window_count; i++) {
         if (shell->windows[i].id != id) continue;
         if (i + 1 < shell->window_count)
@@ -789,7 +941,18 @@ static void protocol_window_removed(void *data,
     (void)protocol;
     struct shell *shell = data;
     remove_window(shell, id);
+    if (shell->context_window_id == id) shell->context_window_id = 0;
     if (shell->snapshot_done) draw_bar(shell);
+}
+
+static void protocol_window_state(void *data, struct shady_shell_v1 *protocol,
+        uint32_t id, uint32_t maximized, uint32_t fullscreen) {
+    (void)protocol;
+    struct shell *shell = data;
+    struct shell_window *window = ensure_window(shell, id);
+    if (!window) return;
+    window->maximized = maximized != 0;
+    window->fullscreen = fullscreen != 0;
 }
 
 static void protocol_toggle_launcher(void *data, struct shady_shell_v1 *protocol) {
@@ -815,6 +978,7 @@ static const struct shady_shell_v1_listener shady_shell_listener = {
     .focused_window = protocol_focused_window,
     .window = protocol_window,
     .window_removed = protocol_window_removed,
+    .window_state = protocol_window_state,
     .toggle_launcher = protocol_toggle_launcher,
     .done = protocol_done,
 };
@@ -846,6 +1010,22 @@ static void update_pointer_hover(struct shell *shell) {
             shell->hovered_workspace = hovered_workspace;
             shell->hovered_task = hovered_task;
             draw_bar(shell);
+        }
+        return;
+    }
+
+    if (shell->pointer_surface == shell->context_surface &&
+            shell->context_visible) {
+        int hovered = -1;
+        size_t rows = context_row_count(shell);
+        if (shell->pointer_x >= 0 && shell->pointer_x < shell->context_width &&
+                shell->pointer_y >= 0 && shell->pointer_y < shell->context_height) {
+            int row = (int)(shell->pointer_y / CONTEXT_ROW_HEIGHT);
+            if (row >= 0 && (size_t)row < rows) hovered = row;
+        }
+        if (hovered != shell->hovered_context_row) {
+            shell->hovered_context_row = hovered;
+            draw_context(shell);
         }
         return;
     }
@@ -891,12 +1071,15 @@ static void pointer_leave(void *data, struct wl_pointer *pointer,
     bool redraw_bar = surface == shell->surface &&
         (shell->hovered_workspace >= 0 || shell->hovered_task >= 0);
     bool redraw_launcher = surface == shell->launcher_surface && shell->hovered_result >= 0;
+    bool redraw_context = surface == shell->context_surface && shell->hovered_context_row >= 0;
     shell->pointer_surface = NULL;
     shell->hovered_workspace = -1;
     shell->hovered_task = -1;
+    shell->hovered_context_row = -1;
     shell->hovered_result = -1;
     if (redraw_bar) draw_bar(shell);
     if (redraw_launcher) draw_launcher(shell);
+    if (redraw_context) draw_context(shell);
 }
 
 static void pointer_motion(void *data, struct wl_pointer *pointer,
@@ -925,6 +1108,27 @@ static void pointer_button(void *data, struct wl_pointer *pointer,
         return;
     }
 
+    if (button == BTN_LEFT && shell->pointer_surface == shell->context_surface &&
+            shell->context_visible && shell->hovered_context_row >= 0) {
+        size_t row = (size_t)shell->hovered_context_row;
+        size_t rows = context_row_count(shell);
+        uint32_t id = shell->context_window_id;
+        if (row == 0)
+            shady_shell_v1_activate_window(shell->shady_shell, id);
+        else if (row == 1)
+            shady_shell_v1_toggle_maximize(shell->shady_shell, id);
+        else if (row == 2)
+            shady_shell_v1_toggle_fullscreen(shell->shady_shell, id);
+        else if (row < 3 + shell->workspace_count)
+            shady_shell_v1_move_window_to_workspace(shell->shady_shell, id,
+                shell->workspaces[row - 3]);
+        else if (row + 1 == rows)
+            shady_shell_v1_close_window(shell->shady_shell, id);
+        wl_display_flush(shell->display);
+        context_hide(shell);
+        return;
+    }
+
     if (!shell->shady_shell || shell->pointer_surface != shell->surface ||
             shell->pointer_y < 0 || shell->pointer_y >= shell->height)
         return;
@@ -944,13 +1148,14 @@ static void pointer_button(void *data, struct wl_pointer *pointer,
     if (shell->hovered_task >= 0 &&
             (size_t)shell->hovered_task < shell->task_region_count) {
         uint32_t id = shell->task_regions[shell->hovered_task].window_id;
-        if (button == BTN_LEFT)
+        if (button == BTN_LEFT) {
+            context_hide(shell);
             shady_shell_v1_activate_window(shell->shady_shell, id);
-        else if (button == BTN_RIGHT)
-            shady_shell_v1_close_window(shell->shady_shell, id);
-        else
-            return;
-        wl_display_flush(shell->display);
+            wl_display_flush(shell->display);
+        } else if (button == BTN_RIGHT) {
+            int x = (int)shell->task_regions[shell->hovered_task].x0;
+            context_show(shell, id, x);
+        }
     }
 }
 
@@ -1168,7 +1373,7 @@ static void registry_global(void *data, struct wl_registry *registry,
         shell->layer_shell = wl_registry_bind(registry, name,
             &zwlr_layer_shell_v1_interface, bind_version);
     } else if (strcmp(interface, shady_shell_v1_interface.name) == 0) {
-        uint32_t bind_version = version < 2 ? version : 2;
+        uint32_t bind_version = version < 3 ? version : 3;
         shell->shady_shell = wl_registry_bind(registry, name,
             &shady_shell_v1_interface, bind_version);
         shady_shell_v1_add_listener(shell->shady_shell,
@@ -1189,6 +1394,7 @@ static const struct wl_registry_listener registry_listener = {
 static bool shell_init(struct shell *shell) {
     shell->hovered_workspace = -1;
     shell->hovered_task = -1;
+    shell->hovered_context_row = -1;
     shell->hovered_result = -1;
     shell->xkb_context = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
     if (!shell->xkb_context) return false;
@@ -1236,6 +1442,7 @@ static bool shell_init(struct shell *shell) {
 }
 
 static void shell_finish(struct shell *shell) {
+    context_hide(shell);
     launcher_hide(shell);
     if (shell->keyboard) wl_keyboard_release(shell->keyboard);
     if (shell->pointer) wl_pointer_release(shell->pointer);

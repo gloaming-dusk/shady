@@ -8,6 +8,16 @@ local destroyed_a = false
 local unmapped_a = false
 local started = false
 
+assert(shady.workspace("x"))
+assert(shady.workspace("main"))
+
+local function find_window(app_id)
+    for _, window in ipairs(shady.windows()) do
+        if window.app_id == app_id then return window end
+    end
+    return nil
+end
+
 local function mark(line)
     local f = assert(io.open(status, "a"))
     f:write(line, "\n")
@@ -65,12 +75,79 @@ shady.on("window.mapped", function(window)
             shady.automation.move_pointer(230, 19)
             shady.automation.click("right")
 
-            shady.automation.after(800, function()
-                assert(unmapped_a or destroyed_a,
-                    "taskbar right click did not unmap probe-a")
-                mark("CLOSE=PASS")
-                shady.log("headless-shell-taskbar: PASS")
-                shady.quit()
+            shady.automation.after(120, function()
+                -- Context menu starts below the 38px bar. Row 1 is Maximize.
+                shady.automation.move_pointer(270, 93)
+                shady.automation.click("left")
+
+                shady.automation.after(180, function()
+                    local a = find_window("shady-shell-probe-a")
+                    assert(a ~= nil and a.maximized,
+                        "context menu maximize did not update probe-a")
+                    mark("MAXIMIZE=PASS")
+
+                    shady.automation.move_pointer(230, 19)
+                    shady.automation.click("right")
+                    shady.automation.after(120, function()
+                        -- Row 2 toggles fullscreen.
+                        shady.automation.move_pointer(270, 127)
+                        shady.automation.click("left")
+
+                        shady.automation.after(180, function()
+                            local a2 = find_window("shady-shell-probe-a")
+                            assert(a2 ~= nil and a2.fullscreen,
+                                "context menu fullscreen did not update probe-a")
+                            mark("FULLSCREEN=PASS")
+
+                            -- Open again and exit fullscreen so the bar stays fully testable.
+                            shady.automation.move_pointer(230, 19)
+                            shady.automation.click("right")
+                            shady.automation.after(120, function()
+                                shady.automation.move_pointer(270, 127)
+                                shady.automation.click("left")
+                                shady.automation.after(180, function()
+                                    local a3 = find_window("shady-shell-probe-a")
+                                    assert(a3 ~= nil and not a3.fullscreen,
+                                        "context menu did not exit fullscreen")
+
+                                    shady.automation.move_pointer(230, 19)
+                                    shady.automation.click("right")
+                                    shady.automation.after(120, function()
+                                        -- Row 4 moves the window to workspace x.
+                                        shady.automation.move_pointer(270, 195)
+                                        shady.automation.click("left")
+
+                                        shady.automation.after(180, function()
+                                            local moved = find_window("shady-shell-probe-a")
+                                            assert(moved ~= nil and moved.workspace == "x",
+                                                "context menu move-to-workspace failed")
+                                            mark("MOVE=PASS")
+
+                                            assert(shady.workspace("x"))
+                                            shady.automation.after(180, function()
+                                                shady.automation.move_pointer(230, 19)
+                                                shady.automation.click("right")
+                                                shady.automation.after(120, function()
+                                                    -- With main and x, Close is row 5.
+                                                    shady.automation.move_pointer(270, 229)
+                                                    shady.automation.click("left")
+
+                                                    shady.automation.after(800, function()
+                                                        assert(unmapped_a or destroyed_a,
+                                                            "context menu close did not unmap probe-a")
+                                                        mark("CLOSE=PASS")
+                                                        shady.log("headless-shell-taskbar: PASS")
+                                                        shady.quit()
+                                                    end)
+                                                end)
+                                            end)
+                                        end)
+                                    end)
+                                end)
+                            end)
+                        end)
+                    end)
+                end)
             end)
         end)
     end)

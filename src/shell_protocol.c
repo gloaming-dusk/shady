@@ -40,6 +40,10 @@ static bool resource_has_windows(struct wl_resource *resource) {
     return wl_resource_get_version(resource) >= 2;
 }
 
+static bool resource_has_window_actions(struct wl_resource *resource) {
+    return wl_resource_get_version(resource) >= 3;
+}
+
 static void send_window(struct wl_resource *resource,
         struct shady_shell_protocol_state *state,
         struct shady_toplevel *toplevel) {
@@ -51,6 +55,9 @@ static void send_window(struct wl_resource *resource,
     shady_shell_v1_send_window(resource, toplevel->shell_id,
         app_id ? app_id : "", title ? title : "",
         workspace ? workspace : "", focused ? 1u : 0u);
+    if (resource_has_window_actions(resource))
+        shady_shell_v1_send_window_state(resource, toplevel->shell_id,
+            toplevel->maximized ? 1u : 0u, toplevel->fullscreen ? 1u : 0u);
 }
 
 static void send_focused(struct wl_resource *resource,
@@ -126,17 +133,50 @@ static void request_close_window(struct wl_client *wl_client,
         wlr_xdg_toplevel_send_close(toplevel->xdg_toplevel);
 }
 
+static void request_toggle_maximize(struct wl_client *wl_client,
+        struct wl_resource *resource, uint32_t id) {
+    (void)wl_client;
+    struct shady_shell_client *client = wl_resource_get_user_data(resource);
+    if (!client || !client->protocol) return;
+    struct shady_toplevel *toplevel = find_window_id(client->protocol, id);
+    if (toplevel && toplevel->mapped)
+        shady_toplevel_set_maximized(toplevel, !toplevel->maximized);
+}
+
+static void request_toggle_fullscreen(struct wl_client *wl_client,
+        struct wl_resource *resource, uint32_t id) {
+    (void)wl_client;
+    struct shady_shell_client *client = wl_resource_get_user_data(resource);
+    if (!client || !client->protocol) return;
+    struct shady_toplevel *toplevel = find_window_id(client->protocol, id);
+    if (toplevel && toplevel->mapped)
+        shady_toplevel_set_fullscreen(toplevel, !toplevel->fullscreen);
+}
+
+static void request_move_window_to_workspace(struct wl_client *wl_client,
+        struct wl_resource *resource, uint32_t id, const char *workspace) {
+    (void)wl_client;
+    struct shady_shell_client *client = wl_resource_get_user_data(resource);
+    if (!client || !client->protocol || !workspace || !*workspace) return;
+    struct shady_toplevel *toplevel = find_window_id(client->protocol, id);
+    if (toplevel && toplevel->mapped)
+        shady_workspace_move_toplevel(toplevel, workspace);
+}
+
 static const struct shady_shell_v1_interface shell_impl = {
     .activate_workspace = request_activate_workspace,
     .activate_window = request_activate_window,
     .close_window = request_close_window,
+    .toggle_maximize = request_toggle_maximize,
+    .toggle_fullscreen = request_toggle_fullscreen,
+    .move_window_to_workspace = request_move_window_to_workspace,
 };
 
 static void bind_shell(struct wl_client *wl_client, void *data,
         uint32_t version, uint32_t id) {
     struct shady_shell_protocol_state *state = data;
     struct wl_resource *resource = wl_resource_create(wl_client,
-        &shady_shell_v1_interface, version < 2 ? version : 2, id);
+        &shady_shell_v1_interface, version < 3 ? version : 3, id);
     if (!resource) {
         wl_client_post_no_memory(wl_client);
         return;
@@ -223,7 +263,7 @@ bool shady_shell_protocol_init(struct shady_server *server) {
     wl_list_init(&state->clients);
 
     state->global = wl_global_create(server->wl_display,
-        &shady_shell_v1_interface, 2, state, bind_shell);
+        &shady_shell_v1_interface, 3, state, bind_shell);
     if (!state->global) {
         free(state);
         return false;
