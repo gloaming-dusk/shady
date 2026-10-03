@@ -5,10 +5,10 @@
     SPDX-License-Identifier: MIT
   </copyright>
 
-  <interface name="shady_shell_v1" version="1">
-    <description summary="small Shady desktop shell control protocol">
-      Exposes a read-mostly desktop snapshot for trusted shell clients and a
-      request to activate a named workspace.
+  <interface name="shady_shell_v1" version="2">
+    <description summary="Shady desktop shell control protocol">
+      Exposes desktop state to trusted shell clients and provides shell actions
+      for workspaces and mapped application windows.
     </description>
 
     <request name="activate_workspace">
@@ -34,6 +34,27 @@
 
     <event name="done">
       <description summary="initial snapshot complete"/>
+    </event>
+
+    <request name="activate_window" since="2">
+      <arg name="id" type="uint" summary="stable shell window id"/>
+    </request>
+
+    <request name="close_window" since="2">
+      <arg name="id" type="uint" summary="stable shell window id"/>
+    </request>
+
+    <event name="window" since="2">
+      <description summary="mapped window snapshot or update"/>
+      <arg name="id" type="uint" summary="stable shell window id"/>
+      <arg name="app_id" type="string" summary="application id"/>
+      <arg name="title" type="string" summary="window title"/>
+      <arg name="workspace" type="string" summary="workspace name"/>
+      <arg name="focused" type="uint" summary="1 when focused"/>
+    </event>
+
+    <event name="window_removed" since="2">
+      <arg name="id" type="uint" summary="removed shell window id"/>
     </event>
   </interface>
 </protocol>

@@ -116,6 +116,7 @@ struct shady_server {
 	struct wl_listener new_xdg_popup;
 	struct wl_list toplevels;
 	struct wl_list all_toplevels;
+	uint32_t next_shell_window_id;
 	struct wl_list popups;
 
 	struct wlr_cursor *cursor;
@@ -178,6 +179,7 @@ struct shady_toplevel {
 	struct wl_list all_link;
 	struct shady_server *server;
 	struct wlr_xdg_toplevel *xdg_toplevel;
+	uint32_t shell_id;
 	struct wlr_scene_tree *scene_tree;
 	struct wlr_scene_tree *focus_border_tree;
 	struct wlr_scene_rect *focus_border[4];

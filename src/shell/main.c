@@ -36,6 +36,8 @@
 #define LAUNCHER_HEIGHT 560
 #define LAUNCHER_RESULTS 8
 #define SEARCH_MAX 128
+#define MAX_WINDOWS 64
+#define TASK_LABEL_MAX 256
 
 struct shell_buffer {
     struct wl_buffer *wl_buffer;
@@ -51,6 +53,20 @@ struct workspace_region {
 struct launcher_app {
     char name[APP_NAME_MAX];
     char exec[APP_EXEC_MAX];
+};
+
+struct shell_window {
+    uint32_t id;
+    char app_id[WINDOW_TEXT_MAX];
+    char title[WINDOW_TEXT_MAX];
+    char workspace[WORKSPACE_NAME_MAX];
+    bool focused;
+};
+
+struct task_region {
+    double x0;
+    double x1;
+    uint32_t window_id;
 };
 
 struct shell {
@@ -83,6 +99,10 @@ struct shell {
     char active_workspace[WORKSPACE_NAME_MAX];
     char focused_app_id[WINDOW_TEXT_MAX];
     char focused_title[WINDOW_TEXT_MAX];
+    struct shell_window windows[MAX_WINDOWS];
+    struct task_region task_regions[MAX_WINDOWS];
+    size_t window_count;
+    size_t task_region_count;
 
     double pointer_x;
     double pointer_y;
@@ -97,6 +117,7 @@ struct shell {
     char search[SEARCH_MAX];
     size_t selected_result;
     int hovered_workspace;
+    int hovered_task;
     int hovered_result;
 };
 
@@ -430,20 +451,50 @@ static void draw_bar(struct shell *shell) {
         x += box_width + 5.0;
     }
 
-    const char *focused = shell->focused_title[0]
-        ? shell->focused_title : shell->focused_app_id;
-    if (focused[0]) {
-        PangoLayout *layout = make_layout(cr, focused, false);
-        pango_layout_set_ellipsize(layout, PANGO_ELLIPSIZE_END);
-        int available = (int)shell->width - (int)x - 130;
-        if (available > 80) {
-            pango_layout_set_width(layout, available * PANGO_SCALE);
-            cairo_set_source_rgba(cr, 0.25, 0.45, 0.58, 0.8);
-            cairo_arc(cr, x + 10, shell->height / 2.0, 2.0, 0, 2 * G_PI);
+    shell->task_region_count = 0;
+    double task_limit = shell->width - 116.0;
+    for (size_t i = 0; i < shell->window_count && x + 72.0 < task_limit; i++) {
+        struct shell_window *window = &shell->windows[i];
+        if (window->workspace[0] && shell->active_workspace[0] &&
+                strcmp(window->workspace, shell->active_workspace) != 0)
+            continue;
+        const char *label = window->title[0] ? window->title : window->app_id;
+        if (!label[0]) label = "Window";
+        int measured = text_width(cr, label, window->focused);
+        double box_width = measured + 28.0;
+        if (box_width < 92.0) box_width = 92.0;
+        if (box_width > 190.0) box_width = 190.0;
+        if (x + box_width > task_limit) box_width = task_limit - x;
+        if (box_width < 72.0) break;
+
+        size_t region = shell->task_region_count++;
+        shell->task_regions[region].x0 = x;
+        shell->task_regions[region].x1 = x + box_width;
+        shell->task_regions[region].window_id = window->id;
+        bool hovered = shell->hovered_task == (int)region;
+
+        cairo_set_source_rgba(cr,
+            window->focused ? 0.065 : (hovered ? 0.045 : 0.030),
+            window->focused ? 0.235 : (hovered ? 0.110 : 0.055),
+            window->focused ? 0.350 : (hovered ? 0.165 : 0.085),
+            window->focused ? 0.96 : 0.88);
+        rounded_rect(cr, x, 6, box_width, shell->height - 12, 8);
+        cairo_fill(cr);
+        if (window->focused) {
+            cairo_set_source_rgba(cr, 0.20, 0.72, 0.96, 1.0);
+            rounded_rect(cr, x, shell->height - 8, box_width, 2, 1);
             cairo_fill(cr);
-            draw_layout(cr, layout, x + 18, 10, 0.72, 0.79, 0.88);
         }
+
+        PangoLayout *layout = make_layout(cr, label, window->focused);
+        pango_layout_set_ellipsize(layout, PANGO_ELLIPSIZE_END);
+        pango_layout_set_width(layout, (int)(box_width - 20.0) * PANGO_SCALE);
+        draw_layout(cr, layout, x + 10, 10,
+            window->focused ? 0.94 : 0.72,
+            window->focused ? 0.98 : 0.79,
+            window->focused ? 1.00 : 0.87);
         g_object_unref(layout);
+        x += box_width + 5.0;
     }
 
     char clock_text[64] = {0};
@@ -654,6 +705,33 @@ static void launcher_activate_selected(struct shell *shell) {
     launcher_hide(shell);
 }
 
+static struct shell_window *find_window(struct shell *shell, uint32_t id) {
+    for (size_t i = 0; i < shell->window_count; i++)
+        if (shell->windows[i].id == id) return &shell->windows[i];
+    return NULL;
+}
+
+static struct shell_window *ensure_window(struct shell *shell, uint32_t id) {
+    struct shell_window *window = find_window(shell, id);
+    if (window) return window;
+    if (shell->window_count >= MAX_WINDOWS) return NULL;
+    window = &shell->windows[shell->window_count++];
+    memset(window, 0, sizeof(*window));
+    window->id = id;
+    return window;
+}
+
+static void remove_window(struct shell *shell, uint32_t id) {
+    for (size_t i = 0; i < shell->window_count; i++) {
+        if (shell->windows[i].id != id) continue;
+        if (i + 1 < shell->window_count)
+            memmove(&shell->windows[i], &shell->windows[i + 1],
+                (shell->window_count - i - 1) * sizeof(shell->windows[0]));
+        shell->window_count--;
+        return;
+    }
+}
+
 static bool add_workspace(struct shell *shell, const char *name) {
     if (!name || !*name) return false;
     for (size_t i = 0; i < shell->workspace_count; i++) {
@@ -692,6 +770,28 @@ static void protocol_focused_window(void *data,
     if (shell->snapshot_done) draw_bar(shell);
 }
 
+static void protocol_window(void *data, struct shady_shell_v1 *protocol,
+        uint32_t id, const char *app_id, const char *title,
+        const char *workspace, uint32_t focused) {
+    (void)protocol;
+    struct shell *shell = data;
+    struct shell_window *window = ensure_window(shell, id);
+    if (!window) return;
+    copy_text(window->app_id, sizeof(window->app_id), app_id);
+    copy_text(window->title, sizeof(window->title), title);
+    copy_text(window->workspace, sizeof(window->workspace), workspace);
+    window->focused = focused != 0;
+    if (shell->snapshot_done) draw_bar(shell);
+}
+
+static void protocol_window_removed(void *data,
+        struct shady_shell_v1 *protocol, uint32_t id) {
+    (void)protocol;
+    struct shell *shell = data;
+    remove_window(shell, id);
+    if (shell->snapshot_done) draw_bar(shell);
+}
+
 static void protocol_toggle_launcher(void *data, struct shady_shell_v1 *protocol) {
     (void)protocol;
     launcher_toggle(data);
@@ -713,24 +813,38 @@ static const struct shady_shell_v1_listener shady_shell_listener = {
     .workspace = protocol_workspace,
     .active_workspace = protocol_active_workspace,
     .focused_window = protocol_focused_window,
+    .window = protocol_window,
+    .window_removed = protocol_window_removed,
     .toggle_launcher = protocol_toggle_launcher,
     .done = protocol_done,
 };
 
 static void update_pointer_hover(struct shell *shell) {
     if (shell->pointer_surface == shell->surface) {
-        int hovered = -1;
+        int hovered_workspace = -1;
+        int hovered_task = -1;
         if (shell->pointer_y >= 0 && shell->pointer_y < shell->height) {
             for (size_t i = 0; i < shell->workspace_count; i++) {
                 if (shell->pointer_x >= shell->workspace_regions[i].x0 &&
                         shell->pointer_x < shell->workspace_regions[i].x1) {
-                    hovered = (int)i;
+                    hovered_workspace = (int)i;
                     break;
                 }
             }
+            if (hovered_workspace < 0) {
+                for (size_t i = 0; i < shell->task_region_count; i++) {
+                    if (shell->pointer_x >= shell->task_regions[i].x0 &&
+                            shell->pointer_x < shell->task_regions[i].x1) {
+                        hovered_task = (int)i;
+                        break;
+                    }
+                }
+            }
         }
-        if (hovered != shell->hovered_workspace) {
-            shell->hovered_workspace = hovered;
+        if (hovered_workspace != shell->hovered_workspace ||
+                hovered_task != shell->hovered_task) {
+            shell->hovered_workspace = hovered_workspace;
+            shell->hovered_task = hovered_task;
             draw_bar(shell);
         }
         return;
@@ -774,10 +888,12 @@ static void pointer_leave(void *data, struct wl_pointer *pointer,
     (void)pointer;
     (void)serial;
     struct shell *shell = data;
-    bool redraw_bar = surface == shell->surface && shell->hovered_workspace >= 0;
+    bool redraw_bar = surface == shell->surface &&
+        (shell->hovered_workspace >= 0 || shell->hovered_task >= 0);
     bool redraw_launcher = surface == shell->launcher_surface && shell->hovered_result >= 0;
     shell->pointer_surface = NULL;
     shell->hovered_workspace = -1;
+    shell->hovered_task = -1;
     shell->hovered_result = -1;
     if (redraw_bar) draw_bar(shell);
     if (redraw_launcher) draw_launcher(shell);
@@ -799,10 +915,10 @@ static void pointer_button(void *data, struct wl_pointer *pointer,
     (void)serial;
     (void)time;
     struct shell *shell = data;
-    if (button != BTN_LEFT || state != WL_POINTER_BUTTON_STATE_PRESSED)
+    if (state != WL_POINTER_BUTTON_STATE_PRESSED)
         return;
 
-    if (shell->pointer_surface == shell->launcher_surface &&
+    if (button == BTN_LEFT && shell->pointer_surface == shell->launcher_surface &&
             shell->launcher_visible && shell->hovered_result >= 0) {
         shell->selected_result = (size_t)shell->hovered_result;
         launcher_activate_selected(shell);
@@ -813,14 +929,28 @@ static void pointer_button(void *data, struct wl_pointer *pointer,
             shell->pointer_y < 0 || shell->pointer_y >= shell->height)
         return;
 
-    for (size_t i = 0; i < shell->workspace_count; i++) {
-        if (shell->pointer_x >= shell->workspace_regions[i].x0 &&
-                shell->pointer_x < shell->workspace_regions[i].x1) {
-            shady_shell_v1_activate_workspace(shell->shady_shell,
-                shell->workspaces[i]);
-            wl_display_flush(shell->display);
-            return;
+    if (button == BTN_LEFT) {
+        for (size_t i = 0; i < shell->workspace_count; i++) {
+            if (shell->pointer_x >= shell->workspace_regions[i].x0 &&
+                    shell->pointer_x < shell->workspace_regions[i].x1) {
+                shady_shell_v1_activate_workspace(shell->shady_shell,
+                    shell->workspaces[i]);
+                wl_display_flush(shell->display);
+                return;
+            }
         }
+    }
+
+    if (shell->hovered_task >= 0 &&
+            (size_t)shell->hovered_task < shell->task_region_count) {
+        uint32_t id = shell->task_regions[shell->hovered_task].window_id;
+        if (button == BTN_LEFT)
+            shady_shell_v1_activate_window(shell->shady_shell, id);
+        else if (button == BTN_RIGHT)
+            shady_shell_v1_close_window(shell->shady_shell, id);
+        else
+            return;
+        wl_display_flush(shell->display);
     }
 }
 
@@ -1038,8 +1168,9 @@ static void registry_global(void *data, struct wl_registry *registry,
         shell->layer_shell = wl_registry_bind(registry, name,
             &zwlr_layer_shell_v1_interface, bind_version);
     } else if (strcmp(interface, shady_shell_v1_interface.name) == 0) {
+        uint32_t bind_version = version < 2 ? version : 2;
         shell->shady_shell = wl_registry_bind(registry, name,
-            &shady_shell_v1_interface, 1);
+            &shady_shell_v1_interface, bind_version);
         shady_shell_v1_add_listener(shell->shady_shell,
             &shady_shell_listener, shell);
     }
@@ -1057,6 +1188,7 @@ static const struct wl_registry_listener registry_listener = {
 
 static bool shell_init(struct shell *shell) {
     shell->hovered_workspace = -1;
+    shell->hovered_task = -1;
     shell->hovered_result = -1;
     shell->xkb_context = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
     if (!shell->xkb_context) return false;

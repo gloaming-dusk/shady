@@ -439,6 +439,8 @@ void server_new_xdg_toplevel(struct wl_listener *listener, void *data) {
 	}
 	toplevel->server = server;
 	toplevel->xdg_toplevel = xdg_toplevel;
+	toplevel->shell_id = ++server->next_shell_window_id;
+	if (toplevel->shell_id == 0) toplevel->shell_id = ++server->next_shell_window_id;
 	if (!shady_modules_toplevel_state_init(toplevel)) {
 		free(toplevel);
 		return;

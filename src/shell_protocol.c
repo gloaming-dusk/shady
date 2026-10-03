@@ -1,6 +1,7 @@
 #include "shell_protocol.h"
 
 #include <stdlib.h>
+#include <string.h>
 #include <wayland-server-core.h>
 #include <wlr/types/wlr_seat.h>
 #include <wlr/types/wlr_xdg_shell.h>
@@ -25,6 +26,32 @@ struct shady_shell_protocol_state {
     struct wl_list clients;
     struct shady_toplevel *focused;
 };
+
+static struct shady_toplevel *find_window_id(
+        struct shady_shell_protocol_state *state, uint32_t id) {
+    struct shady_toplevel *toplevel;
+    wl_list_for_each(toplevel, &state->server->all_toplevels, all_link) {
+        if (toplevel->shell_id == id) return toplevel;
+    }
+    return NULL;
+}
+
+static bool resource_has_windows(struct wl_resource *resource) {
+    return wl_resource_get_version(resource) >= 2;
+}
+
+static void send_window(struct wl_resource *resource,
+        struct shady_shell_protocol_state *state,
+        struct shady_toplevel *toplevel) {
+    if (!resource_has_windows(resource) || !toplevel || !toplevel->mapped) return;
+    const char *app_id = toplevel->xdg_toplevel->app_id;
+    const char *title = toplevel->xdg_toplevel->title;
+    const char *workspace = shady_workspace_toplevel_name(toplevel);
+    bool focused = state->focused == toplevel;
+    shady_shell_v1_send_window(resource, toplevel->shell_id,
+        app_id ? app_id : "", title ? title : "",
+        workspace ? workspace : "", focused ? 1u : 0u);
+}
 
 static void send_focused(struct wl_resource *resource,
         struct shady_shell_protocol_state *state) {
@@ -52,6 +79,11 @@ static void send_snapshot(struct wl_resource *resource,
     shady_shell_v1_send_active_workspace(resource,
         shady_workspace_current_name(server));
     send_focused(resource, state);
+    if (resource_has_windows(resource)) {
+        struct shady_toplevel *toplevel;
+        wl_list_for_each(toplevel, &server->all_toplevels, all_link)
+            send_window(resource, state, toplevel);
+    }
     shady_shell_v1_send_done(resource);
 }
 
@@ -70,15 +102,41 @@ static void request_activate_workspace(struct wl_client *wl_client,
     (void)shady_workspace_switch(client->protocol->server, name);
 }
 
+static void request_activate_window(struct wl_client *wl_client,
+        struct wl_resource *resource, uint32_t id) {
+    (void)wl_client;
+    struct shady_shell_client *client = wl_resource_get_user_data(resource);
+    if (!client || !client->protocol) return;
+    struct shady_toplevel *toplevel = find_window_id(client->protocol, id);
+    if (!toplevel || !toplevel->mapped) return;
+    const char *workspace = shady_workspace_toplevel_name(toplevel);
+    if (workspace && *workspace &&
+            strcmp(workspace, shady_workspace_current_name(toplevel->server)) != 0)
+        shady_workspace_switch(toplevel->server, workspace);
+    focus_toplevel(toplevel);
+}
+
+static void request_close_window(struct wl_client *wl_client,
+        struct wl_resource *resource, uint32_t id) {
+    (void)wl_client;
+    struct shady_shell_client *client = wl_resource_get_user_data(resource);
+    if (!client || !client->protocol) return;
+    struct shady_toplevel *toplevel = find_window_id(client->protocol, id);
+    if (toplevel && toplevel->mapped)
+        wlr_xdg_toplevel_send_close(toplevel->xdg_toplevel);
+}
+
 static const struct shady_shell_v1_interface shell_impl = {
     .activate_workspace = request_activate_workspace,
+    .activate_window = request_activate_window,
+    .close_window = request_close_window,
 };
 
 static void bind_shell(struct wl_client *wl_client, void *data,
         uint32_t version, uint32_t id) {
     struct shady_shell_protocol_state *state = data;
     struct wl_resource *resource = wl_resource_create(wl_client,
-        &shady_shell_v1_interface, version < 1 ? version : 1, id);
+        &shady_shell_v1_interface, version < 2 ? version : 2, id);
     if (!resource) {
         wl_client_post_no_memory(wl_client);
         return;
@@ -125,12 +183,30 @@ static void protocol_event(shady_host host,
                 shady_shell_v1_send_active_workspace(client->resource,
                     event->object.workspace);
             }
+            if (resource_has_windows(client->resource)) {
+                struct shady_toplevel *window;
+                wl_list_for_each(window, &state->server->all_toplevels, all_link)
+                    send_window(client->resource, state, window);
+            }
             break;
+        case SHADY_EVENT_WINDOW_MAPPED:
         case SHADY_EVENT_WINDOW_FOCUSED:
-        case SHADY_EVENT_WINDOW_UNMAPPED:
-        case SHADY_EVENT_WINDOW_DESTROYED:
+        case SHADY_EVENT_WINDOW_RESIZED:
+        case SHADY_EVENT_WINDOW_STATE_CHANGED:
             send_focused(client->resource, state);
+            send_window(client->resource, state,
+                (struct shady_toplevel *)event->object.window);
             break;
+        case SHADY_EVENT_WINDOW_UNMAPPED:
+        case SHADY_EVENT_WINDOW_DESTROYED: {
+            struct shady_toplevel *window =
+                (struct shady_toplevel *)event->object.window;
+            send_focused(client->resource, state);
+            if (resource_has_windows(client->resource) && window)
+                shady_shell_v1_send_window_removed(client->resource,
+                    window->shell_id);
+            break;
+        }
         default:
             break;
         }
@@ -147,7 +223,7 @@ bool shady_shell_protocol_init(struct shady_server *server) {
     wl_list_init(&state->clients);
 
     state->global = wl_global_create(server->wl_display,
-        &shady_shell_v1_interface, 1, state, bind_shell);
+        &shady_shell_v1_interface, 2, state, bind_shell);
     if (!state->global) {
         free(state);
         return false;
@@ -156,7 +232,13 @@ bool shady_shell_protocol_init(struct shady_server *server) {
 
     if (!shady_event_subscribe_owned(server, SHADY_EVENT_WORKSPACE_CHANGED,
             protocol_event, state, state) ||
+        !shady_event_subscribe_owned(server, SHADY_EVENT_WINDOW_MAPPED,
+            protocol_event, state, state) ||
         !shady_event_subscribe_owned(server, SHADY_EVENT_WINDOW_FOCUSED,
+            protocol_event, state, state) ||
+        !shady_event_subscribe_owned(server, SHADY_EVENT_WINDOW_RESIZED,
+            protocol_event, state, state) ||
+        !shady_event_subscribe_owned(server, SHADY_EVENT_WINDOW_STATE_CHANGED,
             protocol_event, state, state) ||
         !shady_event_subscribe_owned(server, SHADY_EVENT_WINDOW_UNMAPPED,
             protocol_event, state, state) ||
