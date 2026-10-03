@@ -14,6 +14,7 @@
 #include "shady.h"
 #include "module/module.h"
 #include "render/render.h"
+#include "titlebar.h"
 
 static void set_scene_buffer_opacity(struct wlr_scene_buffer *buffer,
 		int sx, int sy, void *data) {
@@ -84,10 +85,12 @@ void shady_toplevel_refresh_border(struct shady_toplevel *toplevel) {
 	wlr_scene_node_set_position(&toplevel->focus_border[3]->node, width, 0);
 }
 
-static void refresh_all_borders(struct shady_server *server) {
+static void refresh_all_decorations(struct shady_server *server) {
 	struct shady_toplevel *toplevel;
-	wl_list_for_each(toplevel, &server->all_toplevels, all_link)
+	wl_list_for_each(toplevel, &server->all_toplevels, all_link) {
 		shady_toplevel_refresh_border(toplevel);
+		shady_titlebar_refresh(toplevel);
+	}
 }
 
 static struct wlr_output *toplevel_output(struct shady_toplevel *toplevel) {
@@ -168,6 +171,7 @@ static void apply_toplevel_state_values(struct shady_toplevel *toplevel,
 		shady_event_emit_window(server, SHADY_EVENT_WINDOW_STATE_CHANGED, toplevel);
 	}
 	shady_toplevel_refresh_border(toplevel);
+	shady_titlebar_refresh(toplevel);
 	shady_render_schedule_all_outputs(server);
 }
 
@@ -260,6 +264,7 @@ void focus_toplevel(struct shady_toplevel *toplevel) {
 	struct wlr_surface *surface = toplevel->xdg_toplevel->base->surface;
 	if (prev_surface == surface) {
 		shady_toplevel_refresh_border(toplevel);
+		shady_titlebar_refresh(toplevel);
 		return;
 	}
 	if (prev_surface) {
@@ -274,7 +279,7 @@ void focus_toplevel(struct shady_toplevel *toplevel) {
 	wl_list_remove(&toplevel->link);
 	wl_list_insert(&server->toplevels, &toplevel->link);
 	wlr_xdg_toplevel_set_activated(toplevel->xdg_toplevel, true);
-	refresh_all_borders(server);
+	refresh_all_decorations(server);
 	if (keyboard != NULL) {
 		wlr_seat_keyboard_notify_enter(seat, surface,
 			keyboard->keycodes, keyboard->num_keycodes, &keyboard->modifiers);
@@ -360,6 +365,7 @@ static void xdg_toplevel_map(struct wl_listener *listener, void *data) {
 	place_toplevel_initial(toplevel);
 	apply_toplevel_opacity(toplevel);
 	shady_toplevel_refresh_border(toplevel);
+	shady_titlebar_refresh(toplevel);
 	if (toplevel->xdg_toplevel->requested.maximized ||
 			toplevel->xdg_toplevel->requested.fullscreen) {
 		apply_requested_toplevel_state(toplevel);
@@ -389,6 +395,8 @@ static void xdg_toplevel_unmap(struct wl_listener *listener, void *data) {
 	shady_modules_toplevel_unmap(toplevel);
 	if (toplevel->focus_border_tree)
 		wlr_scene_node_set_enabled(&toplevel->focus_border_tree->node, false);
+	if (toplevel->titlebar_tree)
+		wlr_scene_node_set_enabled(&toplevel->titlebar_tree->node, false);
 	wl_list_remove(&toplevel->link);
 	toplevel->mapped = false;
 
@@ -436,9 +444,18 @@ static void xdg_toplevel_commit(struct wl_listener *listener, void *data) {
 		toplevel->last_surface_width = width;
 		toplevel->last_surface_height = height;
 		shady_toplevel_refresh_border(toplevel);
+		shady_titlebar_refresh(toplevel);
 		shady_event_emit_window(toplevel->server,
 			SHADY_EVENT_WINDOW_RESIZED, toplevel);
 	}
+}
+
+static void xdg_toplevel_set_title(struct wl_listener *listener, void *data) {
+	(void)data;
+	struct shady_toplevel *toplevel = wl_container_of(listener, toplevel, set_title);
+	shady_titlebar_refresh(toplevel);
+	if (toplevel->server->renderer)
+		shady_render_schedule_all_outputs(toplevel->server);
 }
 
 static void xdg_toplevel_destroy(struct wl_listener *listener, void *data) {
@@ -463,12 +480,14 @@ static void xdg_toplevel_destroy(struct wl_listener *listener, void *data) {
 	wl_list_remove(&toplevel->map.link);
 	wl_list_remove(&toplevel->unmap.link);
 	wl_list_remove(&toplevel->commit.link);
+	wl_list_remove(&toplevel->set_title.link);
 	wl_list_remove(&toplevel->destroy.link);
 	wl_list_remove(&toplevel->request_move.link);
 	wl_list_remove(&toplevel->request_resize.link);
 	wl_list_remove(&toplevel->request_maximize.link);
 	wl_list_remove(&toplevel->request_fullscreen.link);
 
+	shady_titlebar_fini(toplevel);
 	wl_list_remove(&toplevel->all_link);
 	shady_modules_toplevel_state_finish(toplevel);
 	free(toplevel);
@@ -535,6 +554,7 @@ void server_new_xdg_toplevel(struct wl_listener *listener, void *data) {
 				toplevel->focus_border_tree, 1, 1, border_color);
 		wlr_scene_node_set_enabled(&toplevel->focus_border_tree->node, false);
 	}
+	shady_titlebar_init(toplevel);
 
 	toplevel->map.notify = xdg_toplevel_map;
 	wl_signal_add(&xdg_toplevel->base->surface->events.map, &toplevel->map);
@@ -542,6 +562,8 @@ void server_new_xdg_toplevel(struct wl_listener *listener, void *data) {
 	wl_signal_add(&xdg_toplevel->base->surface->events.unmap, &toplevel->unmap);
 	toplevel->commit.notify = xdg_toplevel_commit;
 	wl_signal_add(&xdg_toplevel->base->surface->events.commit, &toplevel->commit);
+	toplevel->set_title.notify = xdg_toplevel_set_title;
+	wl_signal_add(&xdg_toplevel->events.set_title, &toplevel->set_title);
 
 	toplevel->destroy.notify = xdg_toplevel_destroy;
 	wl_signal_add(&xdg_toplevel->events.destroy, &toplevel->destroy);

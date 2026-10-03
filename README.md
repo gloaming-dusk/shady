@@ -263,6 +263,11 @@ shady.set("window_opacity", 0.92) -- 0.0 transparent, 1.0 opaque
 shady.set("window_border_width", 3.0) -- 0 disables borders
 shady.set("window_border_color", "#12394A")
 shady.set("window_border_focus_color", "#28E6FF")
+shady.set("window_titlebar", true) -- false disables compositor title bars
+shady.set("window_titlebar_height", 28.0)
+shady.set("window_titlebar_color", "#0B1F29")
+shady.set("window_titlebar_focus_color", "#123B4D")
+shady.set("window_titlebar_text_color", "#EAF9FF")
 
 shady.bind("fps_toggle", "F2")
 shady.bind("fps_capture", "F3")

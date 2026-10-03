@@ -172,6 +172,26 @@ static const char *DEBUG_FRAG =
 	"uniform vec4 u_color;\n"
 	"void main() { gl_FragColor = u_color; }\n";
 
+static const char *TITLEBAR_VERT =
+	"attribute vec3 a_pos;\n"
+	"uniform mat4 u_mvp;\n"
+	"varying vec2 v_uv;\n"
+	"void main() {\n"
+	"    v_uv = vec2(a_pos.x, 1.0 - a_pos.y);\n"
+	"    gl_Position = u_mvp * vec4(a_pos, 1.0);\n"
+	"    gl_Position.y = -gl_Position.y;\n"
+	"}\n";
+
+static const char *TITLEBAR_FRAG =
+	"precision mediump float;\n"
+	"uniform sampler2D u_tex;\n"
+	"uniform float u_opacity;\n"
+	"varying vec2 v_uv;\n"
+	"void main() {\n"
+	"    vec4 c = texture2D(u_tex, v_uv);\n"
+	"    gl_FragColor = vec4(c.rgb * u_opacity, c.a * u_opacity);\n"
+	"}\n";
+
 static const char *COPY_VERT =
 	"attribute vec3 a_pos;\n"
 	"varying vec2 v_uv;\n"
@@ -791,6 +811,15 @@ bool shady_gl_pipeline_init(
 	pipeline->u_effect_strength_ext = glGetUniformLocation(pipeline->prog_ext, "u_effect_strength");
 	pipeline->u_brightness_ext = glGetUniformLocation(pipeline->prog_ext, "u_brightness");
 
+	pipeline->titlebar_prog = link_program(TITLEBAR_VERT, TITLEBAR_FRAG, "titlebar");
+	if (!pipeline->titlebar_prog) {
+		shady_gl_pipeline_fini(pipeline);
+		return false;
+	}
+	pipeline->titlebar_u_mvp = glGetUniformLocation(pipeline->titlebar_prog, "u_mvp");
+	pipeline->titlebar_u_tex = glGetUniformLocation(pipeline->titlebar_prog, "u_tex");
+	pipeline->titlebar_u_opacity = glGetUniformLocation(pipeline->titlebar_prog, "u_opacity");
+
 	pipeline->copy_prog_2d =
 	link_program(
 		COPY_VERT,
@@ -957,6 +986,11 @@ void shady_gl_pipeline_fini(
 		);
 
 		pipeline->prog_ext = 0;
+	}
+
+	if (pipeline->titlebar_prog) {
+		glDeleteProgram(pipeline->titlebar_prog);
+		pipeline->titlebar_prog = 0;
 	}
 
 	if (pipeline->copy_prog_2d) {
@@ -1170,6 +1204,41 @@ void shady_gl_pipeline_draw_window(
 		0
 	);
 
+	glUseProgram(0);
+}
+
+void shady_gl_pipeline_draw_titlebar(
+	struct shady_gl_pipeline *pipeline,
+	GLuint texture,
+	const float mvp[16],
+	float opacity
+) {
+	if (!pipeline || !pipeline->titlebar_prog || !texture || opacity <= 0.f) return;
+	if (opacity > 1.f) opacity = 1.f;
+
+	glUseProgram(pipeline->titlebar_prog);
+	glUniformMatrix4fv(pipeline->titlebar_u_mvp, 1, GL_FALSE, mvp);
+	glUniform1i(pipeline->titlebar_u_tex, 0);
+	glUniform1f(pipeline->titlebar_u_opacity, opacity);
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_2D, texture);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+	glDepthMask(GL_FALSE);
+	glBindBuffer(GL_ARRAY_BUFFER, pipeline->mesh_vbo);
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE,
+		3 * sizeof(GLfloat), (void *)0);
+	glEnableVertexAttribArray(0);
+	glDrawArrays(GL_TRIANGLES, 0, pipeline->mesh_vertex_count);
+	glDisableVertexAttribArray(0);
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
+	glDepthMask(GL_TRUE);
+	glBindTexture(GL_TEXTURE_2D, 0);
 	glUseProgram(0);
 }
 

@@ -45,6 +45,12 @@ struct shady_gl_pipeline {
 	GLint u_effect_strength_ext;
 	GLint u_brightness_ext;
 
+	/* Unlit compositor-side title bar texture. */
+	GLuint titlebar_prog;
+	GLint titlebar_u_mvp;
+	GLint titlebar_u_tex;
+	GLint titlebar_u_opacity;
+
 	/*
 	 * Subdivided mesh used for wobbly and crumple deformation.
 	 */
@@ -126,6 +132,13 @@ void shady_gl_pipeline_draw_window(
 	const float tint[4],
 	float effect_strength,
 	float brightness
+);
+
+void shady_gl_pipeline_draw_titlebar(
+	struct shady_gl_pipeline *pipeline,
+	GLuint texture,
+	const float mvp[16],
+	float opacity
 );
 
 void shady_gl_pipeline_draw_sides(

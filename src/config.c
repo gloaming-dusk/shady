@@ -39,6 +39,11 @@ void shady_config_defaults(struct shady_config *c) {
 		.window_border_width = 3.0f,
 		.window_border_color = { 0.055f, 0.20f, 0.30f },
 		.window_border_focus_color = { 0.10f, 0.65f, 1.0f },
+		.window_titlebar = true,
+		.window_titlebar_height = 28.0f,
+		.window_titlebar_color = { 0.035f, 0.075f, 0.10f },
+		.window_titlebar_focus_color = { 0.055f, 0.16f, 0.22f },
+		.window_titlebar_text_color = { 0.90f, 0.96f, 1.0f },
 		.environment_obj = false,
 		.environment_obj_path = "",
 		.bind_quit = { XKB_KEY_Escape, 0 },
@@ -155,6 +160,10 @@ bool shady_config_set(struct shady_config *c,const char *key,const char *value){
 	if(!strcmp(key,"window_border_width"))return parse_float_range(value,0.f,32.f,&c->window_border_width);
 	if(!strcmp(key,"window_border_color"))return parse_color(value,c->window_border_color);
 	if(!strcmp(key,"window_border_focus_color"))return parse_color(value,c->window_border_focus_color);
+	if(!strcmp(key,"window_titlebar_height"))return parse_float_range(value,16.f,64.f,&c->window_titlebar_height);
+	if(!strcmp(key,"window_titlebar_color"))return parse_color(value,c->window_titlebar_color);
+	if(!strcmp(key,"window_titlebar_focus_color"))return parse_color(value,c->window_titlebar_focus_color);
+	if(!strcmp(key,"window_titlebar_text_color"))return parse_color(value,c->window_titlebar_text_color);
 	if(!strcmp(key,"environment_obj_path")){snprintf(c->environment_obj_path,sizeof(c->environment_obj_path),"%s",value);return true;}
 #define BIND_SET(name,field) if(!strcmp(key,"bind." name))return parse_keybind(value,&c->field);
 	BIND_SET("quit",bind_quit) BIND_SET("cycle_windows",bind_cycle_windows)
@@ -172,6 +181,7 @@ bool shady_config_set(struct shady_config *c,const char *key,const char *value){
 	BOOL_SET("window_wobble",window_wobble) BOOL_SET("window_sides",window_sides)
 	BOOL_SET("shadows",shadows) BOOL_SET("floor",floor) BOOL_SET("close_animation",close_animation)
 	BOOL_SET("fps_mode",fps_mode) BOOL_SET("sky",sky) BOOL_SET("environment_obj",environment_obj)
+	BOOL_SET("window_titlebar",window_titlebar)
 #undef BOOL_SET
 	return false;
 }

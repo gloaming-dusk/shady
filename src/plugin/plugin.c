@@ -42,10 +42,13 @@ static bool host_has_capability(shady_host host, const char *capability) {
 static bool host_config_set(shady_host host, const char *key, const char *value) {
 	struct shady_server *server = HOST(host);
 	if (!shady_config_set(&server->config, key, value)) return false;
-	if (!strncmp(key, "window_border_", 14)) {
+	if (!strncmp(key, "window_border_", 14) ||
+			!strncmp(key, "window_titlebar", 15)) {
 		struct shady_toplevel *toplevel;
-		wl_list_for_each(toplevel, &server->all_toplevels, all_link)
+		wl_list_for_each(toplevel, &server->all_toplevels, all_link) {
 			shady_toplevel_refresh_border(toplevel);
+			shady_titlebar_refresh(toplevel);
+		}
 	}
 	if (server->renderer) shady_render_schedule_all_outputs(server);
 	return true;

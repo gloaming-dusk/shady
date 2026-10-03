@@ -35,6 +35,7 @@
 #include <wlr/util/log.h>
 
 #include "shady.h"
+#include "titlebar.h"
 #include "render/render.h"
 #include "module/module.h"
 #include "config_lua.h"
@@ -397,5 +398,6 @@ int main(int argc, char *argv[]) {
 	shady_modules_release_states(&server);
 	shady_events_finish(&server);
 	shady_modules_close_plugins(&server);
+	shady_titlebar_global_fini();
 	return 0;
 }

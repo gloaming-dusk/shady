@@ -1080,6 +1080,38 @@ void shady_render_output_frame(
 			server->config.window_brightness * (focused ? 1.08f : 1.0f)
 		);
 
+		bool cube_titlebar_hidden = shady_spatial_state(server)->runtime.camera.first_person &&
+			!shady_fps_toplevel_state_const(toplevel)->expanded;
+		if (!toplevel->fullscreen && !cube_titlebar_hidden &&
+				server->config.window_titlebar && toplevel->titlebar_texture &&
+				wlr_texture_is_gles2(toplevel->titlebar_texture) &&
+				toplevel->titlebar_height > 0) {
+			struct wlr_gles2_texture_attribs title_attribs;
+			wlr_gles2_texture_get_attribs(toplevel->titlebar_texture, &title_attribs);
+			if (title_attribs.target == GL_TEXTURE_2D) {
+				float title_model[16], title_mvp[16];
+				float title_y = toplevel->maximized
+					? layout_y
+					: layout_y - (float)toplevel->titlebar_height;
+				if (screen_space) {
+					shady_mat4_identity(title_model);
+					shady_screen_space_model(title_mvp, layout_x, title_y,
+						tw, (float)toplevel->titlebar_height,
+						logical_w, logical_h);
+				} else {
+					shady_window_model(title_model,
+						layout_x, title_y, tw, (float)toplevel->titlebar_height,
+						logical_w, logical_h,
+						shady_spatial_toplevel_state(toplevel)->z,
+						shady_window_motion_state_for_const(toplevel)->tilt_x,
+						shady_window_motion_state_for_const(toplevel)->tilt_y);
+					shady_mat4_multiply(title_mvp, vp, title_model);
+				}
+				shady_gl_pipeline_draw_titlebar(&pipeline, title_attribs.tex,
+					title_mvp, server->config.window_opacity);
+			}
+		}
+
 		/* Render wl_subsurface children from the same scene subtree instead of
 		 * silently dropping them in spatial mode. XDG popups are intentionally
 		 * excluded here and composed later as 2D overlays. */

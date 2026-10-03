@@ -58,6 +58,7 @@ shady_sources = [
   'src/plugin/plugin.c',
   'src/config.c',
   'src/config_lua.c',
+  'src/titlebar.c',
   'src/input.c',
   'src/xdg.c',
   'src/layer.c',
@@ -134,6 +135,11 @@ if scene_effects_enabled
   ]
 endif
 
+core_cairo = dependency('cairo')
+core_pangocairo = dependency('pangocairo')
+core_pangoft2 = dependency('pangoft2')
+core_fontconfig = dependency('fontconfig')
+
 shady_deps = [
   wlroots,
   dependency('wayland-server'),
@@ -142,6 +148,10 @@ shady_deps = [
   cc.find_library('m', required: true),
   lua,
   dl,
+  core_cairo,
+  core_pangocairo,
+  core_pangoft2,
+  core_fontconfig,
 ]
 if spatial_enabled
   shady_deps += [egl, glesv2]
@@ -350,3 +360,18 @@ config_border_test = executable('config-border-test',
   install: false)
 
 test('config-border', config_border_test)
+
+config_titlebar_test = executable('config-titlebar-test',
+  [
+    'tests/config-titlebar.c',
+    'src/config.c',
+  ],
+  c_args: [
+    '-DWLR_USE_UNSTABLE',
+    '-D_POSIX_C_SOURCE=200809L',
+  ],
+  include_directories: include_directories('src', 'include'),
+  dependencies: [wlroots, dependency('wayland-server'), dependency('xkbcommon')],
+  install: false)
+
+test('config-titlebar', config_titlebar_test)

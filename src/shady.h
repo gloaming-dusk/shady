@@ -37,6 +37,9 @@ struct wlr_output_manager_v1;
 struct wlr_session_lock_manager_v1;
 struct wlr_session_lock_v1;
 struct wlr_scene_tree;
+struct wlr_scene_buffer;
+struct wlr_buffer;
+struct wlr_texture;
 struct wlr_layer_surface_v1;
 struct wlr_scene_layer_surface_v1;
 struct wlr_keyboard;
@@ -84,6 +87,11 @@ struct shady_config {
 	float window_border_width;
 	float window_border_color[3];
 	float window_border_focus_color[3];
+	bool window_titlebar;
+	float window_titlebar_height;
+	float window_titlebar_color[3];
+	float window_titlebar_focus_color[3];
+	float window_titlebar_text_color[3];
 	bool environment_obj;
 	char environment_obj_path[512];
 
@@ -188,9 +196,16 @@ struct shady_toplevel {
 	struct wlr_scene_tree *scene_tree;
 	struct wlr_scene_tree *focus_border_tree;
 	struct wlr_scene_rect *focus_border[4];
+	struct wlr_scene_tree *titlebar_tree;
+	struct wlr_scene_buffer *titlebar_scene_buffer;
+	struct wlr_buffer *titlebar_buffer;
+	struct wlr_texture *titlebar_texture;
+	int titlebar_width;
+	int titlebar_height;
 	struct wl_listener map;
 	struct wl_listener unmap;
 	struct wl_listener commit;
+	struct wl_listener set_title;
 	struct wl_listener destroy;
 	struct wl_listener request_move;
 	struct wl_listener request_resize;
@@ -280,6 +295,7 @@ void shady_toplevel_refresh_state(struct shady_toplevel *toplevel);
 void shady_toplevel_get_border(const struct shady_toplevel *toplevel,
 	float *width, float color[4]);
 void shady_toplevel_refresh_border(struct shady_toplevel *toplevel);
+void shady_titlebar_refresh(struct shady_toplevel *toplevel);
 void shady_toplevel_recover_to_output(struct shady_toplevel *toplevel,
 	struct wlr_output *output);
 void reset_cursor_mode(struct shady_server *server);
