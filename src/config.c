@@ -38,7 +38,7 @@ void shady_config_defaults(struct shady_config *c) {
 		.environment_obj = false,
 		.environment_obj_path = "",
 		.bind_quit = { XKB_KEY_Escape, 0 },
-		.bind_cycle_windows = { XKB_KEY_F1, 0 },
+		.bind_cycle_windows = { XKB_KEY_Tab, WLR_MODIFIER_ALT },
 		.bind_close_window = { XKB_KEY_F11, WLR_MODIFIER_ALT },
 		.bind_fps_toggle = { XKB_KEY_F2, 0 },
 		.bind_fps_capture = { XKB_KEY_F3, 0 },

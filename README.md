@@ -61,7 +61,7 @@ The F7–F9 bindings are implemented in `test-shady.lua`, not hard-coded composi
 | Alt + middle-button drag | Pan camera |
 | Alt + scroll | Zoom |
 | Alt + Shift + scroll | Move focused window along Z |
-| F1 | Cycle windows |
+| Alt + Tab | Cycle windows |
 | Alt + F11 | Animate and request window close |
 | Alt + arrows | Pan |
 | Alt + Q / E | Orbit yaw |

@@ -48,6 +48,7 @@ test_daily() {
   SHADY_DAILY_BUILD_DIR="$BUILD_DIR" bash ./tests/plugin-reload.sh
   SHADY_DAILY_BUILD_DIR="$BUILD_DIR" bash ./tests/plugin-rollback.sh
   SHADY_DAILY_BUILD_DIR="$BUILD_DIR" bash ./tests/headless-automation.sh
+  SHADY_DAILY_BUILD_DIR="$BUILD_DIR" bash ./tests/headless-alt-tab.sh
 }
 
 case "${1:-all}" in

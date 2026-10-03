@@ -34,6 +34,8 @@ struct probe {
 	bool drag_seen;
 	bool scroll_seen;
 	bool pointer_down;
+	uint32_t base_color;
+	const char *app_id;
 	const char *status_path;
 };
 
@@ -60,7 +62,7 @@ static void draw(struct probe *p) {
 
 	for (int y = 0; y < HEIGHT; y++) {
 		for (int x = 0; x < WIDTH; x++) {
-			uint32_t c = 0xff20242au;
+			uint32_t c = p->base_color;
 			if (p->key_seen && y < HEIGHT / 2) c = 0xff2e8b57u;
 			if (p->click_seen && x < 48) c = 0xffb33a3au;
 			if (p->scroll_seen && x >= WIDTH - 48) c = 0xff3a64b3u;
@@ -285,7 +287,13 @@ static const struct wl_registry_listener registry_listener = {
 };
 
 int main(void) {
-	struct probe p = { .status_path = getenv("SHADY_AUTOMATION_PROBE_STATUS") };
+	const char *app_id = getenv("SHADY_AUTOMATION_PROBE_APP_ID");
+	const char *color = getenv("SHADY_AUTOMATION_PROBE_COLOR");
+	struct probe p = {
+		.status_path = getenv("SHADY_AUTOMATION_PROBE_STATUS"),
+		.app_id = app_id && *app_id ? app_id : "shady-automation-probe",
+		.base_color = color && *color ? (uint32_t)strtoul(color, NULL, 0) : 0xff20242au,
+	};
 	p.display = wl_display_connect(NULL);
 	if (!p.display) return 1;
 	struct wl_registry *registry = wl_display_get_registry(p.display);
@@ -298,7 +306,7 @@ int main(void) {
 	xdg_surface_add_listener(p.xdg_surface, &xdg_surface_listener, &p);
 	p.toplevel = xdg_surface_get_toplevel(p.xdg_surface);
 	xdg_toplevel_add_listener(p.toplevel, &toplevel_listener, &p);
-	xdg_toplevel_set_app_id(p.toplevel, "shady-automation-probe");
+	xdg_toplevel_set_app_id(p.toplevel, p.app_id);
 	xdg_toplevel_set_title(p.toplevel, "Shady Automation Probe");
 	xdg_toplevel_set_min_size(p.toplevel, WIDTH, HEIGHT);
 	xdg_toplevel_set_max_size(p.toplevel, WIDTH, HEIGHT);
