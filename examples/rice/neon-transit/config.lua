@@ -57,15 +57,27 @@ shady.plugin(os.getenv("SHADY_FPS_REPRESENTATION_PLUGIN") or
     (root .. "/build/libshady-plugin-fps-cube.so"))
 
 -- Native C spatial mode. Overview is the default because it gives Neon Transit
--- an explicit 3D workspace switcher without competing Z writers. Set
--- SHADY_NEON_DEPTH_MODE=focus to use the older focus-depth behavior instead.
-local depth_mode = os.getenv("SHADY_NEON_DEPTH_MODE") or "overview"
-if depth_mode == "focus" then
-    shady.plugin(os.getenv("SHADY_FOCUS_DEPTH_PLUGIN") or
-        (root .. "/build/libshady-plugin-focus-depth.so"))
-else
-    shady.plugin(os.getenv("SHADY_OVERVIEW_PLUGIN") or
-        (root .. "/build/libshady-plugin-spatial-overview.so"))
+-- an explicit 3D workspace switcher without competing position writers. Magnetic
+-- Windows also writes window positions, so opt-in magnetic mode skips the default
+-- overview plugin unless a depth mode is explicitly requested.
+local magnetic_enabled = os.getenv("SHADY_NEON_MAGNETIC") == "1"
+local explicit_depth_mode = os.getenv("SHADY_NEON_DEPTH_MODE")
+local depth_mode = explicit_depth_mode or "overview"
+if not magnetic_enabled or explicit_depth_mode then
+    if depth_mode == "focus" then
+        shady.plugin(os.getenv("SHADY_FOCUS_DEPTH_PLUGIN") or
+            (root .. "/build/libshady-plugin-focus-depth.so"))
+    else
+        shady.plugin(os.getenv("SHADY_OVERVIEW_PLUGIN") or
+            (root .. "/build/libshady-plugin-spatial-overview.so"))
+    end
+end
+
+-- Experimental spatial docking. Nearby windows spring toward stable edge-to-edge
+-- structures; Super+M toggles the behavior at runtime.
+if magnetic_enabled then
+    shady.plugin(os.getenv("SHADY_MAGNETIC_PLUGIN") or
+        (root .. "/build/libshady-plugin-magnetic-windows.so"))
 end
 
 -- Native liquid-surface effect is part of the Neon Transit look by default.

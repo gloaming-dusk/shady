@@ -28,6 +28,7 @@ The project is intentionally experimental. The imported TinyWL example is CC0; s
 - Standalone `shady-shell` with taskbar, workspaces, launcher, window context menu and Quick Settings
 - First-person WASD + mouse-look navigation, jumping and player collision
 - FPS window bodies are plugin-defined: cube, squash, springy jelly, folded-paper and spring-driven origami examples can be swapped while render, picking and physics share one representation contract, including cached single/compound convex collision bodies
+- **Magnetic Windows** plugin (`Super+M`) turns nearby windows into spring-docked spatial structures and hot-reloads through ABI v2 state migration without owning their representation
 - Window gravity, bounce, friction, wobble and collision response
 - OBJ environment loading with authored `collision_*` geometry and SAT collision
 - Built-in floor, cyan grid, projected shadows, lit 3D window shells and sky/environment support
@@ -126,6 +127,14 @@ Once DRM modesetting, keyboard/mouse input, VT ownership and shutdown all work, 
 ```sh
 seatd-launch ./build/shady --native
 ```
+
+Neon Transit can opt into Magnetic Windows without changing its default behavior:
+
+```sh
+SHADY_NEON_MAGNETIC=1 ./examples/rice/neon-transit/run.sh
+```
+
+When enabled, Neon Transit skips its default spatial-overview position writer so the magnetic docking plugin can own window motion cleanly. `Super+M` toggles magnetic docking at runtime. To deliberately combine Magnetic Windows with a depth plugin, set `SHADY_NEON_DEPTH_MODE=focus` (or `overview`) explicitly.
 
 For a plain desktop/safe path that bypasses the spatial renderer, physics,
 FPS interaction and visual effects, use:

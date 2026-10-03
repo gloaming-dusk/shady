@@ -283,6 +283,13 @@ shared_module('shady-plugin-fps-origami',
   build_by_default: true,
   install: false)
 
+shared_module('shady-plugin-magnetic-windows',
+  'examples/plugins/magnetic_windows.c',
+  include_directories: include_directories('include'),
+  dependencies: [dependency('xkbcommon')],
+  build_by_default: true,
+  install: false)
+
 shared_module('shady-plugin-focus-depth',
   'examples/plugins/focus_depth.c',
   include_directories: include_directories('include'),

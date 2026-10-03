@@ -514,7 +514,7 @@ See [SHADER_API.md](SHADER_API.md) for the shader contract.
 
 Stateless plugins can reload directly.
 
-Stateful plugins should use ABI v2 snapshot/restore callbacks. Snapshot memory is host-owned so it remains valid while the old shared object is closed and the replacement is loaded.
+Stateful plugins should use ABI v2 snapshot/restore callbacks. Snapshot memory is host-owned so it remains valid while the old shared object is closed and the replacement is loaded. `examples/plugins/magnetic_windows.c` is a practical example: it snapshots both module-level enable/animation state and per-window spring velocity/bond state, allowing its magnetic docking simulation to continue safely after hot reload.
 
 Reload is rejected if capability/dependency contracts become incompatible.
 
