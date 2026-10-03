@@ -253,6 +253,18 @@ shared_module('shady-plugin-orbit-layout',
   build_by_default: false,
   install: false)
 
+shared_module('shady-plugin-fps-cube',
+  'examples/plugins/fps_cube.c',
+  include_directories: include_directories('include'),
+  build_by_default: true,
+  install: false)
+
+shared_module('shady-plugin-fps-squash',
+  'examples/plugins/fps_squash.c',
+  include_directories: include_directories('include'),
+  build_by_default: true,
+  install: false)
+
 shared_module('shady-plugin-focus-depth',
   'examples/plugins/focus_depth.c',
   include_directories: include_directories('include'),

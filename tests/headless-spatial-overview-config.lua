@@ -11,6 +11,9 @@ shady.set("floor", true)
 shady.set("close_animation", false)
 shady.set("fps_mode", true)
 
+local root = os.getenv("SHADY_ROOT") or "."
+shady.plugin(root .. "/build/libshady-plugin-fps-cube.so")
+
 shady.modules({
     ["window-motion"] = true,
     ["physics"] = false,

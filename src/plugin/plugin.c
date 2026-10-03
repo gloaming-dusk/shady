@@ -585,6 +585,54 @@ static shady_shader_program host_window_shader(shady_window window) {
 	return toplevel ? toplevel->plugin_shader_program : 0;
 }
 
+static bool host_window_set_representation(shady_host host, shady_window window,
+		const struct shady_window_representation *representation) {
+	if (!host_window_valid(host, window) || !representation ||
+			representation->struct_size < sizeof(*representation) ||
+			representation->kind != SHADY_WINDOW_REPRESENTATION_BOX ||
+			representation->width <= 0.f || representation->height <= 0.f ||
+			representation->depth <= 0.f)
+		return false;
+	void *owner = plugin_owner_from_address(__builtin_return_address(0));
+	if (!owner) return false;
+	struct shady_toplevel *toplevel = WINDOW(window);
+	toplevel->plugin_representation = *representation;
+	toplevel->plugin_representation_override = true;
+	toplevel->plugin_representation_owner = owner;
+	if (HOST(host)->renderer) shady_render_schedule_all_outputs(HOST(host));
+	return true;
+}
+
+static bool host_window_reset_representation(shady_host host, shady_window window) {
+	if (!host_window_valid(host, window)) return false;
+	void *owner = plugin_owner_from_address(__builtin_return_address(0));
+	struct shady_toplevel *toplevel = WINDOW(window);
+	if (toplevel->plugin_representation_owner && owner &&
+			toplevel->plugin_representation_owner != owner)
+		return false;
+	memset(&toplevel->plugin_representation, 0,
+		sizeof(toplevel->plugin_representation));
+	toplevel->plugin_representation_override = false;
+	toplevel->plugin_representation_owner = NULL;
+	if (HOST(host)->renderer) shady_render_schedule_all_outputs(HOST(host));
+	return true;
+}
+
+static bool host_window_representation(shady_window window,
+		struct shady_window_representation *representation, bool *overridden) {
+	struct shady_toplevel *toplevel = WINDOW(window);
+	if (!toplevel || !representation) return false;
+	if (toplevel->plugin_representation_override)
+		*representation = toplevel->plugin_representation;
+	else
+		*representation = (struct shady_window_representation){
+			.struct_size = sizeof(*representation),
+			.kind = SHADY_WINDOW_REPRESENTATION_DEFAULT,
+		};
+	if (overridden) *overridden = toplevel->plugin_representation_override;
+	return true;
+}
+
 static const struct shady_plugin_api_v1 plugin_api = {
 	.abi_version = SHADY_PLUGIN_ABI_V1,
 	.struct_size = sizeof(struct shady_plugin_api_v1),
@@ -657,6 +705,9 @@ static const struct shady_plugin_api_v1 plugin_api = {
 	.window_set_shader = host_window_set_shader,
 	.window_reset_shader = host_window_reset_shader,
 	.window_shader = host_window_shader,
+	.window_set_representation = host_window_set_representation,
+	.window_reset_representation = host_window_reset_representation,
+	.window_representation = host_window_representation,
 };
 
 static bool list_contains(const char *const *items, const char *value) {

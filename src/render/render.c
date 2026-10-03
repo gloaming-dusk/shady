@@ -442,6 +442,12 @@ void shady_render_plugin_cleanup_owner(struct shady_server *server, void *owner)
 				toplevel->plugin_shader_program = 0;
 				toplevel->plugin_shader_owner = NULL;
 			}
+			if (toplevel->plugin_representation_owner == owner) {
+				toplevel->plugin_representation_override = false;
+				memset(&toplevel->plugin_representation, 0,
+					sizeof(toplevel->plugin_representation));
+				toplevel->plugin_representation_owner = NULL;
+			}
 		}
 	}
 	if (plugin_make_current()) for (size_t i = 0; i < SHADY_PLUGIN_SHADER_MAX; i++)
@@ -1459,9 +1465,14 @@ void shady_render_output_frame(
 			}
 		}
 
-		bool cube_titlebar_hidden = shady_spatial_state(server)->runtime.camera.first_person &&
-			!shady_fps_toplevel_state_const(toplevel)->expanded;
-		bool frame_has_titlebar = !toplevel->fullscreen && !cube_titlebar_hidden &&
+		float representation_size[3] = {0.f, 0.f, 0.f};
+		bool representation_hide_titlebar = false;
+		bool folded_representation = shady_spatial_state(server)->runtime.camera.first_person &&
+			!shady_fps_toplevel_state_const(toplevel)->expanded &&
+			shady_toplevel_box_representation(toplevel, representation_size,
+				&representation_hide_titlebar);
+		bool frame_has_titlebar = !toplevel->fullscreen &&
+			!(folded_representation && representation_hide_titlebar) &&
 			server->config.window_titlebar && toplevel->titlebar_texture &&
 			wlr_texture_is_gles2(toplevel->titlebar_texture) &&
 			toplevel->titlebar_height > 0;
@@ -1489,11 +1500,13 @@ void shady_render_output_frame(
 			wobble_x = 0.f;
 			wobble_y = 0.f;
 		} else {
-			if(shady_spatial_state(server)->runtime.camera.first_person&&!shady_fps_toplevel_state_const(toplevel)->expanded){
+			if (folded_representation) {
 				float cx=(layout_x+tw*.5f-logical_w*.5f)/logical_h;
 				float cy=.5f-(layout_y+th*.5f)/logical_h;
-				shady_window_cube_model(model,cx,cy,shady_spatial_toplevel_state(toplevel)->z,SHADY_FPS_CUBE_SIZE,
-					shady_window_motion_state_for_const(toplevel)->tilt_x,shady_window_motion_state_for_const(toplevel)->tilt_y);
+				shady_window_box_model(model,cx,cy,shady_spatial_toplevel_state(toplevel)->z,
+					representation_size[0], representation_size[1], representation_size[2],
+					shady_window_motion_state_for_const(toplevel)->tilt_x,
+					shady_window_motion_state_for_const(toplevel)->tilt_y);
 			}else{
 				shady_window_model(
 				model,
@@ -1797,19 +1810,26 @@ void shady_render_output_frame(
 			if(!ds->mapped||!debug_t->scene_tree->node.enabled)continue;
 			float dw=(float)ds->current.width,dh=(float)ds->current.height;
 			if(dw<=0.f||dh<=0.f)continue;
-			if(shady_spatial_state(server)->runtime.camera.first_person&&!shady_fps_toplevel_state_const(debug_t)->expanded){
-				/* Debug the authoritative physics cube, not only the textured
-				 * window face. This shows all 12 edges / six collision faces. */
+			float debug_representation[3] = {0.f, 0.f, 0.f};
+			bool debug_folded = shady_spatial_state(server)->runtime.camera.first_person &&
+				!shady_fps_toplevel_state_const(debug_t)->expanded &&
+				shady_toplevel_box_representation(debug_t, debug_representation, NULL);
+			if (debug_folded) {
+				/* Debug the authoritative plugin-selected box, not only the textured
+				 * window face. This keeps visible and collision geometry comparable. */
 				float dx=(float)debug_t->scene_tree->node.x+ox;
 				float dy=(float)debug_t->scene_tree->node.y+oy;
 				float dcx=(dx+dw*.5f-logical_w*.5f)/logical_h;
 				float dcy=.5f-(dy+dh*.5f)/logical_h;
-				float h=SHADY_FPS_CUBE_SIZE*.5f;
-				struct shady_box_collider cube={
-					dcx-h,dcx+h,dcy-h,dcy+h,
-					shady_spatial_toplevel_state(debug_t)->z-h,shady_spatial_toplevel_state(debug_t)->z+h
+				float hx=debug_representation[0]*.5f;
+				float hy=debug_representation[1]*.5f;
+				float hz=debug_representation[2]*.5f;
+				struct shady_box_collider box={
+					dcx-hx,dcx+hx,dcy-hy,dcy+hy,
+					shady_spatial_toplevel_state(debug_t)->z-hz,
+					shady_spatial_toplevel_state(debug_t)->z+hz
 				};
-				shady_gl_pipeline_draw_debug_box(&pipeline,vp,&cube,false);
+				shady_gl_pipeline_draw_debug_box(&pipeline,vp,&box,false);
 			}else{
 				float dm[16];
 				shady_window_model(dm,(float)debug_t->scene_tree->node.x+ox,

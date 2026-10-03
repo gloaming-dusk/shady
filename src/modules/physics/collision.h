@@ -13,6 +13,8 @@ bool shady_physics_sweep_cube_axis(const struct shady_world *world,
 	float center[3], const float half[3], int axis, float delta,
 	float *velocity, float restitution);
 
+void shady_physics_move_box(const struct shady_world *world, float center[3],
+	const float target[3], const float half[3]);
 void shady_physics_move_cube(const struct shady_world *world, float center[3],
 	const float target[3], float half_size);
 

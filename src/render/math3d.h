@@ -59,6 +59,8 @@ void shady_camera_eye(const struct shady_camera *cam, struct shady_vec3 *eye);
  * Map layout pixel rect (top-left origin) into a model matrix for a unit quad
  * on z=0. World: origin at output center, +Y up, 1 unit = output height px.
  */
+void shady_window_box_model(float model[16], float center_x,float center_y,float center_z,
+	float width,float height,float depth,float tilt_x,float tilt_y);
 void shady_window_cube_model(float model[16], float center_x,float center_y,float center_z,
 	float size,float tilt_x,float tilt_y);
 void shady_window_model(float model[16],

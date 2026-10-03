@@ -159,8 +159,8 @@ bool shady_physics_sweep_cube_axis(const struct shady_world *world,
 	return hit;
 }
 
-void shady_physics_move_cube(const struct shady_world *world, float center[3],
-		const float target[3], float half_size) {
+void shady_physics_move_box(const struct shady_world *world, float center[3],
+		const float target[3], const float half[3]) {
 	float delta[3] = {
 		target[0] - center[0],
 		target[1] - center[1],
@@ -168,7 +168,8 @@ void shady_physics_move_cube(const struct shady_world *world, float center[3],
 	};
 	float max_move = fmaxf(fabsf(delta[0]),
 		fmaxf(fabsf(delta[1]), fabsf(delta[2])));
-	float max_step = half_size * .5f;
+	float min_half = fminf(half[0], fminf(half[1], half[2]));
+	float max_step = fmaxf(min_half * .5f, .002f);
 	int steps = (int)ceilf(max_move / max_step);
 	if (steps < 1) steps = 1;
 	if (steps > 64) steps = 64;
@@ -178,7 +179,6 @@ void shady_physics_move_cube(const struct shady_world *world, float center[3],
 		delta[1] / steps,
 		delta[2] / steps,
 	};
-	const float half[3] = {half_size, half_size, half_size};
 	float velocity = 0.f;
 
 	for (int i = 0; i < steps; i++) {
@@ -189,4 +189,10 @@ void shady_physics_move_cube(const struct shady_world *world, float center[3],
 		shady_physics_sweep_cube_axis(world, center, half, 2,
 			step[2], &velocity, 0.f);
 	}
+}
+
+void shady_physics_move_cube(const struct shady_world *world, float center[3],
+		const float target[3], float half_size) {
+	const float half[3] = {half_size, half_size, half_size};
+	shady_physics_move_box(world, center, target, half);
 }

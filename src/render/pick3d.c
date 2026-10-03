@@ -171,9 +171,16 @@ struct shady_toplevel *shady_toplevel_at_3d(struct shady_server *server,
 
 		float model[16];
 		float client_fraction = 1.f;
-		if(shady_spatial_state(server)->runtime.camera.first_person&&!shady_fps_toplevel_state_const(toplevel)->expanded){
+		float representation_size[3] = {0.f, 0.f, 0.f};
+		bool folded_representation = shady_spatial_state(server)->runtime.camera.first_person &&
+			!shady_fps_toplevel_state_const(toplevel)->expanded &&
+			shady_toplevel_box_representation(toplevel, representation_size, NULL);
+		if (folded_representation) {
 			float cx=(layout_x+tw*.5f-logical_w*.5f)/logical_h,cy=.5f-(layout_y+th*.5f)/logical_h;
-			shady_window_cube_model(model,cx,cy,shady_spatial_toplevel_state(toplevel)->z,SHADY_FPS_CUBE_SIZE,shady_window_motion_state_for_const(toplevel)->tilt_x,shady_window_motion_state_for_const(toplevel)->tilt_y);
+			shady_window_box_model(model,cx,cy,shady_spatial_toplevel_state(toplevel)->z,
+				representation_size[0], representation_size[1], representation_size[2],
+				shady_window_motion_state_for_const(toplevel)->tilt_x,
+				shady_window_motion_state_for_const(toplevel)->tilt_y);
 		}else{
 			float title_h = (!toplevel->fullscreen && server->config.window_titlebar &&
 				toplevel->titlebar_height > 0) ? (float)toplevel->titlebar_height : 0.f;
@@ -266,15 +273,18 @@ struct shady_toplevel *shady_toplevel_at_camera_center_hit_output(
 			if (tw <= 0.f || th <= 0.f) continue;
 
 			float model[16];
-			if (shady_spatial_state(server)->runtime.camera.first_person &&
-					!shady_fps_toplevel_state_const(toplevel)->expanded) {
+			float representation_size[3] = {0.f, 0.f, 0.f};
+			bool folded_representation = shady_spatial_state(server)->runtime.camera.first_person &&
+				!shady_fps_toplevel_state_const(toplevel)->expanded &&
+				shady_toplevel_box_representation(toplevel, representation_size, NULL);
+			if (folded_representation) {
 				float lx = (float)(toplevel->scene_tree->node.x + ox);
 				float ly = (float)(toplevel->scene_tree->node.y + oy);
 				float cx = (lx + tw * .5f - logical_w * .5f) / logical_h;
 				float cy = .5f - (ly + th * .5f) / logical_h;
-				shady_window_cube_model(model, cx, cy,
+				shady_window_box_model(model, cx, cy,
 					shady_spatial_toplevel_state(toplevel)->z,
-					SHADY_FPS_CUBE_SIZE,
+					representation_size[0], representation_size[1], representation_size[2],
 					shady_window_motion_state_for_const(toplevel)->tilt_x,
 					shady_window_motion_state_for_const(toplevel)->tilt_y);
 			} else {

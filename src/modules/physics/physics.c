@@ -58,17 +58,30 @@ void shady_physics_update(struct shady_server *server,float dt,float logical_w,f
 		if(!surface->mapped || !t->scene_tree->node.enabled)continue;
 		float tw=(float)surface->current.width,th=(float)surface->current.height;
 		if(tw<=0.f||th<=0.f)continue;
-		/* Folded FPS windows are authoritative cubes. Collision deliberately
-		 * ignores visual tilt so a wobble cannot shrink the support footprint or
-		 * move the bottom face through the floor. */
-		const float cube_size=SHADY_FPS_CUBE_SIZE;
+		/* Folded FPS representations share one authoritative axis-aligned box
+		 * with rendering and picking. If no plugin representation is installed,
+		 * fall back to the normal thin window body. */
+		float representation_size[3] = {0.f, 0.f, 0.f};
+		float half[3] = {0.f, 0.f, 0.f};
+		bool has_representation = !shady_fps_is_expanded(server, t) &&
+			shady_toplevel_box_representation(t, representation_size, NULL);
+		if (has_representation) {
+			half[0] = representation_size[0] * .5f;
+			half[1] = representation_size[1] * .5f;
+			half[2] = representation_size[2] * .5f;
+		} else {
+			struct shady_window_body body;
+			if (!shady_physics_window_body(t, logical_w, logical_h, &body)) continue;
+			half[0] = body.half[0];
+			half[1] = body.half[1];
+			half[2] = body.half[2];
+		}
 		float center_x=((float)t->scene_tree->node.x+tw*.5f-logical_w*.5f)/logical_h;
 		float center_y=.5f-((float)t->scene_tree->node.y+th*.5f)/logical_h;
 		if(center_y < WINDOW_RESPAWN_Y || fabsf(shady_spatial_toplevel_state(t)->z) > WINDOW_RESPAWN_Z_LIMIT){
 			shady_physics_respawn_window(server,t);continue;
 		}
-		float half_x=cube_size*.5f,half_h=cube_size*.5f,half_z=cube_size*.5f;
-		float previous_bottom=center_y-half_h;
+		float previous_bottom=center_y-half[1];
 		shady_physics_toplevel_state(t)->vy-=WINDOW_GRAVITY*dt;
 		bool falling_before_sweep=shady_physics_toplevel_state(t)->vy<=0.f;
 
@@ -77,10 +90,10 @@ void shady_physics_update(struct shady_server *server,float dt,float logical_w,f
 		 * frame (for example wall + floor). Keep each substep below a quarter
 		 * cube so every face gets a chance to become the active contact. */
 		float center[3]={center_x,center_y,shady_spatial_toplevel_state(t)->z};
-		const float half[3]={half_x,half_h,half_z};
 		float max_move=fmaxf(fabsf(shady_physics_toplevel_state(t)->vx*dt),
 			fmaxf(fabsf(shady_physics_toplevel_state(t)->vy*dt),fabsf(shady_physics_toplevel_state(t)->vz*dt)));
-		float max_step=cube_size*.25f;
+		float min_half=fminf(half[0],fminf(half[1],half[2]));
+		float max_step=fmaxf(min_half*.5f,.002f);
 		int steps=(int)ceilf(max_move/max_step);
 		if(steps<1)steps=1;
 		if(steps>16)steps=16;
@@ -113,9 +126,9 @@ void shady_physics_update(struct shady_server *server,float dt,float logical_w,f
 		}
 
 		struct shady_box_collider body={
-			center_x-half_x,center_x+half_x,
-			center_y-half_h,center_y+half_h,
-			shady_spatial_toplevel_state(t)->z-half_z,shady_spatial_toplevel_state(t)->z+half_z
+			center_x-half[0],center_x+half[0],
+			center_y-half[1],center_y+half[1],
+			shady_spatial_toplevel_state(t)->z-half[2],shady_spatial_toplevel_state(t)->z+half[2]
 		};
 		float support_y=0.f; bool supported=false;
 		/* Keep resting windows attached to a support despite tiny frame-to-frame
@@ -133,7 +146,7 @@ void shady_physics_update(struct shady_server *server,float dt,float logical_w,f
 				if((crossed||resting)&&(!supported||y>support_y)){support_y=y;supported=true;}
 			}
 		}
-		float floor_center=support_y+half_h;
+		float floor_center=support_y+half[1];
 		if(supported){
 			float impact=-shady_physics_toplevel_state(t)->vy;center_y=floor_center;
 			if(impact>.12f){

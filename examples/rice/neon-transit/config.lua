@@ -51,6 +51,11 @@ shady.modules({
     ["lua"] = true,
 })
 
+-- FPS interaction no longer owns window geometry. Keep the familiar cube
+-- representation as a swappable native plugin.
+shady.plugin(os.getenv("SHADY_FPS_REPRESENTATION_PLUGIN") or
+    (root .. "/build/libshady-plugin-fps-cube.so"))
+
 -- Native C spatial mode. Overview is the default because it gives Neon Transit
 -- an explicit 3D workspace switcher without competing Z writers. Set
 -- SHADY_NEON_DEPTH_MODE=focus to use the older focus-depth behavior instead.

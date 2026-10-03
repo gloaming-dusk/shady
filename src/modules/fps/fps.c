@@ -27,7 +27,6 @@
 #define MOVE_SPEED 1.25f
 #define GRAVITY 3.8f
 #define JUMP_SPEED 1.45f
-#define FOLDED_CUBE_SIZE .16f
 static void clamp_pitch(struct shady_camera*c){if(c->pitch>1.4f)c->pitch=1.4f;if(c->pitch<-1.4f)c->pitch=-1.4f;}
 static void center_cursor(struct shady_server*s){
 	struct wlr_output*o=wlr_output_layout_output_at(s->output_layout,s->cursor->x,s->cursor->y);
@@ -180,14 +179,21 @@ void shady_fps_update_held_window(struct shady_server*s,float lw,float lh){
 		.5f-((float)t->scene_tree->node.y+th*.5f)/lh,
 		shady_spatial_toplevel_state(t)->z
 	};
-	/* A held folded window is still the same authoritative cube. Camera
-	 * rotation requests a target position; world collision clips that motion. */
-	shady_physics_move_cube(&shady_spatial_state(s)->runtime.world,current,target,SHADY_FPS_CUBE_SIZE*.5f);
+	/* Held windows use the same plugin-selected representation as rendering and
+	 * picking. Without an override, fall back to the normal thin window body. */
+	float representation_size[3] = {0.f, 0.f, 0.f};
+	float half[3] = {tw/lh*.5f, th/lh*.5f, .006f};
+	if (shady_toplevel_box_representation(t, representation_size, NULL)) {
+		half[0] = representation_size[0] * .5f;
+		half[1] = representation_size[1] * .5f;
+		half[2] = representation_size[2] * .5f;
+	}
+	shady_physics_move_box(&shady_spatial_state(s)->runtime.world,current,target,half);
 	int x=(int)(current[0]*lh+lw*.5f-tw*.5f);
 	int y=(int)((.5f-current[1])*lh-th*.5f);
 	wlr_scene_node_set_position(&t->scene_tree->node,x,y);shady_spatial_toplevel_state(t)->z=current[2];
-	/* Keep the visual cube axis-aligned while held so its rendered body and
-	 * collision/debug box cannot diverge as the camera rotates. */
+	/* Keep the visual representation axis-aligned while held so rendering and
+	 * collision/debug geometry cannot diverge as the camera rotates. */
 	shady_window_motion_reset(t);
 }
 void shady_fps_toplevel_gone(struct shady_server*s,struct shady_toplevel*t){

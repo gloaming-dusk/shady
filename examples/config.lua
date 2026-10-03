@@ -1,6 +1,8 @@
 -- Shady bootstrap configuration.
 -- This file runs before module dependency resolution.
 
+local root = os.getenv("SHADY_ROOT") or "."
+
 shady.set("spatial_mode", true)
 shady.set("window_gravity", false)
 shady.set("window_wobble", true)
@@ -29,6 +31,10 @@ shady.modules({
     ["scene-effects"] = true,
     ["lua"] = true,
 })
+
+-- FPS window shape is an external representation plugin rather than a core
+-- renderer policy. Swap this plugin to change folded-window geometry.
+shady.plugin(root .. "/build/libshady-plugin-fps-cube.so")
 
 -- External native plugins are loaded before dependency resolution:
 -- shady.plugin("/absolute/path/to/my-plugin.so")

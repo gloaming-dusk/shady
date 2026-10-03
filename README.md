@@ -27,7 +27,7 @@ The project is intentionally experimental. The imported TinyWL example is CC0; s
 - Configurable global window opacity with premultiplied-alpha blending in both spatial and safe scene-graph paths
 - Standalone `shady-shell` with taskbar, workspaces, launcher, window context menu and Quick Settings
 - First-person WASD + mouse-look navigation, jumping and player collision
-- Windows fold into physical cubes in FPS mode and can be grabbed, carried and thrown
+- FPS window bodies are plugin-defined: the bundled cube representation can be swapped for flattened/stretched bodies while render, picking and physics stay aligned
 - Window gravity, bounce, friction, wobble and collision response
 - OBJ environment loading with authored `collision_*` geometry and SAT collision
 - Built-in floor, cyan grid, projected shadows, lit 3D window shells and sky/environment support

@@ -43,6 +43,20 @@ enum shady_close_effect_style {
 	SHADY_CLOSE_EFFECT_SLIDE_FADE = 1,
 };
 
+enum shady_window_representation_kind {
+	SHADY_WINDOW_REPRESENTATION_DEFAULT = 0,
+	SHADY_WINDOW_REPRESENTATION_BOX = 1,
+};
+
+struct shady_window_representation {
+	uint32_t struct_size;
+	uint32_t kind;
+	float width;
+	float height;
+	float depth;
+	bool hide_titlebar;
+};
+
 enum shady_render_stage {
 	SHADY_RENDER_STAGE_AFTER_BACKGROUND = 0,
 	SHADY_RENDER_STAGE_BEFORE_WINDOWS = 1,
@@ -184,6 +198,15 @@ struct shady_plugin_api_v1 {
 		shady_shader_program program);
 	bool (*window_reset_shader)(shady_host host, shady_window window);
 	shady_shader_program (*window_shader)(shady_window window);
+
+	/* Optional spatial representation used while an FPS window is folded.
+	 * BOX dimensions are world-space units and are shared by rendering,
+	 * picking and physics so the visible shape and collision body agree. */
+	bool (*window_set_representation)(shady_host host, shady_window window,
+		const struct shady_window_representation *representation);
+	bool (*window_reset_representation)(shady_host host, shady_window window);
+	bool (*window_representation)(shady_window window,
+		struct shady_window_representation *representation, bool *overridden);
 };
 
 typedef const struct shady_module *(*shady_plugin_entry_v1_fn)(

@@ -55,7 +55,11 @@ shady.modules({
     ["lua"] = true,
 })
 
--- A tiny native layout plugin is the only custom C piece in this rice.
+-- Window representation is plugin-owned: FPS chooses interaction semantics,
+-- while this plugin chooses the folded 3D body used by render/pick/physics.
+shady.plugin(root .. "/build/libshady-plugin-fps-cube.so")
+
+-- A tiny native layout plugin keeps the constellation arrangement separate too.
 shady.plugin(root .. "/build/libshady-plugin-orbit-layout.so")
 
 -- Core controls. Runtime-only rice controls live in init.lua.

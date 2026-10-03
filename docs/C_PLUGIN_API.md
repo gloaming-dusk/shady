@@ -185,6 +185,46 @@ Stages:
 
 Remove with `render_hook_remove`.
 
+## Spatial window representations
+
+FPS interaction and folded-window geometry are separate concerns. A plugin can assign
+an optional 3D representation to a window:
+
+```c
+struct shady_window_representation rep = {
+    .struct_size = sizeof(rep),
+    .kind = SHADY_WINDOW_REPRESENTATION_BOX,
+    .width = 0.16f,
+    .height = 0.16f,
+    .depth = 0.16f,
+    .hide_titlebar = true,
+};
+
+api->window_set_representation(host, window, &rep);
+```
+
+The representation is used while the window is folded in first-person mode. Rendering,
+ray picking, debug geometry, held-window movement and physics collision all consume the
+same dimensions.
+
+Available functions:
+
+- `window_set_representation`
+- `window_reset_representation`
+- `window_representation`
+
+`SHADY_WINDOW_REPRESENTATION_BOX` uses world-space width/height/depth. A cube is only
+one possible box; a plugin can use a flattened or stretched box without changing FPS
+input code.
+
+The repository includes two examples:
+
+- `examples/plugins/fps_cube.c` — 0.16 × 0.16 × 0.16 cube.
+- `examples/plugins/fps_squash.c` — flattened 0.24 × 0.065 × 0.13 body.
+
+This API is plugin-owned. The FPS module itself no longer decides that folded windows
+must be cubes.
+
 ## Per-window shader replacement
 
 A plugin can replace the renderer used for one window:

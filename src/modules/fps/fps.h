@@ -1,7 +1,6 @@
 #ifndef SHADY_MODULE_FPS_H
 #define SHADY_MODULE_FPS_H
 #include "../../shady.h"
-#define SHADY_FPS_CUBE_SIZE .16f
 struct wlr_pointer_axis_event;
 #if SHADY_HAS_FPS
 bool shady_fps_toggle(struct shady_server *server);
