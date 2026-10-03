@@ -262,7 +262,8 @@ bool shady_render_plugin_shader_uniform_vec4(struct shady_server *server, void *
 }
 
 static bool plugin_shader_draw_window(struct shady_server *server,
-		struct shady_toplevel *toplevel, GLenum source_target, GLuint source_texture,
+		shady_shader_program shader_program, void *shader_owner,
+		GLenum source_target, GLuint source_texture,
 		int texture_width, int texture_height, bool has_alpha,
 		const float mvp[16], const float model[16], const float frame_rect[4],
 		float time_seconds, float output_width, float output_height,
@@ -272,9 +273,8 @@ static bool plugin_shader_draw_window(struct shady_server *server,
 		float close_progress, const float close_effect[4], const float tint[4],
 		float effect_strength, float brightness) {
 	(void)server;
-	if (!toplevel->plugin_shader_program || !toplevel->plugin_shader_owner) return false;
-	struct plugin_shader_slot *slot = plugin_shader_find(
-		toplevel->plugin_shader_program, toplevel->plugin_shader_owner);
+	if (!shader_program || !shader_owner) return false;
+	struct plugin_shader_slot *slot = plugin_shader_find(shader_program, shader_owner);
 	if (!slot || !plugin_make_current()) return false;
 
 	GLuint sampled_texture = source_texture;
@@ -521,6 +521,8 @@ struct shady_close_snapshot {
 	float close_strength;
 	float close_direction_x;
 	float close_direction_y;
+	shady_shader_program plugin_shader_program;
+	void *plugin_shader_owner;
 };
 
 static struct shady_close_snapshot *
@@ -1450,6 +1452,8 @@ void shady_render_output_frame(
 					snapshot->close_strength = close_state->strength;
 					snapshot->close_direction_x = close_state->direction_x;
 					snapshot->close_direction_y = close_state->direction_y;
+					snapshot->plugin_shader_program = toplevel->plugin_shader_program;
+					snapshot->plugin_shader_owner = toplevel->plugin_shader_owner;
 					snapshot->dirty = false;
 				}
 			}
@@ -1550,7 +1554,8 @@ void shady_render_output_frame(
 		bool custom_drawn = false;
 		if (toplevel->plugin_shader_program && toplevel->plugin_shader_owner) {
 			custom_drawn = plugin_shader_draw_window(
-				server, toplevel, attribs.target, attribs.tex,
+				server, toplevel->plugin_shader_program, toplevel->plugin_shader_owner,
+				attribs.target, attribs.tex,
 				texture->width, texture->height, attribs.has_alpha,
 				mvp, model, client_frame_rect, time_seconds,
 				(float)buf_w, (float)buf_h, tw, th, wobble_x, wobble_y,
@@ -1606,27 +1611,44 @@ void shady_render_output_frame(
 				 * tilt, wobble/water deformation and close animation instead of
 				 * behaving like two independent quads.
 				 */
-				shady_gl_pipeline_draw_window(
-					&pipeline,
-					GL_TEXTURE_2D,
-					title_attribs.tex,
-					true,
-					mvp,
-					model,
-					title_frame_rect,
-					time_seconds,
-					wobble_x,
-					wobble_y,
-					water,
-					water_surface,
-					no_border_color,
-					no_border_width,
-					close_state->progress,
-					close_effect,
-					title_tint,
-					0.f,
-					1.f
-				);
+				bool custom_title_drawn = false;
+				if (toplevel->plugin_shader_program && toplevel->plugin_shader_owner) {
+					custom_title_drawn = plugin_shader_draw_window(
+						server, toplevel->plugin_shader_program,
+						toplevel->plugin_shader_owner,
+						GL_TEXTURE_2D, title_attribs.tex,
+						toplevel->titlebar_width, toplevel->titlebar_height, true,
+						mvp, model, title_frame_rect, time_seconds,
+						(float)buf_w, (float)buf_h,
+						tw, frame_title_h, wobble_x, wobble_y,
+						water, water_surface,
+						no_border_color, no_border_width,
+						close_state->progress, close_effect, title_tint,
+						0.f, 1.f);
+				}
+				if (!custom_title_drawn) {
+					shady_gl_pipeline_draw_window(
+						&pipeline,
+						GL_TEXTURE_2D,
+						title_attribs.tex,
+						true,
+						mvp,
+						model,
+						title_frame_rect,
+						time_seconds,
+						wobble_x,
+						wobble_y,
+						water,
+						water_surface,
+						no_border_color,
+						no_border_width,
+						close_state->progress,
+						close_effect,
+						title_tint,
+						0.f,
+						1.f
+					);
+				}
 			}
 		}
 
@@ -1708,27 +1730,43 @@ void shady_render_output_frame(
 			snapshot->close_direction_y,
 		};
 		const float full_frame_rect[4] = {0.f, 0.f, 1.f, 1.f};
-		shady_gl_pipeline_draw_window(
-			&pipeline,
-			GL_TEXTURE_2D,
-			snapshot->texture,
-			snapshot->has_alpha,
-			mvp,
-			model,
-			full_frame_rect,
-			time_seconds,
-			0.0f,
-			0.0f,
-			no_water,
-			no_water_surface,
-			no_border_color,
-			no_border_width,
-			snapshot->progress,
-			close_effect,
-			window_tint,
-			server->config.window_effect_strength,
-			server->config.window_brightness
-		);
+		bool snapshot_custom_drawn = false;
+		if (snapshot->plugin_shader_program && snapshot->plugin_shader_owner) {
+			snapshot_custom_drawn = plugin_shader_draw_window(
+				server, snapshot->plugin_shader_program, snapshot->plugin_shader_owner,
+				GL_TEXTURE_2D, snapshot->texture,
+				snapshot->texture_width, snapshot->texture_height, snapshot->has_alpha,
+				mvp, model, full_frame_rect, time_seconds,
+				(float)buf_w, (float)buf_h, snapshot->width, snapshot->height,
+				0.f, 0.f, no_water, no_water_surface,
+				no_border_color, no_border_width,
+				snapshot->progress, close_effect, window_tint,
+				server->config.window_effect_strength,
+				server->config.window_brightness);
+		}
+		if (!snapshot_custom_drawn) {
+			shady_gl_pipeline_draw_window(
+				&pipeline,
+				GL_TEXTURE_2D,
+				snapshot->texture,
+				snapshot->has_alpha,
+				mvp,
+				model,
+				full_frame_rect,
+				time_seconds,
+				0.0f,
+				0.0f,
+				no_water,
+				no_water_surface,
+				no_border_color,
+				no_border_width,
+				snapshot->progress,
+				close_effect,
+				window_tint,
+				server->config.window_effect_strength,
+				server->config.window_brightness
+			);
+		}
 	}
 	plugin_render_hooks_run(server, SHADY_RENDER_STAGE_AFTER_WINDOWS,
 		output, buf_w, buf_h, logical_w, logical_h, time_seconds);
