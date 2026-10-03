@@ -50,6 +50,7 @@ test_daily() {
   SHADY_DAILY_BUILD_DIR="$BUILD_DIR" bash ./tests/headless-automation.sh
   SHADY_DAILY_BUILD_DIR="$BUILD_DIR" bash ./tests/headless-alt-tab.sh
   SHADY_DAILY_BUILD_DIR="$BUILD_DIR" bash ./tests/headless-shell-taskbar.sh
+  SHADY_DAILY_BUILD_DIR="$BUILD_DIR" bash ./tests/headless-shell-quick.sh
 }
 
 case "${1:-all}" in

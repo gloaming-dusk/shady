@@ -5,7 +5,7 @@
     SPDX-License-Identifier: MIT
   </copyright>
 
-  <interface name="shady_shell_v1" version="3">
+  <interface name="shady_shell_v1" version="4">
     <description summary="Shady desktop shell control protocol">
       Exposes desktop state to trusted shell clients and provides shell actions
       for workspaces and mapped application windows.
@@ -75,5 +75,13 @@
       <arg name="maximized" type="uint" summary="1 when maximized"/>
       <arg name="fullscreen" type="uint" summary="1 when fullscreen"/>
     </event>
+
+    <request name="cycle_window" since="4">
+      <description summary="focus the next visible window"/>
+    </request>
+
+    <request name="terminate" since="4">
+      <description summary="terminate the Shady compositor session"/>
+    </request>
   </interface>
 </protocol>

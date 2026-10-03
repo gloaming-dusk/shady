@@ -163,6 +163,29 @@ static void request_move_window_to_workspace(struct wl_client *wl_client,
         shady_workspace_move_toplevel(toplevel, workspace);
 }
 
+static void request_cycle_window(struct wl_client *wl_client,
+        struct wl_resource *resource) {
+    (void)wl_client;
+    struct shady_shell_client *client = wl_resource_get_user_data(resource);
+    if (!client || !client->protocol) return;
+    struct shady_server *server = client->protocol->server;
+    struct shady_toplevel *candidate;
+    wl_list_for_each_reverse(candidate, &server->toplevels, link) {
+        if (candidate->scene_tree && candidate->scene_tree->node.enabled) {
+            focus_toplevel(candidate);
+            break;
+        }
+    }
+}
+
+static void request_terminate(struct wl_client *wl_client,
+        struct wl_resource *resource) {
+    (void)wl_client;
+    struct shady_shell_client *client = wl_resource_get_user_data(resource);
+    if (!client || !client->protocol) return;
+    wl_display_terminate(client->protocol->server->wl_display);
+}
+
 static const struct shady_shell_v1_interface shell_impl = {
     .activate_workspace = request_activate_workspace,
     .activate_window = request_activate_window,
@@ -170,13 +193,15 @@ static const struct shady_shell_v1_interface shell_impl = {
     .toggle_maximize = request_toggle_maximize,
     .toggle_fullscreen = request_toggle_fullscreen,
     .move_window_to_workspace = request_move_window_to_workspace,
+    .cycle_window = request_cycle_window,
+    .terminate = request_terminate,
 };
 
 static void bind_shell(struct wl_client *wl_client, void *data,
         uint32_t version, uint32_t id) {
     struct shady_shell_protocol_state *state = data;
     struct wl_resource *resource = wl_resource_create(wl_client,
-        &shady_shell_v1_interface, version < 3 ? version : 3, id);
+        &shady_shell_v1_interface, version < 4 ? version : 4, id);
     if (!resource) {
         wl_client_post_no_memory(wl_client);
         return;
@@ -263,7 +288,7 @@ bool shady_shell_protocol_init(struct shady_server *server) {
     wl_list_init(&state->clients);
 
     state->global = wl_global_create(server->wl_display,
-        &shady_shell_v1_interface, 3, state, bind_shell);
+        &shady_shell_v1_interface, 4, state, bind_shell);
     if (!state->global) {
         free(state);
         return false;

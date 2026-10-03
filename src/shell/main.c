@@ -40,6 +40,8 @@
 #define TASK_LABEL_MAX 256
 #define CONTEXT_WIDTH 230
 #define CONTEXT_ROW_HEIGHT 34
+#define QUICK_WIDTH 250
+#define QUICK_ROW_HEIGHT 38
 
 struct shell_buffer {
     struct wl_buffer *wl_buffer;
@@ -95,6 +97,8 @@ struct shell {
     struct zwlr_layer_surface_v1 *launcher_layer_surface;
     struct wl_surface *context_surface;
     struct zwlr_layer_surface_v1 *context_layer_surface;
+    struct wl_surface *quick_surface;
+    struct zwlr_layer_surface_v1 *quick_layer_surface;
 
     uint32_t width;
     uint32_t height;
@@ -112,6 +116,8 @@ struct shell {
     struct task_region task_regions[MAX_WINDOWS];
     size_t window_count;
     size_t task_region_count;
+    double clock_x0;
+    double clock_x1;
 
     double pointer_x;
     double pointer_y;
@@ -129,6 +135,11 @@ struct shell {
     uint32_t context_height;
     uint32_t context_window_id;
     int hovered_context_row;
+    bool quick_visible;
+    bool quick_configured;
+    uint32_t quick_width;
+    uint32_t quick_height;
+    int hovered_quick_row;
     char search[SEARCH_MAX];
     size_t selected_result;
     int hovered_workspace;
@@ -523,8 +534,13 @@ static void draw_bar(struct shell *shell) {
     int clock_height = 0;
     pango_layout_get_pixel_size(clock, &clock_width, &clock_height);
     double clock_x = shell->width - clock_width - 22.0;
-    cairo_set_source_rgba(cr, 0.045, 0.075, 0.115, 0.92);
-    rounded_rect(cr, clock_x - 10, 6, clock_width + 20, shell->height - 12, 8);
+    shell->clock_x0 = clock_x - 10;
+    shell->clock_x1 = clock_x + clock_width + 10;
+    cairo_set_source_rgba(cr, shell->quick_visible ? 0.070 : 0.045,
+        shell->quick_visible ? 0.190 : 0.075,
+        shell->quick_visible ? 0.285 : 0.115, 0.92);
+    rounded_rect(cr, shell->clock_x0, 6,
+        shell->clock_x1 - shell->clock_x0, shell->height - 12, 8);
     cairo_fill(cr);
     draw_layout(cr, clock, clock_x,
         (shell->height - clock_height) / 2.0, 0.80, 0.88, 0.95);
@@ -862,6 +878,147 @@ static void context_show(struct shell *shell, uint32_t window_id, int x) {
     wl_surface_commit(shell->context_surface);
 }
 
+static size_t quick_row_count(struct shell *shell) {
+    return 3 + shell->workspace_count;
+}
+
+static void quick_hide(struct shell *shell) {
+    if (shell->quick_layer_surface) {
+        zwlr_layer_surface_v1_destroy(shell->quick_layer_surface);
+        shell->quick_layer_surface = NULL;
+    }
+    if (shell->quick_surface) {
+        wl_surface_destroy(shell->quick_surface);
+        shell->quick_surface = NULL;
+    }
+    shell->quick_visible = false;
+    shell->quick_configured = false;
+    shell->hovered_quick_row = -1;
+    if (shell->snapshot_done) draw_bar(shell);
+}
+
+static const char *quick_row_label(struct shell *shell, size_t row,
+        char *buffer, size_t size) {
+    if (row == 0) return "Launcher";
+    if (row == 1) return "Next window";
+    if (row < 2 + shell->workspace_count) {
+        size_t ws = row - 2;
+        bool active = strcmp(shell->workspaces[ws], shell->active_workspace) == 0;
+        snprintf(buffer, size, "%sWorkspace: %s",
+            active ? "• " : "", shell->workspaces[ws]);
+        return buffer;
+    }
+    return "Quit Shady";
+}
+
+static void draw_quick(struct shell *shell) {
+    if (!shell->quick_visible || !shell->quick_configured ||
+            !shell->quick_surface || shell->quick_width == 0 ||
+            shell->quick_height == 0) return;
+
+    struct shell_buffer *buffer = create_buffer(shell,
+        shell->quick_width, shell->quick_height);
+    if (!buffer) return;
+    cairo_surface_t *image = cairo_image_surface_create_for_data(
+        buffer->data, CAIRO_FORMAT_ARGB32,
+        (int)shell->quick_width, (int)shell->quick_height,
+        (int)shell->quick_width * 4);
+    cairo_t *cr = cairo_create(image);
+    cairo_set_source_rgba(cr, 0.018, 0.026, 0.043, 0.985);
+    rounded_rect(cr, 0, 0, shell->quick_width, shell->quick_height, 12);
+    cairo_fill(cr);
+    draw_text_color(cr, "Quick settings", 14, 10, true, 10,
+        0.90, 0.96, 1.0);
+
+    size_t rows = quick_row_count(shell);
+    for (size_t row = 0; row < rows; row++) {
+        double y = 34 + row * QUICK_ROW_HEIGHT;
+        bool hovered = shell->hovered_quick_row == (int)row;
+        if (hovered) {
+            cairo_set_source_rgba(cr, 0.055, 0.19, 0.29, 0.96);
+            rounded_rect(cr, 7, y + 2, shell->quick_width - 14,
+                QUICK_ROW_HEIGHT - 5, 8);
+            cairo_fill(cr);
+        }
+        char label_buf[WORKSPACE_NAME_MAX + 32];
+        const char *label = quick_row_label(shell, row,
+            label_buf, sizeof(label_buf));
+        bool destructive = row + 1 == rows;
+        draw_text_color(cr, label, 16, y + 11, false, 9,
+            destructive ? 0.96 : 0.82,
+            destructive ? 0.40 : 0.88,
+            destructive ? 0.40 : 0.95);
+    }
+
+    cairo_destroy(cr);
+    cairo_surface_flush(image);
+    cairo_surface_destroy(image);
+    wl_surface_attach(shell->quick_surface, buffer->wl_buffer, 0, 0);
+    wl_surface_damage_buffer(shell->quick_surface, 0, 0,
+        (int)shell->quick_width, (int)shell->quick_height);
+    wl_surface_commit(shell->quick_surface);
+}
+
+static void quick_configure(void *data,
+        struct zwlr_layer_surface_v1 *layer_surface,
+        uint32_t serial, uint32_t width, uint32_t height) {
+    struct shell *shell = data;
+    zwlr_layer_surface_v1_ack_configure(layer_surface, serial);
+    shell->quick_width = width ? width : QUICK_WIDTH;
+    shell->quick_height = height ? height :
+        (uint32_t)(34 + quick_row_count(shell) * QUICK_ROW_HEIGHT + 6);
+    shell->quick_configured = true;
+    draw_quick(shell);
+}
+
+static void quick_closed(void *data,
+        struct zwlr_layer_surface_v1 *layer_surface) {
+    (void)layer_surface;
+    quick_hide(data);
+}
+
+static const struct zwlr_layer_surface_v1_listener quick_layer_listener = {
+    .configure = quick_configure,
+    .closed = quick_closed,
+};
+
+static void quick_show(struct shell *shell) {
+    if (!shell->layer_shell || !shell->compositor || shell->quick_visible) return;
+    context_hide(shell);
+    shell->quick_surface = wl_compositor_create_surface(shell->compositor);
+    if (!shell->quick_surface) return;
+    shell->quick_layer_surface = zwlr_layer_shell_v1_get_layer_surface(
+        shell->layer_shell, shell->quick_surface, NULL,
+        ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY, "shady-quick-settings");
+    if (!shell->quick_layer_surface) {
+        wl_surface_destroy(shell->quick_surface);
+        shell->quick_surface = NULL;
+        return;
+    }
+    shell->quick_visible = true;
+    shell->quick_configured = false;
+    shell->hovered_quick_row = -1;
+    uint32_t height = (uint32_t)(34 + quick_row_count(shell) * QUICK_ROW_HEIGHT + 6);
+    zwlr_layer_surface_v1_add_listener(shell->quick_layer_surface,
+        &quick_layer_listener, shell);
+    zwlr_layer_surface_v1_set_size(shell->quick_layer_surface, QUICK_WIDTH, height);
+    zwlr_layer_surface_v1_set_anchor(shell->quick_layer_surface,
+        ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP |
+        ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT);
+    zwlr_layer_surface_v1_set_margin(shell->quick_layer_surface,
+        BAR_HEIGHT + 4, 8, 0, 0);
+    zwlr_layer_surface_v1_set_exclusive_zone(shell->quick_layer_surface, 0);
+    zwlr_layer_surface_v1_set_keyboard_interactivity(shell->quick_layer_surface,
+        ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE);
+    wl_surface_commit(shell->quick_surface);
+    if (shell->snapshot_done) draw_bar(shell);
+}
+
+static void quick_toggle(struct shell *shell) {
+    if (shell->quick_visible) quick_hide(shell);
+    else quick_show(shell);
+}
+
 static struct shell_window *ensure_window(struct shell *shell, uint32_t id) {
     struct shell_window *window = find_window(shell, id);
     if (window) return window;
@@ -901,6 +1058,10 @@ static void protocol_workspace(void *data,
     (void)protocol;
     struct shell *shell = data;
     bool changed = add_workspace(shell, name);
+    if (changed && shell->quick_visible) {
+        quick_hide(shell);
+        quick_show(shell);
+    }
     if (changed && shell->snapshot_done) draw_bar(shell);
 }
 
@@ -910,6 +1071,7 @@ static void protocol_active_workspace(void *data,
     struct shell *shell = data;
     add_workspace(shell, name);
     copy_text(shell->active_workspace, sizeof(shell->active_workspace), name);
+    if (shell->quick_visible) draw_quick(shell);
     if (shell->snapshot_done) draw_bar(shell);
 }
 
@@ -1014,6 +1176,22 @@ static void update_pointer_hover(struct shell *shell) {
         return;
     }
 
+    if (shell->pointer_surface == shell->quick_surface &&
+            shell->quick_visible) {
+        int hovered = -1;
+        size_t rows = quick_row_count(shell);
+        if (shell->pointer_x >= 0 && shell->pointer_x < shell->quick_width &&
+                shell->pointer_y >= 34 && shell->pointer_y < shell->quick_height) {
+            int row = (int)((shell->pointer_y - 34) / QUICK_ROW_HEIGHT);
+            if (row >= 0 && (size_t)row < rows) hovered = row;
+        }
+        if (hovered != shell->hovered_quick_row) {
+            shell->hovered_quick_row = hovered;
+            draw_quick(shell);
+        }
+        return;
+    }
+
     if (shell->pointer_surface == shell->context_surface &&
             shell->context_visible) {
         int hovered = -1;
@@ -1072,14 +1250,17 @@ static void pointer_leave(void *data, struct wl_pointer *pointer,
         (shell->hovered_workspace >= 0 || shell->hovered_task >= 0);
     bool redraw_launcher = surface == shell->launcher_surface && shell->hovered_result >= 0;
     bool redraw_context = surface == shell->context_surface && shell->hovered_context_row >= 0;
+    bool redraw_quick = surface == shell->quick_surface && shell->hovered_quick_row >= 0;
     shell->pointer_surface = NULL;
     shell->hovered_workspace = -1;
     shell->hovered_task = -1;
     shell->hovered_context_row = -1;
+    shell->hovered_quick_row = -1;
     shell->hovered_result = -1;
     if (redraw_bar) draw_bar(shell);
     if (redraw_launcher) draw_launcher(shell);
     if (redraw_context) draw_context(shell);
+    if (redraw_quick) draw_quick(shell);
 }
 
 static void pointer_motion(void *data, struct wl_pointer *pointer,
@@ -1108,6 +1289,29 @@ static void pointer_button(void *data, struct wl_pointer *pointer,
         return;
     }
 
+    if (button == BTN_LEFT && shell->pointer_surface == shell->quick_surface &&
+            shell->quick_visible && shell->hovered_quick_row >= 0) {
+        size_t row = (size_t)shell->hovered_quick_row;
+        size_t rows = quick_row_count(shell);
+        if (row == 0) {
+            quick_hide(shell);
+            launcher_toggle(shell);
+        } else if (row == 1) {
+            shady_shell_v1_cycle_window(shell->shady_shell);
+            wl_display_flush(shell->display);
+            quick_hide(shell);
+        } else if (row < 2 + shell->workspace_count) {
+            shady_shell_v1_activate_workspace(shell->shady_shell,
+                shell->workspaces[row - 2]);
+            wl_display_flush(shell->display);
+            quick_hide(shell);
+        } else if (row + 1 == rows) {
+            shady_shell_v1_terminate(shell->shady_shell);
+            wl_display_flush(shell->display);
+        }
+        return;
+    }
+
     if (button == BTN_LEFT && shell->pointer_surface == shell->context_surface &&
             shell->context_visible && shell->hovered_context_row >= 0) {
         size_t row = (size_t)shell->hovered_context_row;
@@ -1132,6 +1336,13 @@ static void pointer_button(void *data, struct wl_pointer *pointer,
     if (!shell->shady_shell || shell->pointer_surface != shell->surface ||
             shell->pointer_y < 0 || shell->pointer_y >= shell->height)
         return;
+
+    if (button == BTN_LEFT && shell->pointer_x >= shell->clock_x0 &&
+            shell->pointer_x < shell->clock_x1) {
+        context_hide(shell);
+        quick_toggle(shell);
+        return;
+    }
 
     if (button == BTN_LEFT) {
         for (size_t i = 0; i < shell->workspace_count; i++) {
@@ -1373,7 +1584,7 @@ static void registry_global(void *data, struct wl_registry *registry,
         shell->layer_shell = wl_registry_bind(registry, name,
             &zwlr_layer_shell_v1_interface, bind_version);
     } else if (strcmp(interface, shady_shell_v1_interface.name) == 0) {
-        uint32_t bind_version = version < 3 ? version : 3;
+        uint32_t bind_version = version < 4 ? version : 4;
         shell->shady_shell = wl_registry_bind(registry, name,
             &shady_shell_v1_interface, bind_version);
         shady_shell_v1_add_listener(shell->shady_shell,
@@ -1395,6 +1606,7 @@ static bool shell_init(struct shell *shell) {
     shell->hovered_workspace = -1;
     shell->hovered_task = -1;
     shell->hovered_context_row = -1;
+    shell->hovered_quick_row = -1;
     shell->hovered_result = -1;
     shell->xkb_context = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
     if (!shell->xkb_context) return false;
@@ -1442,6 +1654,7 @@ static bool shell_init(struct shell *shell) {
 }
 
 static void shell_finish(struct shell *shell) {
+    quick_hide(shell);
     context_hide(shell);
     launcher_hide(shell);
     if (shell->keyboard) wl_keyboard_release(shell->keyboard);
