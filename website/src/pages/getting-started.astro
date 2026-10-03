@@ -85,13 +85,13 @@ WLR_BACKENDS=wayland ./build/shady -s foot</code></pre>
         <div>
           <p class="eyebrow">Regression gates</p>
           <h2>Fast checks before you trust a build.</h2>
-          <p class="lede">The repository includes separate core, spatial, and Astral Loom gates for quick local validation.</p>
+          <p class="lede">The repository includes separate core and spatial gates for quick local validation.</p>
         </div>
         <div class="code-window">
           <div class="code-title">stability checks</div>
           <pre><code>./daily-driver.sh all
 ./spatial-daily-driver.sh all
-./astral-loom-daily-driver.sh all</code></pre>
+./tests/spatial-suite.sh</code></pre>
         </div>
       </div>
     </section>

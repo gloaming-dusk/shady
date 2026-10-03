@@ -1,0 +1,114 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import poster from '../../../../examples/rice/afterglow/hero.jpg';
+import heroWebm from '../../../../examples/rice/afterglow/hero.webm?url';
+import heroMp4 from '../../../../examples/rice/afterglow/hero.mp4?url';
+import phases from '../../../../examples/rice/afterglow/phases.jpg';
+
+const shortcuts = [
+  ['Super + T', 'Drift to the next hour of light'],
+  ['Super + Shift + T', 'Drift back to the previous hour'],
+  ['Super + O', 'Native 3D overview of every window'],
+  ['Super + Tab', 'Focus the next window'],
+  ['Super + Q', 'Close — the window sinks into the sea'],
+  ['Super + 1 … 3', 'Workspaces shore, studio, harbor'],
+  ['Super + F', 'First-person mode above the water'],
+  ['Super + D', 'Launcher']
+];
+---
+<BaseLayout
+  title="Afterglow · Shady"
+  description="Afterglow is a Shady rice: live Wayland windows floating above a procedural sunset sea that moves through four hours of light."
+  path="/demo/afterglow/"
+>
+  <header class="page-hero">
+    <div class="shell">
+      <p class="eyebrow">Featured demo</p>
+      <h1><span class="gradient-text">Afterglow</span></h1>
+      <p class="lede">
+        A low sun over a mirror-still sea. Live Wayland windows float like warm
+        glass panes above the water, and the sky, the sea, the window accents and
+        the shell drift together through golden hour, afterglow, blue hour and
+        night. The whole scene comes from one external C plugin; none of it lives
+        in the compositor core.
+      </p>
+    </div>
+  </header>
+
+  <div class="page-content">
+    <div class="shell">
+      <figure class="demo-frame">
+        <video autoplay muted loop playsinline controls preload="metadata" poster={poster.src} aria-label="Afterglow cycling from golden hour to night while live terminal windows float above a procedural sea">
+          <source src={heroWebm} type="video/webm" />
+          <source src={heroMp4} type="video/mp4" />
+        </video>
+      </figure>
+
+      <section class="section">
+        <div class="two-col">
+          <div>
+            <p class="eyebrow">Run it</p>
+            <h2>Watch the sun go down.</h2>
+            <p class="lede">
+              The launcher starts the themed shell and a terminal. Press
+              <code>Super + T</code> and the hour changes over 2.4 seconds.
+            </p>
+          </div>
+          <div class="code-window">
+            <div class="code-title">terminal</div>
+            <pre><code>nix develop
+./build.sh
+./examples/rice/afterglow/run.sh
+
+# On a real Linux VT
+./examples/rice/afterglow/run-native.sh</code></pre>
+          </div>
+        </div>
+      </section>
+
+      <figure class="demo-frame">
+        <img src={phases.src} width={phases.width} height={phases.height} loading="lazy" alt="The same desktop at golden hour, afterglow, blue hour and night" />
+      </figure>
+
+      <section class="section">
+        <div class="section-head">
+          <h2>Controls</h2>
+          <p>Every binding lives in the rice's Lua runtime layer or its plugin, so you can rebind any of them.</p>
+        </div>
+        <table class="shortcuts">
+          <thead><tr><th>Shortcut</th><th>Action</th></tr></thead>
+          <tbody>
+            {shortcuts.map(([key, action]) => (
+              <tr><td>{key}</td><td>{action}</td></tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
+
+      <section class="section">
+        <div class="card-grid">
+          <article class="card">
+            <span class="kicker">Render</span>
+            <h3>A sky with real depth</h3>
+            <p>Each pixel traces a world-space ray from the camera the host exposes to render hooks. The horizon, sun and moon stay fixed while you orbit, and the sea mirrors them through rippled, Fresnel-weighted water.</p>
+          </article>
+          <article class="card">
+            <span class="kicker">Cohesion</span>
+            <h3>One light, everywhere</h3>
+            <p>Moving to a new hour also pushes the matching accent colours into the compositor, so focus borders, title-bar pips and the shell share the sky's palette.</p>
+          </article>
+          <article class="card">
+            <span class="kicker">Restraint</span>
+            <h3>Idle stays idle</h3>
+            <p>The sky only advances when frames are already being drawn. A still desktop renders nothing, and the headless sanitizer suite checks every hour change.</p>
+          </article>
+        </div>
+      </section>
+
+      <div class="button-row">
+        <a class="button primary" href="/getting-started/">Build Shady</a>
+        <a class="button" href="/docs/c-plugin-api/">C plugin API</a>
+      </div>
+    </div>
+  </div>
+</BaseLayout>

@@ -1,8 +1,8 @@
 # shady
 
-![Shady Neon Transit desktop with native 3D overview and water-window effects](screenshots/Screenshot.png)
+![Shady Afterglow rice: live Wayland windows floating above a procedural sunset sea](examples/rice/afterglow/preview.jpg)
 
-*Neon Transit rice: standalone shell, native 3D overview, compositor title bars and borders, translucent windows, and shader-backed liquid surfaces.*
+*Afterglow rice: a camera-aware procedural sky and sea from one native plugin, four times of day on `Super+T`, rounded glass windows with sky-matched accents, and a themed standalone shell.*
 
 Shady is an experimental **3D Wayland compositor** built on wlroots 0.20.2 and inspired by TinyWL. It can run as a conventional compositor through its wlroots scene-graph path, or turn normal xdg-shell applications into objects inside a shared perspective 3D world.
 
@@ -135,7 +135,7 @@ For the first DRM/TTY smoke test, use the compatibility renderer path first:
 ./run-native.sh --safe -s foot
 ```
 
-Once DRM modesetting, keyboard/mouse input, VT ownership and shutdown all work, try the full spatial compositor and then Night Observatory.
+Once DRM modesetting, keyboard/mouse input, VT ownership and shutdown all work, try the full spatial compositor and then a rice such as Afterglow.
 
 `--native` forces wlroots to use `drm,libinput`, clears nested Wayland/X11 display variables, and requires a normal login-provided `XDG_RUNTIME_DIR`. The wlroots build used by the Nix shell links `libdrm`, `libudev`, and `libseat`, so it can acquire the GPU/input seat through logind or seatd. Run it from a real Linux VT login, not from a terminal emulator inside another compositor. If libseat cannot acquire the active seat, try from a real VT login (for example Ctrl+Alt+F3) or, on a seatd setup, run through `seatd-launch`.
 
@@ -196,6 +196,12 @@ The bar consumes Shady's `shady-shell-v1` Wayland protocol. On bind it receives 
 
 The shell also owns an application launcher. `shady.toggle_launcher()` emits a shell-protocol event that toggles a centered overlay surface with exclusive keyboard focus. It indexes standard `.desktop` application entries and supports incremental text search, Up/Down selection, Enter to launch, Backspace, and Escape. Because the launcher is out-of-process, app discovery/rendering policy stays outside the compositor core.
 
+The shell palette defaults to the Neon Transit cyan. Rices can restyle it with
+`#RRGGBB` environment variables read at startup: `SHADY_SHELL_ACCENT`,
+`SHADY_SHELL_ACCENT_2` (badge gradient end), `SHADY_SHELL_ACCENT_DEEP` (selected
+fills), `SHADY_SHELL_SURFACE`, `SHADY_SHELL_TEXT`, `SHADY_SHELL_TEXT_DIM` and
+`SHADY_SHELL_DANGER`. See `examples/rice/afterglow/theme.sh`.
+
 The protocol source lives in `protocols/shady-shell-v1.xml`. Version 1 remains the small workspace/focused-window surface; version 2 adds stable shell window IDs, mapped-window snapshots/updates, and activate/close requests used by the taskbar. Version 3 adds window state updates plus maximize, fullscreen, and move-to-workspace actions used by the task context menu. Version 4 adds shell session actions for cycling windows and terminating the compositor, used by Quick Settings. Launcher state, notifications, network/audio backends, and other shell policy remain outside the compositor core.
 
 Safe mode renders the wlroots scene graph directly and uses normal scene-graph
@@ -244,7 +250,7 @@ from the spatial renderer and physics stack.
 
 ### Spatial sanitizer regression suite
 
-The 3D stack has a separate GLES2/headless sanitizer suite. It covers matrix and ray math (including wobble and full window-shell hits), physics collision/sweeps, entering and leaving FPS mode with live windows, the native `focus-depth` plugin, the native `spatial-overview` enter/restore path, animated `water-windows` frame/toggle behavior, and Neon Transit shutdown:
+The 3D stack has a separate GLES2/headless sanitizer suite. It covers matrix and ray math (including wobble and full window-shell hits), physics collision/sweeps, entering and leaving FPS mode with live windows, the native `focus-depth` plugin, the native `spatial-overview` enter/restore path, animated `water-windows` frame/toggle behavior, Neon Transit shutdown, and the Afterglow sky and hour cycle:
 
 ```sh
 ./tests/spatial-suite.sh
@@ -252,35 +258,13 @@ The 3D stack has a separate GLES2/headless sanitizer suite. It covers matrix and
 
 This suite uses an AddressSanitizer/UndefinedBehaviorSanitizer spatial build and software GLES2 so renderer/module regressions can be exercised without a physical display.
 
-**Astral Loom** adds a procedural energy observatory and live curved app panels,
-with orbital/helix layouts and reversible position transitions, entirely through
-an external native plugin:
+The **Neon Transit** rice demonstrates a native-plugin approach to depth: `focus-depth` leaves screen-space x/y placement alone but animates focused/background windows along Z using the C plugin API and module tick callback.
+
+**Afterglow** sets the desktop above an open sea at sunset. Its `afterglow` plugin draws a camera-aware procedural sky and sea, cycles through golden hour, afterglow, blue hour and night (`Super+T`), keeps window and shell accents on the sky's palette, and makes closing windows sink into the water. See `examples/rice/afterglow/README.md`.
 
 ```sh
-./examples/rice/astral-loom/run.sh
-# Or from a local Linux VT/TTY:
-./examples/rice/astral-loom/run-native.sh
+./examples/rice/afterglow/run.sh
 ```
-
-See [Astral Loom controls and setup](examples/rice/astral-loom/README.md).
-
-For a more opinionated ricing demo, the repository includes **Night Observatory**:
-
-```sh
-nix develop
-./examples/rice/night-observatory/run.sh
-```
-
-For a direct TTY/DRM Night Observatory session:
-
-```sh
-nix develop
-./examples/rice/night-observatory/run-native.sh
-```
-
-It combines a Lua bootstrap config, runtime Lua events/keybindings, the spatial stack, and the hot-reloadable `orbit-layout` native plugin to arrange windows as a loose 3D constellation. The demo starts a terminal automatically when launched without extra arguments; `Super+Return` opens another terminal and `Super+D` opens an available launcher. See `examples/rice/night-observatory/README.md` for controls and details.
-
-A second rice, **Neon Transit**, demonstrates a different native-plugin approach: `focus-depth` leaves screen-space x/y placement alone but animates focused/background windows along Z using the C plugin API and module tick callback.
 
 Shady requires the **GLES2** renderer for its custom shaders. The compositor prints the allocated `WAYLAND_DISPLAY` so more clients can be launched from another terminal.
 
@@ -308,11 +292,13 @@ shady.set("background_horizon", "#101827")
 shady.set("background_bottom", "#05070C")
 shady.set("floor_grid_strength", 0.12)
 shady.set("floor_fade_end", 3.5)
+shady.set("floor_horizon_fog", 1.0) -- far floor melts into the sky gradient
 shady.set("window_tint", "#FFFFFF")
 shady.set("window_effect_strength", 0.15)
 shady.set("window_brightness", 1.10)
 shady.set("window_opacity", 0.92) -- 0.0 transparent, 1.0 opaque
 shady.set("window_border_width", 3.0) -- 0 disables borders
+shady.set("window_corner_radius", 10.0) -- 0 keeps square window frames
 shady.set("window_border_color", "#12394A")
 shady.set("window_border_focus_color", "#28E6FF")
 shady.set("window_titlebar", true) -- false disables compositor title bars

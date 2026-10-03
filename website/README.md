@@ -30,5 +30,5 @@ The static output is written to `website/dist/`.
 
 - `src/pages/index.astro` — landing page
 - `src/pages/getting-started.astro` — installation and first-run guide
-- `src/pages/demo/astral-loom.astro` — featured Astral Loom demo
+- `src/pages/demo/afterglow.astro` — featured Afterglow demo
 - `src/pages/docs/` — routes backed directly by the repository `docs/` directory
