@@ -181,6 +181,100 @@ static void test_convex_move(void) {
 		"convex held-style movement does not tunnel through box wall");
 }
 
+static void test_compound_sweep(void) {
+	const float left[8][3] = {
+		{-.8f,-.2f,-.2f}, {-.4f,-.2f,-.2f},
+		{-.8f,.2f,-.2f},  {-.4f,.2f,-.2f},
+		{-.8f,-.2f,.2f},  {-.4f,-.2f,.2f},
+		{-.8f,.2f,.2f},   {-.4f,.2f,.2f},
+	};
+	const float right[8][3] = {
+		{.4f,-.2f,-.2f}, {.8f,-.2f,-.2f},
+		{.4f,.2f,-.2f},  {.8f,.2f,-.2f},
+		{.4f,-.2f,.2f},  {.8f,-.2f,.2f},
+		{.4f,.2f,.2f},   {.8f,.2f,.2f},
+	};
+	const uint16_t indices[] = {
+		0,2,1, 1,2,3, 4,5,6, 5,7,6,
+		0,1,4, 1,5,4, 2,6,3, 3,6,7,
+		0,4,2, 2,4,6, 1,3,5, 3,7,5,
+	};
+	const struct shady_physics_convex_part parts[] = {
+		{left, 8, indices, sizeof(indices) / sizeof(indices[0])},
+		{right, 8, indices, sizeof(indices) / sizeof(indices[0])},
+	};
+	struct shady_world world = {0};
+	world.colliders[0] = (struct shady_box_collider){
+		.min_x = -100.f, .max_x = 100.f,
+		.min_y = -100.f, .max_y = -99.f,
+		.min_z = -100.f, .max_z = 100.f,
+	};
+	world.collider_count = 1;
+	world.triangle_count = 1;
+	const float half[3] = {.8f, .2f, .2f};
+	float center[3] = {-1.f, 0.f, 0.f};
+	float velocity = 1.f;
+
+	world.triangles[0] = triangle(
+		0.f, -.1f, -.1f,
+		0.f,  .1f, -.1f,
+		0.f,  0.f,  .1f);
+	expect_false(shady_physics_sweep_compound_axis(&world, center, half,
+		parts, 2, 0, 1.f, &velocity, 0.f),
+		"compound sweep preserves empty space between convex parts");
+	expect_near(center[0], 0.f, 1e-6f,
+		"compound sweep reaches target through internal gap");
+
+	center[0] = -1.f;
+	velocity = 1.f;
+	world.triangles[0] = triangle(
+		.5f, -.1f, -.1f,
+		.5f,  .1f, -.1f,
+		.5f,  0.f,  .1f);
+	expect_true(shady_physics_sweep_compound_axis(&world, center, half,
+		parts, 2, 0, 1.f, &velocity, 0.f),
+		"compound sweep blocks contact with either convex part");
+	expect_near(center[0], -1.f, 1e-6f,
+		"compound contact rejects penetrating step");
+}
+
+static void test_compound_move(void) {
+	struct shady_world world = {0};
+	world.colliders[0] = (struct shady_box_collider){
+		.min_x = 1.f, .max_x = 1.2f,
+		.min_y = -2.f, .max_y = 2.f,
+		.min_z = -2.f, .max_z = 2.f,
+	};
+	world.collider_count = 1;
+	const float left[8][3] = {
+		{-.5f,-.25f,-.25f}, {0.f,-.25f,-.25f},
+		{-.5f,.25f,-.25f},  {0.f,.25f,-.25f},
+		{-.5f,-.25f,.25f},  {0.f,-.25f,.25f},
+		{-.5f,.25f,.25f},   {0.f,.25f,.25f},
+	};
+	const float right[8][3] = {
+		{0.f,-.25f,-.25f}, {.5f,-.25f,-.25f},
+		{0.f,.25f,-.25f},  {.5f,.25f,-.25f},
+		{0.f,-.25f,.25f},  {.5f,-.25f,.25f},
+		{0.f,.25f,.25f},   {.5f,.25f,.25f},
+	};
+	const uint16_t indices[] = {
+		0,2,1, 1,2,3, 4,5,6, 5,7,6,
+		0,1,4, 1,5,4, 2,6,3, 3,6,7,
+		0,4,2, 2,4,6, 1,3,5, 3,7,5,
+	};
+	const struct shady_physics_convex_part parts[] = {
+		{left, 8, indices, sizeof(indices) / sizeof(indices[0])},
+		{right, 8, indices, sizeof(indices) / sizeof(indices[0])},
+	};
+	float center[3] = {-2.f, 0.f, 0.f};
+	const float target[3] = {3.f, 0.f, 0.f};
+	const float half[3] = {.5f, .25f, .25f};
+	shady_physics_move_compound(&world, center, target, half, parts, 2);
+	expect_near(center[0], .5f, 1e-5f,
+		"compound held-style movement does not tunnel through box wall");
+}
+
 static void test_box_sweep(void) {
 	struct shady_world world = {0};
 	world.colliders[0] = (struct shady_box_collider){
@@ -252,6 +346,8 @@ int main(void) {
 	test_convex_sat();
 	test_convex_sweep();
 	test_convex_move();
+	test_compound_sweep();
+	test_compound_move();
 	test_box_sweep();
 	test_substepped_move();
 	test_triangle_world_contact();

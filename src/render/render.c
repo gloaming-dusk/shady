@@ -1900,17 +1900,21 @@ void shady_render_output_frame(
 			bool debug_folded = debug_context.folded &&
 				shady_toplevel_representation_model(debug_t, &debug_context, &debug_model);
 			if (debug_folded) {
-				struct shady_collision_hull hull = {0};
-				if (shady_toplevel_representation_collision_hull(debug_t,
-						&debug_context, &hull)) {
+				struct shady_resolved_collision_compound compound = {0};
+				if (shady_toplevel_representation_collision_compound_world(debug_t,
+						&debug_context, &debug_model, &compound)) {
 					float hull_model[16];
-					shady_window_box_model(hull_model,
-						debug_model.center_x, debug_model.center_y, debug_model.center_z,
-						debug_model.width, debug_model.height, debug_model.depth,
-						debug_model.tilt_x, debug_model.tilt_y);
-					shady_gl_pipeline_draw_debug_convex(&pipeline, vp, hull_model,
-						(const float *)hull.vertices, hull.vertex_count,
-						hull.indices, hull.index_count);
+					shady_mat4_identity(hull_model);
+					hull_model[12] = compound.center[0];
+					hull_model[13] = compound.center[1];
+					hull_model[14] = compound.center[2];
+					for (size_t part = 0; part < compound.part_count; ++part) {
+						shady_gl_pipeline_draw_debug_convex(&pipeline, vp, hull_model,
+							(const float *)compound.parts[part].vertices,
+							compound.parts[part].vertex_count,
+							compound.parts[part].indices,
+							compound.parts[part].index_count);
+					}
 				} else {
 					/* No convex provider: draw the authoritative fallback collision box. */
 					struct shady_collision_box collision;

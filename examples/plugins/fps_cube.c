@@ -8,12 +8,27 @@ static const struct shady_plugin_api_v1 *api;
 static shady_host host;
 static bool collision_logged;
 static bool hull_logged;
+static bool compound_logged;
 
 static const struct shady_collision_vertex cube_hull_vertices[] = {
     {0.f, 0.f, -1.f}, {1.f, 0.f, -1.f},
     {0.f, 1.f, -1.f}, {1.f, 1.f, -1.f},
     {0.f, 0.f,  0.f}, {1.f, 0.f,  0.f},
     {0.f, 1.f,  0.f}, {1.f, 1.f,  0.f},
+};
+
+static const struct shady_collision_vertex cube_left_vertices[] = {
+    {0.f, 0.f, -1.f}, {.5f, 0.f, -1.f},
+    {0.f, 1.f, -1.f}, {.5f, 1.f, -1.f},
+    {0.f, 0.f,  0.f}, {.5f, 0.f,  0.f},
+    {0.f, 1.f,  0.f}, {.5f, 1.f,  0.f},
+};
+
+static const struct shady_collision_vertex cube_right_vertices[] = {
+    {.5f, 0.f, -1.f}, {1.f, 0.f, -1.f},
+    {.5f, 1.f, -1.f}, {1.f, 1.f, -1.f},
+    {.5f, 0.f,  0.f}, {1.f, 0.f,  0.f},
+    {.5f, 1.f,  0.f}, {1.f, 1.f,  0.f},
 };
 
 static const uint16_t cube_hull_indices[] = {
@@ -68,6 +83,46 @@ static bool cube_collision_hull(shady_host callback_host, shady_window window,
     return true;
 }
 
+static const struct shady_collision_hull cube_compound_parts[] = {
+    {
+        .struct_size = sizeof(struct shady_collision_hull),
+        .vertices = cube_left_vertices,
+        .vertex_count = sizeof(cube_left_vertices) / sizeof(cube_left_vertices[0]),
+        .indices = cube_hull_indices,
+        .index_count = sizeof(cube_hull_indices) / sizeof(cube_hull_indices[0]),
+        .revision = 1,
+    },
+    {
+        .struct_size = sizeof(struct shady_collision_hull),
+        .vertices = cube_right_vertices,
+        .vertex_count = sizeof(cube_right_vertices) / sizeof(cube_right_vertices[0]),
+        .indices = cube_hull_indices,
+        .index_count = sizeof(cube_hull_indices) / sizeof(cube_hull_indices[0]),
+        .revision = 1,
+    },
+};
+
+static bool cube_collision_compound(shady_host callback_host, shady_window window,
+        const struct shady_representation_context *context,
+        struct shady_collision_compound *compound,
+        void *state, void *user_data) {
+    (void)callback_host;
+    (void)window;
+    (void)context;
+    (void)state;
+    (void)user_data;
+    if (!compound_logged) {
+        compound_logged = true;
+        api->log(SHADY_PLUGIN_LOG_INFO,
+            "fps-cube: two-part compound collision callback active");
+    }
+    compound->struct_size = sizeof(*compound);
+    compound->parts = cube_compound_parts;
+    compound->part_count = sizeof(cube_compound_parts) / sizeof(cube_compound_parts[0]);
+    compound->revision = 1;
+    return true;
+}
+
 static const struct shady_window_representation_provider cube_provider = {
     .struct_size = sizeof(struct shady_window_representation_provider),
     .base = {
@@ -80,6 +135,7 @@ static const struct shady_window_representation_provider cube_provider = {
     },
     .collision = cube_collision,
     .collision_hull = cube_collision_hull,
+    .collision_compound = cube_collision_compound,
 };
 
 static void apply_window(shady_window window) {

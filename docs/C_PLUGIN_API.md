@@ -311,9 +311,49 @@ convex body; `collision()` remains the compatibility and box-only path when no h
 supplied.
 
 Hull callbacks are synchronous and follow the same ownership/state/hot-reload rules as
-`model`, `mesh`, and `collision`. The bundled `fps-cube` plugin supplies an explicit
-8-vertex/36-index convex hull, so the end-to-end convex path is exercised without
-changing its visible shape.
+`model`, `mesh`, and `collision`. `revision` follows the same rule as mesh revision: bump
+it whenever hull vertices, indices, or their meaning changes. Shady caches validated
+hull topology and the expensive scale/tilt transform by revision and shape parameters.
+Pure world-space translation does not invalidate that cache; the cached center-relative
+hull is simply translated to the window's current center. Provider detach, replacement,
+window destruction, and hot reload clear all representation caches.
+
+For non-convex physical shapes, a provider may expose a compound made from convex parts:
+
+```c
+static bool collision_compound(shady_host host, shady_window window,
+        const struct shady_representation_context *ctx,
+        struct shady_collision_compound *compound,
+        void *state, void *data) {
+    compound->struct_size = sizeof(*compound);
+    compound->parts = parts;
+    compound->part_count = part_count;
+    compound->revision = revision;
+    return true;
+}
+```
+
+A compound contains 1–8 `shady_collision_hull` parts in the same representation-local
+coordinate system. The total budget across all parts is 256 vertices and 1,536 indices.
+Each part must still be a closed convex indexed triangle surface. `compound.revision`
+must change whenever any part's geometry, topology, pointer meaning, or membership
+changes.
+
+`collision_compound()` takes precedence over `collision_hull()`. If it is absent or
+returns no valid compound, Shady automatically promotes a valid single hull to a
+one-part compound. Physics, held-window movement, and debug visualization therefore use
+one resolved compound path regardless of which provider API was used.
+
+The broad-phase body is the union AABB of all parts, while authored world triangles are
+tested against each convex part separately. Empty space between disjoint parts remains
+empty instead of collapsing into the union AABB. Compound topology and scale/tilt
+transforms are revision-cached; translation alone reuses the same cached center-relative
+parts.
+
+The bundled `fps-cube` plugin deliberately exposes both APIs: an 8-vertex single hull as
+a fallback and a two-part compound whose two half-cubes union to the same visible cube.
+This exercises single-hull compatibility, multi-part physics, caching, debug rendering,
+and hot reload without changing the visible shape.
 
 ### Per-window provider state and animation
 
@@ -424,9 +464,15 @@ The host consumes exactly the same topology for GPU rendering and ray-triangle p
 Picking barycentrically interpolates each vertex's independent `u/v`, so clicks on a bent
 or UV-remapped surface still map back to the intended client coordinates.
 
-`revision` should change whenever the vertex data changes. The current renderer uploads
-the mesh as streaming data; the revision field is part of the API now so future host
-implementations may cache unchanged meshes without changing the plugin contract.
+`revision` must change whenever vertex contents, index contents, or either buffer's
+meaning changes. Keeping the same revision tells Shady that the geometry behind the
+returned pointers is unchanged. The host uses this to reuse topology validation and may
+reuse other derived data; mutating buffers without bumping `revision` is a provider
+contract violation.
+
+The current renderer still uploads mesh triangles as streaming data, but CPU-side
+validation is revision-aware. This keeps the API ready for per-window GPU buffer caching
+without another ABI change.
 
 Mesh providers still resolve a `shady_representation_model`, which supplies the world
 transform and nominal width/height/depth scale. If no `collision` callback is supplied,

@@ -249,6 +249,58 @@ struct shady_toplevel {
 	void *plugin_representation_provider_owner;
 	void *plugin_representation_state;
 	size_t plugin_representation_state_size;
+	struct {
+		bool initialized;
+		bool valid;
+		const void *vertices;
+		const void *indices;
+		size_t vertex_count;
+		size_t index_count;
+		uint64_t revision;
+	} plugin_representation_mesh_validation_cache;
+	struct {
+		bool initialized;
+		bool valid;
+		const void *vertices;
+		const void *indices;
+		size_t vertex_count;
+		size_t index_count;
+		uint64_t revision;
+	} plugin_representation_hull_validation_cache;
+	struct {
+		bool valid;
+		uint64_t revision;
+		const void *vertices;
+		const void *indices;
+		size_t vertex_count;
+		size_t index_count;
+		float shape_key[5];
+		float vertices_world[256][3];
+		float center_offset[3];
+		float half[3];
+	} plugin_representation_hull_world_cache;
+	struct {
+		bool initialized;
+		bool valid;
+		const void *parts;
+		size_t part_count;
+		uint64_t revision;
+	} plugin_representation_compound_validation_cache;
+	struct {
+		bool valid;
+		uint64_t revision;
+		const void *parts;
+		size_t part_count;
+		float shape_key[5];
+		float vertices_world[256][3];
+		uint16_t indices[1536];
+		size_t part_vertex_offset[8];
+		size_t part_vertex_count[8];
+		size_t part_index_offset[8];
+		size_t part_index_count[8];
+		float center_offset[3];
+		float half[3];
+	} plugin_representation_compound_world_cache;
 	/* Opaque per-module extension state. The core toplevel does not know
 	 * which optional modules attach data here. */
 	void *module_state[SHADY_MAX_MODULES];
@@ -378,5 +430,32 @@ bool shady_toplevel_representation_collision_hull(
 	const struct shady_toplevel *toplevel,
 	const struct shady_representation_context *context,
 	struct shady_collision_hull *hull);
+bool shady_toplevel_representation_collision_hull_world(
+	struct shady_toplevel *toplevel,
+	const struct shady_representation_context *context,
+	const struct shady_representation_model *model,
+	const float (**vertices_world)[3], size_t *vertex_count,
+	const uint16_t **indices, size_t *index_count,
+	float center[3], float half[3]);
+
+struct shady_resolved_collision_part {
+	const float (*vertices)[3];
+	size_t vertex_count;
+	const uint16_t *indices;
+	size_t index_count;
+};
+
+struct shady_resolved_collision_compound {
+	size_t part_count;
+	struct shady_resolved_collision_part parts[8];
+	float center[3];
+	float half[3];
+};
+
+bool shady_toplevel_representation_collision_compound_world(
+	struct shady_toplevel *toplevel,
+	const struct shady_representation_context *context,
+	const struct shady_representation_model *model,
+	struct shady_resolved_collision_compound *compound);
 
 #endif

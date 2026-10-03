@@ -187,10 +187,8 @@ void shady_fps_update_held_window(struct shady_server*s,float lw,float lh){
 	float half[3] = {tw/lh*.5f, th/lh*.5f, .006f};
 	float model_offset[3] = {0.f, 0.f, 0.f};
 	float collision_offset[3] = {0.f, 0.f, 0.f};
-	float convex_vertices[256][3];
-	size_t convex_vertex_count = 0;
-	const uint16_t *convex_indices = NULL;
-	size_t convex_index_count = 0;
+	struct shady_physics_convex_part convex_parts[8] = {0};
+	size_t convex_part_count = 0;
 	bool has_convex_hull = false;
 	struct shady_representation_context representation_context = {
 		.struct_size = sizeof(representation_context),
@@ -213,43 +211,28 @@ void shady_fps_update_held_window(struct shady_server*s,float lw,float lh){
 		model_offset[0] = representation_model.center_x - current[0];
 		model_offset[1] = representation_model.center_y - current[1];
 		model_offset[2] = representation_model.center_z - current[2];
-		struct shady_collision_hull hull = {0};
-		if (shady_toplevel_representation_collision_hull(t,
-				&representation_context, &hull) && hull.vertex_count <= 256) {
-			float transform[16];
-			shady_window_box_model(transform,
-				representation_model.center_x, representation_model.center_y,
-				representation_model.center_z,
-				representation_model.width, representation_model.height,
-				representation_model.depth,
-				representation_model.tilt_x, representation_model.tilt_y);
-			float minv[3] = {INFINITY, INFINITY, INFINITY};
-			float maxv[3] = {-INFINITY, -INFINITY, -INFINITY};
-			for (size_t i = 0; i < hull.vertex_count; ++i) {
-				const struct shady_collision_vertex *v = &hull.vertices[i];
-				float world[3] = {
-					transform[0] * v->x + transform[4] * v->y + transform[8] * v->z + transform[12],
-					transform[1] * v->x + transform[5] * v->y + transform[9] * v->z + transform[13],
-					transform[2] * v->x + transform[6] * v->y + transform[10] * v->z + transform[14],
-				};
-				for (int axis = 0; axis < 3; ++axis) {
-					convex_vertices[i][axis] = world[axis];
-					if (world[axis] < minv[axis]) minv[axis] = world[axis];
-					if (world[axis] > maxv[axis]) maxv[axis] = world[axis];
-				}
-			}
-			for (int axis = 0; axis < 3; ++axis) {
-				collision.center[axis] = (minv[axis] + maxv[axis]) * .5f;
-				collision.half[axis] = fmaxf((maxv[axis] - minv[axis]) * .5f, .001f);
-				for (size_t i = 0; i < hull.vertex_count; ++i)
-					convex_vertices[i][axis] -= collision.center[axis];
-			}
+		struct shady_resolved_collision_compound resolved_compound = {0};
+		if (shady_toplevel_representation_collision_compound_world(t,
+				&representation_context, &representation_model,
+				&resolved_compound)) {
+			collision.center[0] = resolved_compound.center[0];
+			collision.center[1] = resolved_compound.center[1];
+			collision.center[2] = resolved_compound.center[2];
+			collision.half[0] = resolved_compound.half[0];
+			collision.half[1] = resolved_compound.half[1];
+			collision.half[2] = resolved_compound.half[2];
 			half[0] = collision.half[0];
 			half[1] = collision.half[1];
 			half[2] = collision.half[2];
-			convex_vertex_count = hull.vertex_count;
-			convex_indices = hull.indices;
-			convex_index_count = hull.index_count;
+			convex_part_count = resolved_compound.part_count;
+			for (size_t part = 0; part < convex_part_count; ++part) {
+				convex_parts[part] = (struct shady_physics_convex_part){
+					.vertices = resolved_compound.parts[part].vertices,
+					.vertex_count = resolved_compound.parts[part].vertex_count,
+					.indices = resolved_compound.parts[part].indices,
+					.index_count = resolved_compound.parts[part].index_count,
+				};
+			}
 			has_convex_hull = true;
 		}
 		collision_offset[0] = collision.center[0] - representation_model.center_x;
@@ -262,9 +245,8 @@ void shady_fps_update_held_window(struct shady_server*s,float lw,float lh){
 		target[2] += model_offset[2] + collision_offset[2];
 	}
 	if (has_convex_hull)
-		shady_physics_move_convex(&shady_spatial_state(s)->runtime.world,
-			current, target, half, convex_vertices, convex_vertex_count,
-			convex_indices, convex_index_count);
+		shady_physics_move_compound(&shady_spatial_state(s)->runtime.world,
+			current, target, half, convex_parts, convex_part_count);
 	else
 		shady_physics_move_box(&shady_spatial_state(s)->runtime.world,current,target,half);
 	float base_x=current[0]-collision_offset[0]-model_offset[0];

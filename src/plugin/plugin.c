@@ -533,7 +533,23 @@ static bool plugin_representation_provider_callbacks_valid(
 			!plugin_callback_owned_by(owner, (void *)provider->mesh)) return false;
 	if (provider->collision_hull &&
 			!plugin_callback_owned_by(owner, (void *)provider->collision_hull)) return false;
+	if (provider->collision_compound &&
+			!plugin_callback_owned_by(owner, (void *)provider->collision_compound)) return false;
 	return true;
+}
+
+static void plugin_representation_cache_clear(struct shady_toplevel *toplevel) {
+	if (!toplevel) return;
+	memset(&toplevel->plugin_representation_mesh_validation_cache, 0,
+		sizeof(toplevel->plugin_representation_mesh_validation_cache));
+	memset(&toplevel->plugin_representation_hull_validation_cache, 0,
+		sizeof(toplevel->plugin_representation_hull_validation_cache));
+	memset(&toplevel->plugin_representation_hull_world_cache, 0,
+		sizeof(toplevel->plugin_representation_hull_world_cache));
+	memset(&toplevel->plugin_representation_compound_validation_cache, 0,
+		sizeof(toplevel->plugin_representation_compound_validation_cache));
+	memset(&toplevel->plugin_representation_compound_world_cache, 0,
+		sizeof(toplevel->plugin_representation_compound_world_cache));
 }
 
 static void plugin_representation_provider_detach(struct shady_toplevel *toplevel) {
@@ -555,6 +571,7 @@ static void plugin_representation_provider_detach(struct shady_toplevel *topleve
 	toplevel->plugin_representation_provider_owner = NULL;
 	toplevel->plugin_representation_state = NULL;
 	toplevel->plugin_representation_state_size = 0;
+	plugin_representation_cache_clear(toplevel);
 }
 
 void shady_plugin_representation_cleanup_owner(struct shady_server *server, void *owner) {
@@ -668,15 +685,43 @@ bool shady_toplevel_representation_mesh(const struct shady_toplevel *toplevel,
 			resolved.vertex_count < 3 ||
 			resolved.vertex_count > SHADY_MAX_REPRESENTATION_VERTICES)
 		return false;
-	if (resolved.indices) {
-		if (resolved.index_count < 3 ||
-				resolved.index_count > SHADY_MAX_REPRESENTATION_INDICES ||
-				resolved.index_count % 3 != 0)
+	struct shady_toplevel *mutable_toplevel = (struct shady_toplevel *)toplevel;
+	bool same_topology =
+		mutable_toplevel->plugin_representation_mesh_validation_cache.initialized &&
+		mutable_toplevel->plugin_representation_mesh_validation_cache.vertices == resolved.vertices &&
+		mutable_toplevel->plugin_representation_mesh_validation_cache.indices == resolved.indices &&
+		mutable_toplevel->plugin_representation_mesh_validation_cache.vertex_count == resolved.vertex_count &&
+		mutable_toplevel->plugin_representation_mesh_validation_cache.index_count == resolved.index_count &&
+		mutable_toplevel->plugin_representation_mesh_validation_cache.revision == resolved.revision;
+	if (same_topology) {
+		if (!mutable_toplevel->plugin_representation_mesh_validation_cache.valid)
 			return false;
-		for (size_t i = 0; i < resolved.index_count; ++i)
-			if (resolved.indices[i] >= resolved.vertex_count) return false;
-	} else if (resolved.index_count != 0 || resolved.vertex_count % 3 != 0) {
-		return false;
+	} else {
+		bool valid = true;
+		if (resolved.indices) {
+			if (resolved.index_count < 3 ||
+					resolved.index_count > SHADY_MAX_REPRESENTATION_INDICES ||
+					resolved.index_count % 3 != 0) {
+				valid = false;
+			} else {
+				for (size_t i = 0; i < resolved.index_count; ++i) {
+					if (resolved.indices[i] >= resolved.vertex_count) {
+						valid = false;
+						break;
+					}
+				}
+			}
+		} else if (resolved.index_count != 0 || resolved.vertex_count % 3 != 0) {
+			valid = false;
+		}
+		mutable_toplevel->plugin_representation_mesh_validation_cache.initialized = true;
+		mutable_toplevel->plugin_representation_mesh_validation_cache.valid = valid;
+		mutable_toplevel->plugin_representation_mesh_validation_cache.vertices = resolved.vertices;
+		mutable_toplevel->plugin_representation_mesh_validation_cache.indices = resolved.indices;
+		mutable_toplevel->plugin_representation_mesh_validation_cache.vertex_count = resolved.vertex_count;
+		mutable_toplevel->plugin_representation_mesh_validation_cache.index_count = resolved.index_count;
+		mutable_toplevel->plugin_representation_mesh_validation_cache.revision = resolved.revision;
+		if (!valid) return false;
 	}
 	*mesh = resolved;
 	return true;
@@ -706,10 +751,308 @@ bool shady_toplevel_representation_collision_hull(
 			resolved.index_count > SHADY_MAX_COLLISION_HULL_INDICES ||
 			resolved.index_count % 3 != 0)
 		return false;
-	for (size_t i = 0; i < resolved.index_count; ++i)
-		if (resolved.indices[i] >= resolved.vertex_count) return false;
+	struct shady_toplevel *mutable_toplevel = (struct shady_toplevel *)toplevel;
+	bool same_topology =
+		mutable_toplevel->plugin_representation_hull_validation_cache.initialized &&
+		mutable_toplevel->plugin_representation_hull_validation_cache.vertices == resolved.vertices &&
+		mutable_toplevel->plugin_representation_hull_validation_cache.indices == resolved.indices &&
+		mutable_toplevel->plugin_representation_hull_validation_cache.vertex_count == resolved.vertex_count &&
+		mutable_toplevel->plugin_representation_hull_validation_cache.index_count == resolved.index_count &&
+		mutable_toplevel->plugin_representation_hull_validation_cache.revision == resolved.revision;
+	if (same_topology) {
+		if (!mutable_toplevel->plugin_representation_hull_validation_cache.valid)
+			return false;
+	} else {
+		bool valid = true;
+		for (size_t i = 0; i < resolved.index_count; ++i) {
+			if (resolved.indices[i] >= resolved.vertex_count) {
+				valid = false;
+				break;
+			}
+		}
+		mutable_toplevel->plugin_representation_hull_validation_cache.initialized = true;
+		mutable_toplevel->plugin_representation_hull_validation_cache.valid = valid;
+		mutable_toplevel->plugin_representation_hull_validation_cache.vertices = resolved.vertices;
+		mutable_toplevel->plugin_representation_hull_validation_cache.indices = resolved.indices;
+		mutable_toplevel->plugin_representation_hull_validation_cache.vertex_count = resolved.vertex_count;
+		mutable_toplevel->plugin_representation_hull_validation_cache.index_count = resolved.index_count;
+		mutable_toplevel->plugin_representation_hull_validation_cache.revision = resolved.revision;
+		if (!valid) return false;
+	}
 	*hull = resolved;
 	return true;
+}
+
+bool shady_toplevel_representation_collision_hull_world(
+		struct shady_toplevel *toplevel,
+		const struct shady_representation_context *context,
+		const struct shady_representation_model *model,
+		const float (**vertices_world)[3], size_t *vertex_count,
+		const uint16_t **indices, size_t *index_count,
+		float center[3], float half[3]) {
+#if SHADY_HAS_SPATIAL
+	if (!toplevel || !context || !model || !vertices_world || !vertex_count ||
+			!indices || !index_count || !center || !half)
+		return false;
+	struct shady_collision_hull hull = {0};
+	if (!shady_toplevel_representation_collision_hull(toplevel, context, &hull))
+		return false;
+	float key[5] = {
+		model->width, model->height, model->depth,
+		model->tilt_x, model->tilt_y,
+	};
+	bool cache_hit = toplevel->plugin_representation_hull_world_cache.valid &&
+		toplevel->plugin_representation_hull_world_cache.revision == hull.revision &&
+		toplevel->plugin_representation_hull_world_cache.vertices == hull.vertices &&
+		toplevel->plugin_representation_hull_world_cache.indices == hull.indices &&
+		toplevel->plugin_representation_hull_world_cache.vertex_count == hull.vertex_count &&
+		toplevel->plugin_representation_hull_world_cache.index_count == hull.index_count &&
+		memcmp(toplevel->plugin_representation_hull_world_cache.shape_key,
+			key, sizeof(key)) == 0;
+	if (!cache_hit) {
+		float transform[16];
+		shady_window_box_model(transform,
+			0.f, 0.f, 0.f,
+			model->width, model->height, model->depth,
+			model->tilt_x, model->tilt_y);
+		float minv[3] = {INFINITY, INFINITY, INFINITY};
+		float maxv[3] = {-INFINITY, -INFINITY, -INFINITY};
+		for (size_t i = 0; i < hull.vertex_count; ++i) {
+			const struct shady_collision_vertex *v = &hull.vertices[i];
+			float *world = toplevel->plugin_representation_hull_world_cache.vertices_world[i];
+			world[0] = transform[0] * v->x + transform[4] * v->y +
+				transform[8] * v->z + transform[12];
+			world[1] = transform[1] * v->x + transform[5] * v->y +
+				transform[9] * v->z + transform[13];
+			world[2] = transform[2] * v->x + transform[6] * v->y +
+				transform[10] * v->z + transform[14];
+			for (int axis = 0; axis < 3; ++axis) {
+				if (world[axis] < minv[axis]) minv[axis] = world[axis];
+				if (world[axis] > maxv[axis]) maxv[axis] = world[axis];
+			}
+		}
+		for (int axis = 0; axis < 3; ++axis) {
+			toplevel->plugin_representation_hull_world_cache.center_offset[axis] =
+				(minv[axis] + maxv[axis]) * .5f;
+			toplevel->plugin_representation_hull_world_cache.half[axis] =
+				fmaxf((maxv[axis] - minv[axis]) * .5f, .001f);
+			for (size_t i = 0; i < hull.vertex_count; ++i)
+				toplevel->plugin_representation_hull_world_cache.vertices_world[i][axis] -=
+					toplevel->plugin_representation_hull_world_cache.center_offset[axis];
+		}
+		toplevel->plugin_representation_hull_world_cache.valid = true;
+		toplevel->plugin_representation_hull_world_cache.revision = hull.revision;
+		toplevel->plugin_representation_hull_world_cache.vertices = hull.vertices;
+		toplevel->plugin_representation_hull_world_cache.indices = hull.indices;
+		toplevel->plugin_representation_hull_world_cache.vertex_count = hull.vertex_count;
+		toplevel->plugin_representation_hull_world_cache.index_count = hull.index_count;
+		memcpy(toplevel->plugin_representation_hull_world_cache.shape_key,
+			key, sizeof(key));
+	}
+	*vertices_world = (const float (*)[3])
+		toplevel->plugin_representation_hull_world_cache.vertices_world;
+	*vertex_count = toplevel->plugin_representation_hull_world_cache.vertex_count;
+	*indices = (const uint16_t *)
+		toplevel->plugin_representation_hull_world_cache.indices;
+	*index_count = toplevel->plugin_representation_hull_world_cache.index_count;
+	center[0] = model->center_x +
+		toplevel->plugin_representation_hull_world_cache.center_offset[0];
+	center[1] = model->center_y +
+		toplevel->plugin_representation_hull_world_cache.center_offset[1];
+	center[2] = model->center_z +
+		toplevel->plugin_representation_hull_world_cache.center_offset[2];
+	memcpy(half, toplevel->plugin_representation_hull_world_cache.half,
+		3 * sizeof(float));
+	return true;
+#else
+	(void)toplevel; (void)context; (void)model; (void)vertices_world;
+	(void)vertex_count; (void)indices; (void)index_count; (void)center; (void)half;
+	return false;
+#endif
+}
+
+static bool shady_toplevel_representation_collision_compound_raw(
+		struct shady_toplevel *toplevel,
+		const struct shady_representation_context *context,
+		struct shady_collision_compound *compound) {
+	if (!toplevel || !context || !compound ||
+			!toplevel->plugin_representation_provider_active)
+		return false;
+	shady_representation_collision_compound_callback callback =
+		toplevel->plugin_representation_provider.collision_compound;
+	if (!callback || !plugin_callback_owned_by(
+			toplevel->plugin_representation_provider_owner, (void *)callback))
+		return false;
+	struct shady_collision_compound resolved = {.struct_size = sizeof(resolved)};
+	if (!callback((shady_host)toplevel->server, (shady_window)toplevel,
+			context, &resolved, toplevel->plugin_representation_state,
+			toplevel->plugin_representation_provider.user_data))
+		return false;
+	if (resolved.struct_size < sizeof(resolved) || !resolved.parts ||
+			resolved.part_count < 1 || resolved.part_count > 8)
+		return false;
+	bool same_topology =
+		toplevel->plugin_representation_compound_validation_cache.initialized &&
+		toplevel->plugin_representation_compound_validation_cache.parts == resolved.parts &&
+		toplevel->plugin_representation_compound_validation_cache.part_count == resolved.part_count &&
+		toplevel->plugin_representation_compound_validation_cache.revision == resolved.revision;
+	if (same_topology) {
+		if (!toplevel->plugin_representation_compound_validation_cache.valid)
+			return false;
+	} else {
+		bool valid = true;
+		size_t total_vertices = 0, total_indices = 0;
+		for (size_t part = 0; part < resolved.part_count && valid; ++part) {
+			const struct shady_collision_hull *hull = &resolved.parts[part];
+			if (hull->struct_size < sizeof(*hull) || !hull->vertices ||
+					!hull->indices || hull->vertex_count < 4 || hull->index_count < 12 ||
+					hull->index_count % 3 != 0) {
+				valid = false;
+				break;
+			}
+			total_vertices += hull->vertex_count;
+			total_indices += hull->index_count;
+			if (total_vertices > SHADY_MAX_COLLISION_HULL_VERTICES ||
+					total_indices > SHADY_MAX_COLLISION_HULL_INDICES) {
+				valid = false;
+				break;
+			}
+			for (size_t i = 0; i < hull->index_count; ++i) {
+				if (hull->indices[i] >= hull->vertex_count) {
+					valid = false;
+					break;
+				}
+			}
+		}
+		toplevel->plugin_representation_compound_validation_cache.initialized = true;
+		toplevel->plugin_representation_compound_validation_cache.valid = valid;
+		toplevel->plugin_representation_compound_validation_cache.parts = resolved.parts;
+		toplevel->plugin_representation_compound_validation_cache.part_count = resolved.part_count;
+		toplevel->plugin_representation_compound_validation_cache.revision = resolved.revision;
+		if (!valid) return false;
+	}
+	*compound = resolved;
+	return true;
+}
+
+bool shady_toplevel_representation_collision_compound_world(
+		struct shady_toplevel *toplevel,
+		const struct shady_representation_context *context,
+		const struct shady_representation_model *model,
+		struct shady_resolved_collision_compound *compound) {
+#if SHADY_HAS_SPATIAL
+	if (!toplevel || !context || !model || !compound) return false;
+	memset(compound, 0, sizeof(*compound));
+	struct shady_collision_compound raw = {0};
+	if (!shady_toplevel_representation_collision_compound_raw(toplevel, context, &raw)) {
+		const float (*vertices)[3] = NULL;
+		size_t vertex_count = 0, index_count = 0;
+		const uint16_t *indices = NULL;
+		if (!shady_toplevel_representation_collision_hull_world(toplevel,
+				context, model, &vertices, &vertex_count, &indices, &index_count,
+				compound->center, compound->half))
+			return false;
+		compound->part_count = 1;
+		compound->parts[0] = (struct shady_resolved_collision_part){
+			.vertices = vertices,
+			.vertex_count = vertex_count,
+			.indices = indices,
+			.index_count = index_count,
+		};
+		return true;
+	}
+
+	float key[5] = {
+		model->width, model->height, model->depth,
+		model->tilt_x, model->tilt_y,
+	};
+	bool cache_hit = toplevel->plugin_representation_compound_world_cache.valid &&
+		toplevel->plugin_representation_compound_world_cache.revision == raw.revision &&
+		toplevel->plugin_representation_compound_world_cache.parts == raw.parts &&
+		toplevel->plugin_representation_compound_world_cache.part_count == raw.part_count &&
+		memcmp(toplevel->plugin_representation_compound_world_cache.shape_key,
+			key, sizeof(key)) == 0;
+	if (!cache_hit) {
+		float transform[16];
+		shady_window_box_model(transform, 0.f, 0.f, 0.f,
+			model->width, model->height, model->depth,
+			model->tilt_x, model->tilt_y);
+		float minv[3] = {INFINITY, INFINITY, INFINITY};
+		float maxv[3] = {-INFINITY, -INFINITY, -INFINITY};
+		size_t vertex_cursor = 0, index_cursor = 0;
+		for (size_t part = 0; part < raw.part_count; ++part) {
+			const struct shady_collision_hull *hull = &raw.parts[part];
+			toplevel->plugin_representation_compound_world_cache.part_vertex_offset[part] =
+				vertex_cursor;
+			toplevel->plugin_representation_compound_world_cache.part_vertex_count[part] =
+				hull->vertex_count;
+			toplevel->plugin_representation_compound_world_cache.part_index_offset[part] =
+				index_cursor;
+			toplevel->plugin_representation_compound_world_cache.part_index_count[part] =
+				hull->index_count;
+			for (size_t i = 0; i < hull->vertex_count; ++i) {
+				const struct shady_collision_vertex *v = &hull->vertices[i];
+				float *world = toplevel->plugin_representation_compound_world_cache
+					.vertices_world[vertex_cursor + i];
+				world[0] = transform[0] * v->x + transform[4] * v->y +
+					transform[8] * v->z + transform[12];
+				world[1] = transform[1] * v->x + transform[5] * v->y +
+					transform[9] * v->z + transform[13];
+				world[2] = transform[2] * v->x + transform[6] * v->y +
+					transform[10] * v->z + transform[14];
+				for (int axis = 0; axis < 3; ++axis) {
+					if (world[axis] < minv[axis]) minv[axis] = world[axis];
+					if (world[axis] > maxv[axis]) maxv[axis] = world[axis];
+				}
+			}
+			memcpy(&toplevel->plugin_representation_compound_world_cache.indices[index_cursor],
+				hull->indices, hull->index_count * sizeof(uint16_t));
+			vertex_cursor += hull->vertex_count;
+			index_cursor += hull->index_count;
+		}
+		for (int axis = 0; axis < 3; ++axis) {
+			toplevel->plugin_representation_compound_world_cache.center_offset[axis] =
+				(minv[axis] + maxv[axis]) * .5f;
+			toplevel->plugin_representation_compound_world_cache.half[axis] =
+				fmaxf((maxv[axis] - minv[axis]) * .5f, .001f);
+			for (size_t i = 0; i < vertex_cursor; ++i)
+				toplevel->plugin_representation_compound_world_cache.vertices_world[i][axis] -=
+					toplevel->plugin_representation_compound_world_cache.center_offset[axis];
+		}
+		toplevel->plugin_representation_compound_world_cache.valid = true;
+		toplevel->plugin_representation_compound_world_cache.revision = raw.revision;
+		toplevel->plugin_representation_compound_world_cache.parts = raw.parts;
+		toplevel->plugin_representation_compound_world_cache.part_count = raw.part_count;
+		memcpy(toplevel->plugin_representation_compound_world_cache.shape_key,
+			key, sizeof(key));
+	}
+	compound->part_count = toplevel->plugin_representation_compound_world_cache.part_count;
+	for (size_t part = 0; part < compound->part_count; ++part) {
+		size_t vo = toplevel->plugin_representation_compound_world_cache.part_vertex_offset[part];
+		size_t io = toplevel->plugin_representation_compound_world_cache.part_index_offset[part];
+		compound->parts[part].vertices = (const float (*)[3])
+			&toplevel->plugin_representation_compound_world_cache.vertices_world[vo];
+		compound->parts[part].vertex_count =
+			toplevel->plugin_representation_compound_world_cache.part_vertex_count[part];
+		compound->parts[part].indices =
+			&toplevel->plugin_representation_compound_world_cache.indices[io];
+		compound->parts[part].index_count =
+			toplevel->plugin_representation_compound_world_cache.part_index_count[part];
+	}
+	const float model_center[3] = {
+		model->center_x, model->center_y, model->center_z,
+	};
+	for (int axis = 0; axis < 3; ++axis) {
+		compound->center[axis] = model_center[axis] +
+			toplevel->plugin_representation_compound_world_cache.center_offset[axis];
+		compound->half[axis] =
+			toplevel->plugin_representation_compound_world_cache.half[axis];
+	}
+	return true;
+#else
+	(void)toplevel; (void)context; (void)model; (void)compound;
+	return false;
+#endif
 }
 
 bool shady_toplevel_representation_collision(const struct shady_toplevel *toplevel,

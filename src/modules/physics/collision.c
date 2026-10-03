@@ -213,6 +213,32 @@ static bool world_has_convex_triangle_contact(const struct shady_world *world,
 	return false;
 }
 
+static bool world_has_compound_triangle_contact(const struct shady_world *world,
+		const float center[3], const float half[3],
+		const struct shady_physics_convex_part *parts, size_t part_count) {
+	if (!parts || part_count == 0) return false;
+	for (size_t i = 0; i < world->triangle_count; ++i) {
+		const struct shady_triangle_collider *triangle = &world->triangles[i];
+		bool broad_phase = true;
+		for (int axis = 0; axis < 3; ++axis) {
+			if (triangle->max[axis] < center[axis] - half[axis] ||
+					triangle->min[axis] > center[axis] + half[axis]) {
+				broad_phase = false;
+				break;
+			}
+		}
+		if (!broad_phase) continue;
+		for (size_t part = 0; part < part_count; ++part) {
+			const struct shady_physics_convex_part *p = &parts[part];
+			if (shady_physics_triangle_convex_overlap(triangle,
+					p->vertices, p->vertex_count, p->indices, p->index_count,
+					center))
+				return true;
+		}
+	}
+	return false;
+}
+
 bool shady_physics_sweep_cube_axis(const struct shady_world *world,
 		float center[3], const float half[3], int axis, float delta,
 		float *velocity, float restitution) {
@@ -325,6 +351,55 @@ bool shady_physics_sweep_convex_axis(const struct shady_world *world,
 	return hit;
 }
 
+bool shady_physics_sweep_compound_axis(const struct shady_world *world,
+		float center[3], const float half[3],
+		const struct shady_physics_convex_part *parts, size_t part_count,
+		int axis, float delta, float *velocity, float restitution) {
+	if (!world || !center || !half || !parts || part_count == 0 ||
+			fabsf(delta) < 1e-8f)
+		return false;
+
+	int a = (axis + 1) % 3;
+	int b = (axis + 2) % 3;
+	float start = center[axis];
+	float next = start + delta;
+	float best = next;
+	bool hit = false;
+
+	size_t box_count = world->triangle_count ? 1 : world->collider_count;
+	for (size_t i = 0; i < box_count; ++i) {
+		const struct shady_box_collider *collider = &world->colliders[i];
+		const float min[3] = {collider->min_x, collider->min_y, collider->min_z};
+		const float max[3] = {collider->max_x, collider->max_y, collider->max_z};
+		if (center[a] + half[a] <= min[a] || center[a] - half[a] >= max[a] ||
+				center[b] + half[b] <= min[b] || center[b] - half[b] >= max[b])
+			continue;
+		if (delta > 0.f && start + half[axis] <= min[axis] &&
+				next + half[axis] >= min[axis]) {
+			float contact = min[axis] - half[axis];
+			if (!hit || contact < best) { best = contact; hit = true; }
+		} else if (delta < 0.f && start - half[axis] >= max[axis] &&
+				next - half[axis] <= max[axis]) {
+			float contact = max[axis] + half[axis];
+			if (!hit || contact > best) { best = contact; hit = true; }
+		}
+	}
+
+	if (!hit && world->triangle_count) {
+		float probe[3] = {center[0], center[1], center[2]};
+		probe[axis] = next;
+		if (world_has_compound_triangle_contact(world, probe, half,
+				parts, part_count)) {
+			best = start;
+			hit = true;
+		}
+	}
+
+	center[axis] = hit ? best : next;
+	if (hit && velocity) *velocity = -*velocity * restitution;
+	return hit;
+}
+
 void shady_physics_move_box(const struct shady_world *world, float center[3],
 		const float target[3], const float half[3]) {
 	float delta[3] = {
@@ -382,6 +457,33 @@ void shady_physics_move_convex(const struct shady_world *world, float center[3],
 			0, step[0], &velocity, 0.f);
 		shady_physics_sweep_convex_axis(world, center, half,
 			vertices, vertex_count, indices, index_count,
+			2, step[2], &velocity, 0.f);
+	}
+}
+
+void shady_physics_move_compound(const struct shady_world *world, float center[3],
+		const float target[3], const float half[3],
+		const struct shady_physics_convex_part *parts, size_t part_count) {
+	if (!world || !center || !target || !half || !parts || part_count == 0)
+		return;
+	float delta[3] = {
+		target[0] - center[0], target[1] - center[1], target[2] - center[2],
+	};
+	float max_move = fmaxf(fabsf(delta[0]),
+		fmaxf(fabsf(delta[1]), fabsf(delta[2])));
+	float min_half = fminf(half[0], fminf(half[1], half[2]));
+	float max_step = fmaxf(min_half * .5f, .002f);
+	int steps = (int)ceilf(max_move / max_step);
+	if (steps < 1) steps = 1;
+	if (steps > 64) steps = 64;
+	float step[3] = {delta[0] / steps, delta[1] / steps, delta[2] / steps};
+	float velocity = 0.f;
+	for (int i = 0; i < steps; ++i) {
+		shady_physics_sweep_compound_axis(world, center, half, parts, part_count,
+			1, step[1], &velocity, 0.f);
+		shady_physics_sweep_compound_axis(world, center, half, parts, part_count,
+			0, step[0], &velocity, 0.f);
+		shady_physics_sweep_compound_axis(world, center, half, parts, part_count,
 			2, step[2], &velocity, 0.f);
 	}
 }

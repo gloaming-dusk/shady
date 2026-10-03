@@ -7,6 +7,13 @@
 
 #include "../../world/world.h"
 
+struct shady_physics_convex_part {
+	const float (*vertices)[3];
+	size_t vertex_count;
+	const uint16_t *indices;
+	size_t index_count;
+};
+
 bool shady_physics_triangle_cube_overlap(
 	const struct shady_triangle_collider *triangle,
 	const float center[3], const float half[3]);
@@ -24,6 +31,10 @@ bool shady_physics_sweep_convex_axis(const struct shady_world *world,
 	const float (*vertices)[3], size_t vertex_count,
 	const uint16_t *indices, size_t index_count,
 	int axis, float delta, float *velocity, float restitution);
+bool shady_physics_sweep_compound_axis(const struct shady_world *world,
+	float center[3], const float half[3],
+	const struct shady_physics_convex_part *parts, size_t part_count,
+	int axis, float delta, float *velocity, float restitution);
 
 void shady_physics_move_box(const struct shady_world *world, float center[3],
 	const float target[3], const float half[3]);
@@ -31,6 +42,9 @@ void shady_physics_move_convex(const struct shady_world *world, float center[3],
 	const float target[3], const float half[3],
 	const float (*vertices)[3], size_t vertex_count,
 	const uint16_t *indices, size_t index_count);
+void shady_physics_move_compound(const struct shady_world *world, float center[3],
+	const float target[3], const float half[3],
+	const struct shady_physics_convex_part *parts, size_t part_count);
 void shady_physics_move_cube(const struct shady_world *world, float center[3],
 	const float target[3], float half_size);
 
