@@ -1361,6 +1361,49 @@ void shady_gl_pipeline_draw_debug_box(
 	glDisableVertexAttribArray(0); glDepthMask(GL_TRUE); glUseProgram(0);
 }
 
+void shady_gl_pipeline_draw_debug_convex(
+		struct shady_gl_pipeline *pipeline, const float vp[16], const float model[16],
+		const float *vertices, size_t vertex_count,
+		const uint16_t *indices, size_t index_count) {
+	if (!pipeline || !vp || !model || !vertices || !indices ||
+			vertex_count < 4 || index_count < 12 || index_count % 3 != 0)
+		return;
+	size_t line_vertex_count = index_count * 2;
+	GLfloat *lines = malloc(line_vertex_count * 3 * sizeof(GLfloat));
+	if (!lines) return;
+	size_t out = 0;
+	for (size_t i = 0; i < index_count; i += 3) {
+		uint16_t tri[3] = {indices[i], indices[i + 1], indices[i + 2]};
+		if (tri[0] >= vertex_count || tri[1] >= vertex_count || tri[2] >= vertex_count) {
+			free(lines);
+			return;
+		}
+		for (int edge = 0; edge < 3; ++edge) {
+			uint16_t a = tri[edge];
+			uint16_t b = tri[(edge + 1) % 3];
+			memcpy(&lines[out * 3], &vertices[a * 3], 3 * sizeof(GLfloat));
+			out++;
+			memcpy(&lines[out * 3], &vertices[b * 3], 3 * sizeof(GLfloat));
+			out++;
+		}
+	}
+	float mvp[16];
+	shady_mat4_multiply(mvp, vp, model);
+	glUseProgram(pipeline->debug_prog);
+	glUniformMatrix4fv(pipeline->debug_u_vp, 1, GL_FALSE, mvp);
+	glUniform4f(pipeline->debug_u_color, .25f, 1.f, .95f, 1.f);
+	glDisable(GL_BLEND);
+	glDepthMask(GL_FALSE);
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, lines);
+	glEnableVertexAttribArray(0);
+	glDrawArrays(GL_LINES, 0, (GLsizei)out);
+	glDisableVertexAttribArray(0);
+	glDepthMask(GL_TRUE);
+	glUseProgram(0);
+	free(lines);
+}
+
 void shady_gl_pipeline_draw_debug_triangle(
 		struct shady_gl_pipeline *pipeline,const float vp[16],
 		const struct shady_triangle_collider *t){

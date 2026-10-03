@@ -73,6 +73,114 @@ static void test_triangle_sat(void) {
 		"face-touching triangle counts as contact");
 }
 
+static void test_convex_sat(void) {
+	const float tetra[4][3] = {
+		{-0.5f, -0.5f, -0.5f},
+		{ 0.5f, -0.5f, -0.5f},
+		{-0.5f,  0.5f, -0.5f},
+		{-0.5f, -0.5f,  0.5f},
+	};
+	const uint16_t indices[] = {
+		0, 2, 1,
+		0, 1, 3,
+		0, 3, 2,
+		1, 2, 3,
+	};
+	const float offset[3] = {0.f, 0.f, 0.f};
+
+	struct shady_triangle_collider inside = triangle(
+		-0.45f, -0.45f, -0.45f,
+		-0.10f, -0.45f, -0.45f,
+		-0.45f, -0.10f, -0.45f);
+	expect_true(shady_physics_triangle_convex_overlap(&inside,
+		tetra, 4, indices, 12, offset),
+		"triangle intersects convex tetrahedron");
+
+	/* This triangle is inside the tetrahedron's AABB but beyond the slanted
+	 * x+y+z=-0.5 face. A box-only narrow phase would report a false hit. */
+	struct shady_triangle_collider aabb_only = triangle(
+		0.35f, 0.35f, 0.35f,
+		0.45f, 0.35f, 0.35f,
+		0.35f, 0.45f, 0.35f);
+	expect_false(shady_physics_triangle_convex_overlap(&aabb_only,
+		tetra, 4, indices, 12, offset),
+		"convex SAT rejects AABB false positive");
+}
+
+static void test_convex_sweep(void) {
+	const float tetra[4][3] = {
+		{-0.5f, -0.5f, -0.5f},
+		{ 0.5f, -0.5f, -0.5f},
+		{-0.5f,  0.5f, -0.5f},
+		{-0.5f, -0.5f,  0.5f},
+	};
+	const uint16_t indices[] = {
+		0, 2, 1, 0, 1, 3, 0, 3, 2, 1, 2, 3,
+	};
+	const float half[3] = {.5f, .5f, .5f};
+
+	struct shady_world world = {0};
+	world.colliders[0] = (struct shady_box_collider){
+		.min_x = -100.f, .max_x = 100.f,
+		.min_y = -100.f, .max_y = -99.f,
+		.min_z = -100.f, .max_z = 100.f,
+	};
+	world.collider_count = 1;
+	world.triangles[0] = triangle(
+		0.35f, 0.35f, 0.35f,
+		0.45f, 0.35f, 0.35f,
+		0.35f, 0.45f, 0.35f);
+	world.triangle_count = 1;
+
+	float center[3] = {-1.f, 0.f, 0.f};
+	float velocity = 1.f;
+	expect_false(shady_physics_sweep_convex_axis(&world, center, half,
+		tetra, 4, indices, 12, 0, 1.f, &velocity, 0.f),
+		"convex sweep ignores AABB-only triangle overlap");
+	expect_near(center[0], 0.f, 1e-6f,
+		"convex sweep reaches target after false-positive rejection");
+
+	world.triangles[0] = triangle(
+		-0.45f, -0.45f, -0.45f,
+		-0.10f, -0.45f, -0.45f,
+		-0.45f, -0.10f, -0.45f);
+	center[0] = -1.f;
+	velocity = 1.f;
+	expect_true(shady_physics_sweep_convex_axis(&world, center, half,
+		tetra, 4, indices, 12, 0, 1.f, &velocity, 0.f),
+		"convex sweep blocks true hull contact");
+	expect_near(center[0], -1.f, 1e-6f,
+		"convex hull contact rejects penetrating step");
+}
+
+static void test_convex_move(void) {
+	struct shady_world world = {0};
+	world.colliders[0] = (struct shady_box_collider){
+		.min_x = 1.f, .max_x = 1.2f,
+		.min_y = -2.f, .max_y = 2.f,
+		.min_z = -2.f, .max_z = 2.f,
+	};
+	world.collider_count = 1;
+	const float cube[8][3] = {
+		{-.25f,-.25f,-.25f}, {.25f,-.25f,-.25f},
+		{-.25f,.25f,-.25f}, {.25f,.25f,-.25f},
+		{-.25f,-.25f,.25f}, {.25f,-.25f,.25f},
+		{-.25f,.25f,.25f}, {.25f,.25f,.25f},
+	};
+	const uint16_t indices[] = {
+		0,2,1, 1,2,3, 4,5,6, 5,7,6,
+		0,1,4, 1,5,4, 2,6,3, 3,6,7,
+		0,4,2, 2,4,6, 1,3,5, 3,7,5,
+	};
+	float center[3] = {-2.f, 0.f, 0.f};
+	const float target[3] = {3.f, 0.f, 0.f};
+	const float half[3] = {.25f, .25f, .25f};
+	shady_physics_move_convex(&world, center, target, half,
+		cube, 8, indices, sizeof(indices) / sizeof(indices[0]));
+	expect_near(center[0], .75f, 1e-5f,
+		"convex held-style movement does not tunnel through box wall");
+}
+
 static void test_box_sweep(void) {
 	struct shady_world world = {0};
 	world.colliders[0] = (struct shady_box_collider){
@@ -141,6 +249,9 @@ static void test_triangle_world_contact(void) {
 
 int main(void) {
 	test_triangle_sat();
+	test_convex_sat();
+	test_convex_sweep();
+	test_convex_move();
 	test_box_sweep();
 	test_substepped_move();
 	test_triangle_world_contact();

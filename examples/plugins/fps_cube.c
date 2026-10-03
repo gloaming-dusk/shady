@@ -7,6 +7,23 @@
 static const struct shady_plugin_api_v1 *api;
 static shady_host host;
 static bool collision_logged;
+static bool hull_logged;
+
+static const struct shady_collision_vertex cube_hull_vertices[] = {
+    {0.f, 0.f, -1.f}, {1.f, 0.f, -1.f},
+    {0.f, 1.f, -1.f}, {1.f, 1.f, -1.f},
+    {0.f, 0.f,  0.f}, {1.f, 0.f,  0.f},
+    {0.f, 1.f,  0.f}, {1.f, 1.f,  0.f},
+};
+
+static const uint16_t cube_hull_indices[] = {
+    0, 2, 1, 1, 2, 3,
+    4, 5, 6, 5, 7, 6,
+    0, 1, 4, 1, 5, 4,
+    2, 6, 3, 3, 6, 7,
+    0, 4, 2, 2, 4, 6,
+    1, 3, 5, 3, 7, 5,
+};
 
 static bool cube_collision(shady_host callback_host, shady_window window,
         const struct shady_representation_context *context,
@@ -29,6 +46,28 @@ static bool cube_collision(shady_host callback_host, shady_window window,
     return true;
 }
 
+static bool cube_collision_hull(shady_host callback_host, shady_window window,
+        const struct shady_representation_context *context,
+        struct shady_collision_hull *hull, void *state, void *user_data) {
+    (void)callback_host;
+    (void)window;
+    (void)context;
+    (void)state;
+    (void)user_data;
+    if (!hull_logged) {
+        hull_logged = true;
+        api->log(SHADY_PLUGIN_LOG_INFO,
+            "fps-cube: convex collision hull callback active");
+    }
+    hull->struct_size = sizeof(*hull);
+    hull->vertices = cube_hull_vertices;
+    hull->vertex_count = sizeof(cube_hull_vertices) / sizeof(cube_hull_vertices[0]);
+    hull->indices = cube_hull_indices;
+    hull->index_count = sizeof(cube_hull_indices) / sizeof(cube_hull_indices[0]);
+    hull->revision = 1;
+    return true;
+}
+
 static const struct shady_window_representation_provider cube_provider = {
     .struct_size = sizeof(struct shady_window_representation_provider),
     .base = {
@@ -40,6 +79,7 @@ static const struct shady_window_representation_provider cube_provider = {
         .hide_titlebar = true,
     },
     .collision = cube_collision,
+    .collision_hull = cube_collision_hull,
 };
 
 static void apply_window(shady_window window) {

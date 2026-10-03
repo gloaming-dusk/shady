@@ -374,5 +374,9 @@ bool shady_toplevel_representation_collision(const struct shady_toplevel *toplev
 	const struct shady_representation_context *context,
 	const struct shady_representation_model *model,
 	struct shady_collision_box *box);
+bool shady_toplevel_representation_collision_hull(
+	const struct shady_toplevel *toplevel,
+	const struct shady_representation_context *context,
+	struct shady_collision_hull *hull);
 
 #endif

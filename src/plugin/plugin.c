@@ -35,6 +35,8 @@
 #define SHADY_MAX_REPRESENTATION_STATE (1024u * 1024u)
 #define SHADY_MAX_REPRESENTATION_VERTICES 16384u
 #define SHADY_MAX_REPRESENTATION_INDICES 49152u
+#define SHADY_MAX_COLLISION_HULL_VERTICES 256u
+#define SHADY_MAX_COLLISION_HULL_INDICES 1536u
 
 static void host_log(enum shady_plugin_log_level level, const char *message) {
 	enum wlr_log_importance importance = WLR_INFO;
@@ -529,6 +531,8 @@ static bool plugin_representation_provider_callbacks_valid(
 			!plugin_callback_owned_by(owner, (void *)provider->collision)) return false;
 	if (provider->mesh &&
 			!plugin_callback_owned_by(owner, (void *)provider->mesh)) return false;
+	if (provider->collision_hull &&
+			!plugin_callback_owned_by(owner, (void *)provider->collision_hull)) return false;
 	return true;
 }
 
@@ -675,6 +679,36 @@ bool shady_toplevel_representation_mesh(const struct shady_toplevel *toplevel,
 		return false;
 	}
 	*mesh = resolved;
+	return true;
+}
+
+bool shady_toplevel_representation_collision_hull(
+		const struct shady_toplevel *toplevel,
+		const struct shady_representation_context *context,
+		struct shady_collision_hull *hull) {
+	if (!toplevel || !context || !hull ||
+			!toplevel->plugin_representation_provider_active)
+		return false;
+	shady_representation_collision_hull_callback callback =
+		toplevel->plugin_representation_provider.collision_hull;
+	if (!callback || !plugin_callback_owned_by(
+			toplevel->plugin_representation_provider_owner, (void *)callback))
+		return false;
+	struct shady_collision_hull resolved = {.struct_size = sizeof(resolved)};
+	if (!callback((shady_host)toplevel->server, (shady_window)toplevel,
+			context, &resolved, toplevel->plugin_representation_state,
+			toplevel->plugin_representation_provider.user_data))
+		return false;
+	if (resolved.struct_size < sizeof(resolved) || !resolved.vertices ||
+			!resolved.indices || resolved.vertex_count < 4 ||
+			resolved.vertex_count > SHADY_MAX_COLLISION_HULL_VERTICES ||
+			resolved.index_count < 12 ||
+			resolved.index_count > SHADY_MAX_COLLISION_HULL_INDICES ||
+			resolved.index_count % 3 != 0)
+		return false;
+	for (size_t i = 0; i < resolved.index_count; ++i)
+		if (resolved.indices[i] >= resolved.vertex_count) return false;
+	*hull = resolved;
 	return true;
 }
 
@@ -844,18 +878,26 @@ static bool host_window_reset_representation(shady_host host, shady_window windo
 static bool host_window_set_representation_provider(shady_host host,
 		shady_window window,
 		const struct shady_window_representation_provider *provider) {
+	const size_t provider_v1_size =
+		offsetof(struct shady_window_representation_provider, user_data) +
+		sizeof(provider->user_data);
 	if (!host_window_valid(host, window) || !provider ||
-			provider->struct_size < sizeof(*provider) ||
-			provider->base.struct_size < sizeof(provider->base) ||
-			(provider->base.kind != SHADY_WINDOW_REPRESENTATION_BOX &&
-			 provider->base.kind != SHADY_WINDOW_REPRESENTATION_MESH) ||
-			provider->base.width <= 0.f || provider->base.height <= 0.f ||
-			provider->base.depth <= 0.f)
+			provider->struct_size < provider_v1_size)
+		return false;
+	struct shady_window_representation_provider normalized = {0};
+	size_t copy_size = provider->struct_size < sizeof(normalized)
+		? provider->struct_size : sizeof(normalized);
+	memcpy(&normalized, provider, copy_size);
+	if (normalized.base.struct_size < sizeof(normalized.base) ||
+			(normalized.base.kind != SHADY_WINDOW_REPRESENTATION_BOX &&
+			 normalized.base.kind != SHADY_WINDOW_REPRESENTATION_MESH) ||
+			normalized.base.width <= 0.f || normalized.base.height <= 0.f ||
+			normalized.base.depth <= 0.f)
 		return false;
 	void *owner = plugin_owner_from_address((void *)provider);
-	if (!owner || provider->state_size > SHADY_MAX_REPRESENTATION_STATE ||
-			!plugin_representation_provider_callbacks_valid(owner, provider) ||
-			(provider->base.kind == SHADY_WINDOW_REPRESENTATION_MESH && !provider->mesh))
+	if (!owner || normalized.state_size > SHADY_MAX_REPRESENTATION_STATE ||
+			!plugin_representation_provider_callbacks_valid(owner, &normalized) ||
+			(normalized.base.kind == SHADY_WINDOW_REPRESENTATION_MESH && !normalized.mesh))
 		return false;
 	struct shady_toplevel *toplevel = WINDOW(window);
 	if (toplevel->plugin_representation_override &&
@@ -864,10 +906,10 @@ static bool host_window_set_representation_provider(shady_host host,
 	if (toplevel->plugin_representation_provider_active &&
 			toplevel->plugin_representation_provider_owner != owner)
 		return false;
-	void *state = provider->state_size > 0 ? calloc(1, provider->state_size) : NULL;
-	if (provider->state_size > 0 && !state) return false;
-	if (provider->state_init &&
-			!provider->state_init(host, window, state, provider->user_data)) {
+	void *state = normalized.state_size > 0 ? calloc(1, normalized.state_size) : NULL;
+	if (normalized.state_size > 0 && !state) return false;
+	if (normalized.state_init &&
+			!normalized.state_init(host, window, state, normalized.user_data)) {
 		free(state);
 		return false;
 	}
@@ -879,12 +921,12 @@ static bool host_window_set_representation_provider(shady_host host,
 		toplevel->plugin_representation_override = false;
 		toplevel->plugin_representation_owner = NULL;
 	}
-	toplevel->plugin_representation_provider = *provider;
+	toplevel->plugin_representation_provider = normalized;
 	toplevel->plugin_representation_provider_active = true;
 	toplevel->plugin_representation_provider_anchor = provider;
 	toplevel->plugin_representation_provider_owner = owner;
 	toplevel->plugin_representation_state = state;
-	toplevel->plugin_representation_state_size = provider->state_size;
+	toplevel->plugin_representation_state_size = normalized.state_size;
 	if (HOST(host)->renderer) shady_render_schedule_all_outputs(HOST(host));
 	return true;
 }

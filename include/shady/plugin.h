@@ -111,6 +111,21 @@ struct shady_collision_box {
 	float half[3];
 };
 
+struct shady_collision_vertex {
+	float x;
+	float y;
+	float z;
+};
+
+struct shady_collision_hull {
+	uint32_t struct_size;
+	const struct shady_collision_vertex *vertices;
+	size_t vertex_count;
+	const uint16_t *indices;
+	size_t index_count;
+	uint64_t revision;
+};
+
 typedef bool (*shady_representation_state_init_callback)(
 	shady_host host, shady_window window, void *state, void *user_data);
 
@@ -139,6 +154,12 @@ typedef bool (*shady_representation_mesh_callback)(
 	struct shady_representation_mesh *mesh,
 	void *state, void *user_data);
 
+typedef bool (*shady_representation_collision_hull_callback)(
+	shady_host host, shady_window window,
+	const struct shady_representation_context *context,
+	struct shady_collision_hull *hull,
+	void *state, void *user_data);
+
 struct shady_window_representation_provider {
 	uint32_t struct_size;
 	struct shady_window_representation base;
@@ -150,6 +171,7 @@ struct shady_window_representation_provider {
 	shady_representation_collision_callback collision;
 	shady_representation_mesh_callback mesh;
 	void *user_data;
+	shady_representation_collision_hull_callback collision_hull;
 };
 
 enum shady_render_stage {

@@ -8,6 +8,7 @@
 #include <wlr/types/wlr_xdg_shell.h>
 #include <wlr/types/wlr_output.h>
 #include "../../render/render.h"
+#include "../../render/math3d.h"
 #include "../window_motion/window_motion.h"
 #include "../window_motion/state.h"
 #include "../fps/fps.h"
@@ -20,6 +21,7 @@
 #define WINDOW_GROUND_IMPACT_TANGENT_RETAIN .58f
 #define WINDOW_REST_FRICTION_RATE 7.0f
 #define WINDOW_REST_SPEED_EPSILON .025f
+#define WINDOW_CONVEX_MAX_VERTICES 256
 
 bool shady_physics_window_body(const struct shady_toplevel *t,float logical_w,float logical_h,struct shady_window_body *body){
 	if(!t||!body||logical_h<=0.f)return false;
@@ -69,6 +71,11 @@ void shady_physics_update(struct shady_server *server,float dt,float logical_w,f
 		float half[3] = {0.f, 0.f, 0.f};
 		float model_offset[3] = {0.f, 0.f, 0.f};
 		float collision_offset[3] = {0.f, 0.f, 0.f};
+		float convex_vertices[WINDOW_CONVEX_MAX_VERTICES][3];
+		size_t convex_vertex_count = 0;
+		const uint16_t *convex_indices = NULL;
+		size_t convex_index_count = 0;
+		bool has_convex_hull = false;
 		float center_x=base_center_x, center_y=base_center_y, center_z=base_center_z;
 		struct shady_representation_context representation_context = {
 			.struct_size = sizeof(representation_context),
@@ -91,6 +98,47 @@ void shady_physics_update(struct shady_server *server,float dt,float logical_w,f
 			struct shady_collision_box collision;
 			shady_toplevel_representation_collision(t, &representation_context,
 				&representation_model, &collision);
+			struct shady_collision_hull hull = {0};
+			if (shady_toplevel_representation_collision_hull(t,
+					&representation_context, &hull) &&
+					hull.vertex_count <= WINDOW_CONVEX_MAX_VERTICES) {
+				float transform[16];
+				shady_window_box_model(transform,
+					representation_model.center_x, representation_model.center_y,
+					representation_model.center_z,
+					representation_model.width, representation_model.height,
+					representation_model.depth,
+					representation_model.tilt_x, representation_model.tilt_y);
+				float minv[3] = {INFINITY, INFINITY, INFINITY};
+				float maxv[3] = {-INFINITY, -INFINITY, -INFINITY};
+				for (size_t i = 0; i < hull.vertex_count; ++i) {
+					const struct shady_collision_vertex *v = &hull.vertices[i];
+					float p[3] = {
+						transform[0] * v->x + transform[4] * v->y +
+							transform[8] * v->z + transform[12],
+						transform[1] * v->x + transform[5] * v->y +
+							transform[9] * v->z + transform[13],
+						transform[2] * v->x + transform[6] * v->y +
+							transform[10] * v->z + transform[14],
+					};
+					for (int axis = 0; axis < 3; ++axis) {
+						convex_vertices[i][axis] = p[axis];
+						if (p[axis] < minv[axis]) minv[axis] = p[axis];
+						if (p[axis] > maxv[axis]) maxv[axis] = p[axis];
+					}
+				}
+				for (int axis = 0; axis < 3; ++axis) {
+					collision.center[axis] = (minv[axis] + maxv[axis]) * .5f;
+					collision.half[axis] = fmaxf(
+						(maxv[axis] - minv[axis]) * .5f, .001f);
+					for (size_t i = 0; i < hull.vertex_count; ++i)
+						convex_vertices[i][axis] -= collision.center[axis];
+				}
+				convex_vertex_count = hull.vertex_count;
+				convex_indices = hull.indices;
+				convex_index_count = hull.index_count;
+				has_convex_hull = true;
+			}
 			half[0] = collision.half[0];
 			half[1] = collision.half[1];
 			half[2] = collision.half[2];
@@ -132,12 +180,33 @@ void shady_physics_update(struct shady_server *server,float dt,float logical_w,f
 		float step_dt=dt/(float)steps;
 		bool hit_x=false,hit_y=false,hit_z=false;
 		for(int step=0;step<steps;step++){
-			hit_y|=shady_physics_sweep_cube_axis(&shady_spatial_state(server)->runtime.world,center,half,1,
-				shady_physics_toplevel_state(t)->vy*step_dt,&shady_physics_toplevel_state(t)->vy,restitution);
-			hit_x|=shady_physics_sweep_cube_axis(&shady_spatial_state(server)->runtime.world,center,half,0,
-				shady_physics_toplevel_state(t)->vx*step_dt,&shady_physics_toplevel_state(t)->vx,restitution);
-			hit_z|=shady_physics_sweep_cube_axis(&shady_spatial_state(server)->runtime.world,center,half,2,
-				shady_physics_toplevel_state(t)->vz*step_dt,&shady_physics_toplevel_state(t)->vz,restitution);
+			if (has_convex_hull) {
+				hit_y |= shady_physics_sweep_convex_axis(
+					&shady_spatial_state(server)->runtime.world, center, half,
+					convex_vertices, convex_vertex_count, convex_indices,
+					convex_index_count, 1,
+					shady_physics_toplevel_state(t)->vy * step_dt,
+					&shady_physics_toplevel_state(t)->vy, restitution);
+				hit_x |= shady_physics_sweep_convex_axis(
+					&shady_spatial_state(server)->runtime.world, center, half,
+					convex_vertices, convex_vertex_count, convex_indices,
+					convex_index_count, 0,
+					shady_physics_toplevel_state(t)->vx * step_dt,
+					&shady_physics_toplevel_state(t)->vx, restitution);
+				hit_z |= shady_physics_sweep_convex_axis(
+					&shady_spatial_state(server)->runtime.world, center, half,
+					convex_vertices, convex_vertex_count, convex_indices,
+					convex_index_count, 2,
+					shady_physics_toplevel_state(t)->vz * step_dt,
+					&shady_physics_toplevel_state(t)->vz, restitution);
+			} else {
+				hit_y|=shady_physics_sweep_cube_axis(&shady_spatial_state(server)->runtime.world,center,half,1,
+					shady_physics_toplevel_state(t)->vy*step_dt,&shady_physics_toplevel_state(t)->vy,restitution);
+				hit_x|=shady_physics_sweep_cube_axis(&shady_spatial_state(server)->runtime.world,center,half,0,
+					shady_physics_toplevel_state(t)->vx*step_dt,&shady_physics_toplevel_state(t)->vx,restitution);
+				hit_z|=shady_physics_sweep_cube_axis(&shady_spatial_state(server)->runtime.world,center,half,2,
+					shady_physics_toplevel_state(t)->vz*step_dt,&shady_physics_toplevel_state(t)->vz,restitution);
+			}
 		}
 		center_x=center[0];center_y=center[1];center_z=center[2];
 

@@ -1900,19 +1900,32 @@ void shady_render_output_frame(
 			bool debug_folded = debug_context.folded &&
 				shady_toplevel_representation_model(debug_t, &debug_context, &debug_model);
 			if (debug_folded) {
-				/* Draw the exact authoritative collision box selected by the plugin. */
-				struct shady_collision_box collision;
-				shady_toplevel_representation_collision(debug_t, &debug_context,
-					&debug_model, &collision);
-				struct shady_box_collider box={
-					collision.center[0]-collision.half[0],
-					collision.center[0]+collision.half[0],
-					collision.center[1]-collision.half[1],
-					collision.center[1]+collision.half[1],
-					collision.center[2]-collision.half[2],
-					collision.center[2]+collision.half[2]
-				};
-				shady_gl_pipeline_draw_debug_box(&pipeline,vp,&box,false);
+				struct shady_collision_hull hull = {0};
+				if (shady_toplevel_representation_collision_hull(debug_t,
+						&debug_context, &hull)) {
+					float hull_model[16];
+					shady_window_box_model(hull_model,
+						debug_model.center_x, debug_model.center_y, debug_model.center_z,
+						debug_model.width, debug_model.height, debug_model.depth,
+						debug_model.tilt_x, debug_model.tilt_y);
+					shady_gl_pipeline_draw_debug_convex(&pipeline, vp, hull_model,
+						(const float *)hull.vertices, hull.vertex_count,
+						hull.indices, hull.index_count);
+				} else {
+					/* No convex provider: draw the authoritative fallback collision box. */
+					struct shady_collision_box collision;
+					shady_toplevel_representation_collision(debug_t, &debug_context,
+						&debug_model, &collision);
+					struct shady_box_collider box={
+						collision.center[0]-collision.half[0],
+						collision.center[0]+collision.half[0],
+						collision.center[1]-collision.half[1],
+						collision.center[1]+collision.half[1],
+						collision.center[2]-collision.half[2],
+						collision.center[2]+collision.half[2]
+					};
+					shady_gl_pipeline_draw_debug_box(&pipeline,vp,&box,false);
+				}
 			}else{
 				float dm[16];
 				shady_window_model(dm,(float)debug_t->scene_tree->node.x+ox,

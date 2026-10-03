@@ -244,6 +244,11 @@ void shady_gl_pipeline_draw_debug_triangle(
 	struct shady_gl_pipeline *pipeline, const float vp[16],
 	const struct shady_triangle_collider *triangle
 );
+void shady_gl_pipeline_draw_debug_convex(
+	struct shady_gl_pipeline *pipeline, const float vp[16], const float model[16],
+	const float *vertices, size_t vertex_count,
+	const uint16_t *indices, size_t index_count
+);
 
 bool shady_gl_pipeline_copy_texture(
 	struct shady_gl_pipeline *pipeline,

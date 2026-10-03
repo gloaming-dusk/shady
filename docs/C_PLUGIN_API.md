@@ -270,8 +270,50 @@ static bool collision(shady_host host, shady_window window,
 ```
 
 If no collision callback is supplied, Shady derives the collision box directly from
-the resolved model. Provider collision is authoritative for free physics, held-window
-sweeps and collision debug rendering. Renderer and ray picking use the resolved model.
+the resolved model or active mesh bounds. Provider collision is authoritative for the
+legacy AABB body used by broad-phase physics, held-window sweeps, and collision debug
+rendering. Renderer and ray picking use the resolved model.
+
+For a tighter physical body, a provider may additionally expose a closed convex hull:
+
+```c
+static bool collision_hull(shady_host host, shady_window window,
+        const struct shady_representation_context *ctx,
+        struct shady_collision_hull *hull,
+        void *state, void *data) {
+    hull->struct_size = sizeof(*hull);
+    hull->vertices = my_vertices;
+    hull->vertex_count = my_vertex_count;
+    hull->indices = my_indices;
+    hull->index_count = my_index_count;
+    hull->revision = revision;
+    return true;
+}
+```
+
+`shady_collision_vertex` contains local `x/y/z` coordinates in the same representation
+space consumed by `shady_window_box_model`: window-style shapes normally use `x/y` in
+`[0,1]` and `z` in `[-1,0]`. The index buffer is required, uses `uint16_t`, and must
+describe a closed convex triangle surface. The host currently accepts up to 256 hull
+vertices and 1,536 hull indices.
+
+When a valid hull is present, its transformed world-space bounds become the physics
+broad-phase AABB. Against authored world triangles, Shady then runs hull-vs-triangle SAT
+using the triangle normal, hull face normals, and edge cross-product axes. This removes
+AABB false positives while retaining the existing fast box sweep for coarse world box
+colliders and floor support. The same convex movement helper is used while an FPS window
+is held, so free-fall/throw physics and grab movement cannot disagree about the physical
+shape. Debug collision rendering also draws the actual convex triangle edges when a hull
+is present; providers without a hull continue to show the resolved collision box.
+
+The hull therefore takes precedence over the `collision()` box callback for the actual
+convex body; `collision()` remains the compatibility and box-only path when no hull is
+supplied.
+
+Hull callbacks are synchronous and follow the same ownership/state/hot-reload rules as
+`model`, `mesh`, and `collision`. The bundled `fps-cube` plugin supplies an explicit
+8-vertex/36-index convex hull, so the end-to-end convex path is exercised without
+changing its visible shape.
 
 ### Per-window provider state and animation
 
