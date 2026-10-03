@@ -20,6 +20,9 @@ const toc = (headings as Heading[]).filter(
   (heading) => heading.depth === 2 || heading.depth === 3
 );
 const title = docLabel(entry.id);
+const index = docs.findIndex((doc: DocEntry) => doc.id === entry.id);
+const prev = index > 0 ? docs[index - 1] : undefined;
+const next = index < docs.length - 1 ? docs[index + 1] : undefined;
 ---
 <BaseLayout
   title={`${title} · Shady docs`}
@@ -40,6 +43,10 @@ const title = docLabel(entry.id);
 
     <article class="docs-article">
       <Content />
+      <nav class="doc-pager" aria-label="Previous and next document">
+        {prev ? <a href={`/docs/${docSlug(prev.id)}/`}><span>Previous</span>{docLabel(prev.id)}</a> : <span></span>}
+        {next && <a class="next" href={`/docs/${docSlug(next.id)}/`}><span>Next</span>{docLabel(next.id)}</a>}
+      </nav>
     </article>
 
     <aside class="docs-toc">

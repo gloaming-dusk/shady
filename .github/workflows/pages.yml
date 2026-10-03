@@ -7,8 +7,9 @@ on:
       - ".github/workflows/pages.yml"
       - "website/**"
       - "docs/**"
+      - "examples/rice/afterglow/*.jpg"
       - "examples/rice/afterglow/hero.*"
-      - "examples/rice/afterglow/phases.jpg"
+      - "examples/rice/neon-transit/preview.jpg"
   workflow_dispatch:
 
 permissions:
@@ -48,6 +49,8 @@ jobs:
 
       - name: Build static site
         working-directory: website
+        env:
+          SITE_URL: ${{ steps.pages.outputs.base_url }}
         run: npm run build
 
       - name: Apply GitHub Pages base path
@@ -68,7 +71,7 @@ jobs:
 
               if path.suffix == ".html":
                   text = path.read_text(encoding="utf-8")
-                  for attr in ("href", "src", "srcset", "action"):
+                  for attr in ("href", "src", "srcset", "action", "poster"):
                       text = text.replace(f'{attr}="/', f'{attr}="{base}/')
                   path.write_text(text, encoding="utf-8")
 

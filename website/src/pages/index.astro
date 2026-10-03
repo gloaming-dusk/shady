@@ -1,86 +1,223 @@
 ---
+import { Code } from 'astro:components';
 import BaseLayout from '../layouts/BaseLayout.astro';
-import poster from '../../../examples/rice/afterglow/hero.jpg';
-import heroWebm from '../../../examples/rice/afterglow/hero.webm?url';
-import heroMp4 from '../../../examples/rice/afterglow/hero.mp4?url';
+import HourVideo from '../components/HourVideo.astro';
+import afterglowShot from '../../../examples/rice/afterglow/preview.jpg';
+import neonShot from '../../../examples/rice/neon-transit/preview.jpg';
+
+const repo = 'https://github.com/jihoo12/shady';
+
+const metrics = [
+  ['wlroots 0.20.2', 'Wayland core'],
+  ['GLES2', 'Spatial renderer'],
+  ['C ABI v2', 'Hot-reload plugins'],
+  ['Lua 5.4', 'Config + runtime']
+];
+
+const features = [
+  {
+    kicker: 'Render',
+    title: 'A real perspective world',
+    body: 'xdg-shell clients become lit 3D panes with rounded glass frames, depth, wobble and shadows. Drawing, picking and collision share one geometry.',
+    icon: '<path d="M12 3 4 7.5v9L12 21l8-4.5v-9L12 3Z"/><path d="m4 7.5 8 4.5 8-4.5M12 12v9"/>'
+  },
+  {
+    kicker: 'Extend',
+    title: 'Hot-reloadable C plugins',
+    body: 'Window representations, render hooks with the live camera, input and per-window shaders. ABI v2 migrates state across reloads.',
+    icon: '<path d="M9 3v4M15 3v4M7 7h10v4a5 5 0 0 1-10 0V7ZM12 16v5"/>'
+  },
+  {
+    kicker: 'Script',
+    title: 'Lua, twice',
+    body: 'config.lua shapes the compositor before modules resolve; init.lua reacts to windows, workspaces and keys at runtime.',
+    icon: '<path d="m8 8-4 4 4 4M16 8l4 4-4 4M14 5l-4 14"/>'
+  },
+  {
+    kicker: 'Verify',
+    title: 'Headless, sanitized tests',
+    body: 'Drive input, timers and screenshots from Lua against a headless GLES2 backend, under AddressSanitizer and UBSan.',
+    icon: '<path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 1.8 3h10.4a2 2 0 0 0 1.8-3l-5-9V3"/><path d="M7.5 15h9"/>'
+  },
+  {
+    kicker: 'Fallback',
+    title: 'A safe scene-graph path',
+    body: '--safe drops the spatial renderer for a conventional wlroots scene graph, so a broken experiment never locks you out.',
+    icon: '<path d="M12 3 5 6v5c0 4.5 3 8.3 7 10 4-1.7 7-5.5 7-10V6l-7-3Z"/><path d="m9 12 2 2 4-4"/>'
+  },
+  {
+    kicker: 'Desktop',
+    title: 'A standalone shell',
+    body: 'shady-shell adds a taskbar, workspaces, launcher, window menu and quick settings over its own protocol, themeable per rice.',
+    icon: '<rect x="3" y="4" width="18" height="16" rx="3"/><path d="M3 9h18M7 6.5h.01M10 6.5h.01"/>'
+  }
+];
+
+const luaSnippet = `-- config.lua — shape the compositor
+shady.set("window_corner_radius", 14.0)
+shady.set("window_border_focus_color", "#FFB070")
+shady.set("floor_horizon_fog", 1.0)
+shady.plugin("build/libshady-plugin-afterglow.so")
+
+-- init.lua — react to the desktop
+shady.bind("Super+Return", function()
+    shady.spawn("foot")
+end)
+
+shady.on("window.mapped", function(window)
+    shady.log("arrived: " .. window.app_id)
+end)`;
+
+const cSnippet = `/* A sky that knows where the camera is. */
+static void draw(shady_host host,
+        const struct shady_render_context *ctx, void *data) {
+    if (!SHADY_RENDER_CONTEXT_HAS(ctx, aspect)) return;
+    api->shader_uniform_vec4(host, sky, "u_cam_fwd",
+        ctx->camera_forward[0], ctx->camera_forward[1],
+        ctx->camera_forward[2], 0.f);
+    api->shader_uniform_float(host, sky, "u_time",
+        ctx->time_seconds);
+    api->shader_draw_fullscreen(host, sky);
+}
+
+hook = api->render_hook_add(host,
+    SHADY_RENDER_STAGE_AFTER_BACKGROUND, draw, NULL);`;
 ---
 <BaseLayout path="/">
   <section class="hero">
-    <div class="shell hero-grid">
-      <div>
-        <p class="eyebrow">Wayland, with depth</p>
-        <h1>A compositor for <span class="gradient-text">spatial desktops.</span></h1>
-        <p class="lede">
-          Shady turns ordinary Wayland windows into objects in a shared 3D world,
-          while keeping a conventional scene-graph path for compatibility.
-        </p>
-        <div class="button-row">
-          <a class="button primary" href="/getting-started/">Build Shady</a>
-          <a class="button" href="/demo/afterglow/">See Afterglow</a>
-          <a class="button" href="/docs/">Read the API</a>
-        </div>
+    <div class="shell">
+      <p class="eyebrow">Wayland, with depth</p>
+      <h1>A compositor for <span class="gradient-text">spatial desktops.</span></h1>
+      <p class="lede">
+        Shady turns ordinary Wayland windows into objects in a shared 3D world —
+        and keeps a conventional scene-graph path for the days you just need to work.
+      </p>
+      <div class="button-row">
+        <a class="button primary" href="/getting-started/">Build Shady</a>
+        <a class="button" href="/demo/afterglow/">Watch Afterglow</a>
+        <a class="button" href="/docs/">Read the docs</a>
       </div>
-      <figure class="hero-visual">
-        <video autoplay muted loop playsinline preload="metadata" poster={poster.src} aria-label="Afterglow: live Wayland windows floating above a procedural sea as the sun sets">
-          <source src={heroWebm} type="video/webm" />
-          <source src={heroMp4} type="video/mp4" />
-        </video>
-        <figcaption class="visual-caption">
-          <span>AFTERGLOW / LIVE WAYLAND SURFACES</span>
-          <span>GLES2 · C PLUGIN</span>
-        </figcaption>
-      </figure>
+
+      <div class="stage">
+        <HourVideo />
+      </div>
+
+      <div class="metrics">
+        {metrics.map(([value, label]) => (
+          <div class="metric"><strong>{value}</strong><span>{label}</span></div>
+        ))}
+      </div>
     </div>
   </section>
 
   <section class="section">
     <div class="shell">
       <div class="section-head">
-        <h2>Built for experiments that still need boundaries.</h2>
+        <div>
+          <p class="eyebrow">What's inside</p>
+          <h2>Experiments, with boundaries.</h2>
+        </div>
         <p>
-          The compositor owns Wayland objects, GPU resources, lifetime, and validation.
-          Plugins own the effects and simulations layered on top.
+          The compositor owns Wayland objects, GPU resources, lifetime and
+          validation. Plugins and scripts own the effects, layouts and
+          simulations layered on top, and can be swapped while it runs.
         </p>
       </div>
       <div class="card-grid">
-        <article class="card">
-          <span class="kicker">Render</span>
-          <h3>Native perspective world</h3>
-          <p>Real xdg-shell surfaces rendered in depth, with shared geometry for drawing, picking, and collision.</p>
-        </article>
-        <article class="card">
-          <span class="kicker">Extend</span>
-          <h3>Hot-reloadable C plugins</h3>
-          <p>Window representations, render hooks, input behavior, and ABI v2 state migration without raw GL ownership.</p>
-        </article>
-        <article class="card">
-          <span class="kicker">Automate</span>
-          <h3>Lua runtime + headless tests</h3>
-          <p>Configure the compositor, react to events, and drive deterministic regression tests from the same runtime API.</p>
-        </article>
+        {features.map((feature) => (
+          <article class="card">
+            <div class="card-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" set:html={feature.icon} />
+            </div>
+            <h3>{feature.title}</h3>
+            <p>{feature.body}</p>
+          </article>
+        ))}
       </div>
     </div>
   </section>
 
   <section class="section">
-    <div class="shell two-col">
-      <div>
-        <p class="eyebrow">Fast path</p>
-        <h2>From checkout to nested compositor.</h2>
-        <p class="lede">
-          The Nix development shell pins the toolchain and compositor dependencies.
-          Start nested first, then move to a real VT when the basics are solid.
+    <div class="shell">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">Rices</p>
+          <h2>One compositor, different evenings.</h2>
+        </div>
+        <p>
+          A rice is a config, a Lua runtime layer and a few native plugins.
+          Two ship with the repository; both run nested or straight from a VT.
         </p>
-        <div class="button-row">
-          <a class="button" href="/getting-started/">Full getting started guide</a>
+      </div>
+      <div class="rices">
+        <a class="rice" href="/demo/afterglow/">
+          <img src={afterglowShot.src} width={afterglowShot.width} height={afterglowShot.height} loading="lazy" alt="Afterglow: rounded glass windows above a sunset sea with a glitter path" />
+          <div class="rice-body">
+            <h3><span class="pip"></span>Afterglow</h3>
+            <p>A low sun over a mirror-still sea. The sky, the water, every accent and the shell move through four hours of light on <kbd>Super</kbd>+<kbd>T</kbd>.</p>
+            <span class="rice-meta">afterglow plugin · camera-aware sky · sinking close</span>
+          </div>
+        </a>
+        <a class="rice neon" href={`${repo}/tree/main/examples/rice/neon-transit`}>
+          <img src={neonShot.src} width={neonShot.width} height={neonShot.height} loading="lazy" alt="Neon Transit: cyan-rimmed windows with liquid water surfaces over a neon grid" />
+          <div class="rice-body">
+            <h3><span class="pip"></span>Neon Transit</h3>
+            <p>Night trains and terminal glow: a cyan grid floor, liquid water-surface windows and a native 3D overview.</p>
+            <span class="rice-meta">water-windows · spatial-overview · on GitHub ↗</span>
+          </div>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="shell">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">Make it yours</p>
+          <h2>Configure in Lua. Extend in C.</h2>
+        </div>
+        <p>
+          Everything above is built from these two layers. The same Lua runtime
+          drives the headless test suite, and plugins never touch raw GL state.
+        </p>
+      </div>
+      <div class="code-grid">
+        <div class="code-window">
+          <div class="code-title">config.lua + init.lua</div>
+          <Code code={luaSnippet} lang="lua" theme="github-dark-default" />
+        </div>
+        <div class="code-window">
+          <div class="code-title">examples/plugins/afterglow.c</div>
+          <Code code={cSnippet} lang="c" theme="github-dark-default" />
         </div>
       </div>
-      <div class="code-window">
-        <div class="code-title">terminal</div>
-        <pre><code>nix develop
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="shell">
+      <div class="cta">
+        <div>
+          <p class="eyebrow">Fast path</p>
+          <h2>From checkout to a nested compositor.</h2>
+          <p>
+            The Nix shell pins wlroots and the whole toolchain. Start nested inside
+            your current session, then move to a real VT once the basics are solid.
+          </p>
+          <div class="button-row">
+            <a class="button primary" href="/getting-started/">Getting started</a>
+            <a class="button" href={repo}>View source</a>
+          </div>
+        </div>
+        <div class="code-window">
+          <div class="code-title">terminal</div>
+          <pre><code>nix develop
 ./build.sh
 
-WLR_BACKENDS=wayland ./build/shady -s foot</code></pre>
+# nested, with the Afterglow rice
+./examples/rice/afterglow/run.sh</code></pre>
+        </div>
       </div>
     </div>
   </section>

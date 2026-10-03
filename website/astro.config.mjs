@@ -26,6 +26,9 @@ function rewriteRepositoryDocLinks() {
 }
 
 export default defineConfig({
+  // Set by the Pages workflow (includes any base path); used for absolute
+  // canonical and social-card URLs. Optional for local builds.
+  site: process.env.SITE_URL || undefined,
   markdown: {
     processor: unified({
       remarkPlugins: [rewriteRepositoryDocLinks]

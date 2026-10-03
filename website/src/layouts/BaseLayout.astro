@@ -1,5 +1,6 @@
 ---
 import '../styles/global.css';
+import ogImage from '../../../examples/rice/afterglow/preview.jpg';
 
 interface Props {
   title?: string;
@@ -8,28 +9,59 @@ interface Props {
 }
 
 const {
-  title = 'Shady — 3D Wayland compositor',
+  title = 'Shady — a 3D Wayland compositor',
   description = 'An experimental 3D Wayland compositor built on wlroots, with native spatial rendering, Lua scripting, and a public C plugin API.',
   path = Astro.url.pathname
 } = Astro.props;
 
 const is = (prefix: string) =>
   prefix === '/' ? path === '/' : path.startsWith(prefix);
+
+// Astro.site comes from SITE_URL (set by the Pages workflow) and includes any
+// base path, e.g. https://user.github.io/shady — social cards need absolute URLs.
+const siteUrl = Astro.site?.href;
+const absolute = (value: string) =>
+  siteUrl ? new URL(value.replace(/^\//, ''), siteUrl.replace(/\/?$/, '/')).href : undefined;
+const canonical = absolute(path);
+const socialImage = absolute(ogImage.src);
+
+const repo = 'https://github.com/jihoo12/shady';
+const favicon =
+  "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'>" +
+  "<defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'>" +
+  "<stop offset='0' stop-color='%23ffd2a6'/><stop offset='.45' stop-color='%23ffb070'/>" +
+  "<stop offset='1' stop-color='%23ff7d97'/></linearGradient></defs>" +
+  "<rect width='64' height='64' rx='18' fill='url(%23g)'/>" +
+  "<text x='32' y='44' text-anchor='middle' font-family='monospace' font-weight='800' font-size='34' fill='%231d0f12'>S</text></svg>";
 ---
 <!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content={description} />
-    <meta name="theme-color" content="#07080d" />
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22><rect width=%2264%22 height=%2264%22 rx=%2218%22 fill=%22%2307080d%22/><path d=%22M14 41 28 17h12L27 39h23L36 52H17Z%22 fill=%22%2357e7ff%22/></svg>" />
+    <meta name="theme-color" content="#09080f" />
+    <link rel="icon" href={favicon} />
+    {canonical && <link rel="canonical" href={canonical} />}
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Shady" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    {canonical && <meta property="og:url" content={canonical} />}
+    {socialImage && <meta property="og:image" content={socialImage} />}
+    <meta property="og:image:width" content={String(ogImage.width)} />
+    <meta property="og:image:height" content={String(ogImage.height)} />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    {socialImage && <meta name="twitter:image" content={socialImage} />}
     <title>{title}</title>
   </head>
   <body>
+    <a class="skip-link" href="#content">Skip to content</a>
     <header class="site-header">
       <div class="shell nav">
-        <a class="brand" href="/">
+        <a class="brand" href="/" aria-label="Shady home">
           <span class="brand-mark">S</span>
           <span>Shady</span>
         </a>
@@ -37,17 +69,53 @@ const is = (prefix: string) =>
           <a href="/getting-started/" aria-current={is('/getting-started') ? 'page' : undefined}>Getting started</a>
           <a href="/demo/afterglow/" aria-current={is('/demo') ? 'page' : undefined}>Demo</a>
           <a class="optional" href="/docs/" aria-current={is('/docs') ? 'page' : undefined}>Docs</a>
-          <a class="nav-github" href="https://github.com/jihoo12/shady">GitHub ↗</a>
+          <a class="nav-github" href={repo}>
+            <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+            <span>GitHub</span>
+          </a>
         </nav>
       </div>
     </header>
-    <main>
+    <main id="content">
       <slot />
     </main>
     <footer class="site-footer">
       <div class="shell footer-inner">
-        <span>Shady is experimental software built around wlroots.</span>
-        <span><code>wlroots 0.20.2</code> · Lua 5.4 · GLES2</span>
+        <div>
+          <a class="brand" href="/">
+            <span class="brand-mark">S</span>
+            <span>Shady</span>
+          </a>
+          <p>An experimental 3D Wayland compositor. Grown from TinyWL, built on wlroots.</p>
+        </div>
+        <div class="footer-col">
+          <h4>Start</h4>
+          <ul>
+            <li><a href="/getting-started/">Getting started</a></li>
+            <li><a href="/demo/afterglow/">Afterglow demo</a></li>
+            <li><a href={`${repo}/tree/main/examples/rice`}>Rices</a></li>
+          </ul>
+        </div>
+        <div class="footer-col">
+          <h4>Docs</h4>
+          <ul>
+            <li><a href="/docs/lua-api/">Lua API</a></li>
+            <li><a href="/docs/c-plugin-api/">C plugin API</a></li>
+            <li><a href="/docs/shader-api/">Shader API</a></li>
+          </ul>
+        </div>
+        <div class="footer-col">
+          <h4>Project</h4>
+          <ul>
+            <li><a href={repo}>Source</a></li>
+            <li><a href={`${repo}/issues`}>Issues</a></li>
+            <li><a href={`${repo}/blob/main/LICENSE`}>License</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="shell footer-base">
+        <span>wlroots 0.20.2 · GLES2 · Lua 5.4</span>
+        <span>Experimental software — keep <code>--safe</code> close.</span>
       </div>
     </footer>
   </body>

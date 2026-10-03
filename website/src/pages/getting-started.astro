@@ -50,9 +50,15 @@ import BaseLayout from '../layouts/BaseLayout.astro';
             <p>Once nested operation is reliable, use <code>./run-native.sh</code> for DRM + libinput on a normal Linux VT login.</p>
           </div>
         </article>
+        <article class="step">
+          <div>
+            <h3>Pick a rice</h3>
+            <p>Each rice has nested and native launchers. Start with <a href="/demo/afterglow/">Afterglow</a> (<code>./examples/rice/afterglow/run.sh</code>), or read one as a template for your own config.</p>
+          </div>
+        </article>
       </div>
 
-      <div>
+      <div class="stack">
         <div class="code-window">
           <div class="code-title">build + nested run</div>
           <pre><code>nix develop
@@ -61,7 +67,6 @@ import BaseLayout from '../layouts/BaseLayout.astro';
 WLR_BACKENDS=wayland ./build/shady -s foot</code></pre>
         </div>
 
-        <div style="height: 18px"></div>
 
         <div class="code-window">
           <div class="code-title">safe compatibility path</div>
@@ -71,7 +76,6 @@ WLR_BACKENDS=wayland ./build/shady -s foot</code></pre>
 ./run-native.sh --safe -s foot</code></pre>
         </div>
 
-        <div style="height: 18px"></div>
 
         <aside class="notice">
           Shady is still experimental. Treat nested mode and <code>--safe</code> as
@@ -81,7 +85,7 @@ WLR_BACKENDS=wayland ./build/shady -s foot</code></pre>
     </div>
 
     <section class="section">
-      <div class="shell two-col" style="width: 100%">
+      <div class="shell two-col">
         <div>
           <p class="eyebrow">Regression gates</p>
           <h2>Fast checks before you trust a build.</h2>

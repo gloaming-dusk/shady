@@ -1,0 +1,88 @@
+---
+/*
+ * The Afterglow hero loop with hour chips that light up in step with the
+ * footage. Boundaries are measured from hero.mp4 (17.1 s loop): each chip
+ * switches at the midpoint of the on-screen cross-fade.
+ */
+import poster from '../../../examples/rice/afterglow/hero.jpg';
+import heroWebm from '../../../examples/rice/afterglow/hero.webm?url';
+import heroMp4 from '../../../examples/rice/afterglow/hero.mp4?url';
+
+interface Props {
+  controls?: boolean;
+  tag?: string;
+}
+
+const { controls = false, tag = 'Live Wayland surfaces · GLES2 · one C plugin' } = Astro.props;
+
+const hours = [
+  { id: 'golden', label: 'Golden hour' },
+  { id: 'afterglow', label: 'Afterglow' },
+  { id: 'blue', label: 'Blue hour' },
+  { id: 'night', label: 'Night' }
+];
+---
+<figure class="hour-frame" data-hour-video>
+  <video
+    autoplay
+    muted
+    loop
+    playsinline
+    controls={controls}
+    preload="metadata"
+    width="1280"
+    height="720"
+    poster={poster.src}
+    aria-label="Afterglow: live terminal windows float above a procedural sea while the sky drifts from golden hour through afterglow and blue hour to night"
+  >
+    <source src={heroWebm} type="video/webm" />
+    <source src={heroMp4} type="video/mp4" />
+  </video>
+  <figcaption class="hour-bar">
+    <ul class="hours" aria-label="Times of day in the loop">
+      {hours.map((hour, i) => (
+        <li data-hour={hour.id} class={i === 0 ? 'is-active' : undefined}>{hour.label}</li>
+      ))}
+    </ul>
+    <span class="hour-tag">{tag}</span>
+  </figcaption>
+</figure>
+
+<script>
+  // Seconds into the loop at which each hour becomes the current one.
+  const marks: Array<[number, string]> = [
+    [0, 'golden'],
+    [2.3, 'afterglow'],
+    [6.0, 'blue'],
+    [10.2, 'night'],
+    [14.3, 'golden']
+  ];
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)');
+
+  for (const frame of document.querySelectorAll<HTMLElement>('[data-hour-video]')) {
+    const video = frame.querySelector('video');
+    const chips = frame.querySelectorAll<HTMLElement>('.hours li');
+    if (!video) continue;
+
+    // Respect reduced motion: show the poster frame instead of autoplaying.
+    if (reduce.matches) {
+      video.removeAttribute('autoplay');
+      video.pause();
+    }
+
+    let current = '';
+    const sync = () => {
+      const t = video.currentTime;
+      let hour = 'golden';
+      for (const [at, id] of marks) if (t >= at) hour = id;
+      if (hour !== current) {
+        current = hour;
+        chips.forEach((chip) => chip.classList.toggle('is-active', chip.dataset.hour === hour));
+      }
+      if (!video.paused) requestAnimationFrame(sync);
+    };
+    video.addEventListener('play', () => requestAnimationFrame(sync));
+    video.addEventListener('seeked', sync);
+    if (!video.paused) requestAnimationFrame(sync);
+  }
+</script>
