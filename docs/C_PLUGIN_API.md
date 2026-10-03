@@ -418,11 +418,12 @@ Only one plugin may own a representation/provider for a window at a time. Replac
 static representation with a provider (or vice versa) is allowed for the same plugin;
 a different plugin's active representation is not overwritten.
 
-The repository includes three provider examples:
+The repository includes several provider examples:
 
-- `examples/plugins/fps_cube.c` — fixed 0.16 × 0.16 × 0.16 model with an explicit collision callback.
+- `examples/plugins/fps_cube.c` — fixed cube with box, single-hull, and two-part compound collision paths.
 - `examples/plugins/fps_squash.c` — flattened body with host-owned per-window state and dynamic model/update callbacks.
 - `examples/plugins/fps_jelly.c` — spring state integrated in `update(dt)` and used to deform both the visible model and its derived collision body.
+- `examples/plugins/fps_origami.c` — spring-driven hinged window whose render mesh and two-panel compound collision are rebuilt from the same per-window fold state.
 
 This API is plugin-owned. The FPS module itself no longer decides that folded windows
 must be cubes.
@@ -485,10 +486,14 @@ representation. A mesh
 callback that fails validation falls back to the normal representation path rather than
 calling into invalid geometry.
 
-`examples/plugins/fps_folded_paper.c` demonstrates the full deformable flow: 81 shared
-vertices, a 384-index grid, independent UVs, host-owned per-window mesh state,
-`update(dt)` deformation, mesh revision updates, mesh-derived collision bounds, GPU
-rendering, and triangle-accurate picking.
+`examples/plugins/fps_folded_paper.c` demonstrates a continuously deforming 81-vertex
+indexed surface with independent UVs and triangle-accurate picking.
+
+`examples/plugins/fps_origami.c` demonstrates a more physical deformable representation:
+a two-panel hinged render mesh driven by spring state, plus two matching convex prisms
+returned through `collision_compound()`. The same fold state and revision therefore drive
+rendering, picking, free physics, held-window motion, debug wireframes, and cache
+invalidation.
 
 ## Per-window shader replacement
 

@@ -277,6 +277,12 @@ shared_module('shady-plugin-fps-folded-paper',
   build_by_default: true,
   install: false)
 
+shared_module('shady-plugin-fps-origami',
+  'examples/plugins/fps_origami.c',
+  include_directories: include_directories('include'),
+  build_by_default: true,
+  install: false)
+
 shared_module('shady-plugin-focus-depth',
   'examples/plugins/focus_depth.c',
   include_directories: include_directories('include'),
