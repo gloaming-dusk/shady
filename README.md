@@ -236,6 +236,18 @@ The 3D stack has a separate GLES2/headless sanitizer suite. It covers matrix and
 
 This suite uses an AddressSanitizer/UndefinedBehaviorSanitizer spatial build and software GLES2 so renderer/module regressions can be exercised without a physical display.
 
+**Astral Loom** adds a procedural energy observatory and live curved app panels,
+with orbital/helix layouts and reversible position transitions, entirely through
+an external native plugin:
+
+```sh
+./examples/rice/astral-loom/run.sh
+# Or from a local Linux VT/TTY:
+./examples/rice/astral-loom/run-native.sh
+```
+
+See [Astral Loom controls and setup](examples/rice/astral-loom/README.md).
+
 For a more opinionated ricing demo, the repository includes **Night Observatory**:
 
 ```sh

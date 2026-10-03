@@ -22,6 +22,7 @@ nix develop -c ninja -C "$BUILD_DIR" \
   libshady-plugin-fps-cube.so \
   libshady-plugin-fps-folded-paper.so \
   libshady-plugin-fps-origami.so \
+  libshady-plugin-astral-loom.so \
   libshady-plugin-motion-contract.so \
   libshady-plugin-focus-depth.so \
   libshady-plugin-spatial-overview.so \
@@ -62,5 +63,8 @@ SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
 
 SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
   nix develop -c bash ./tests/headless-neon-quit.sh
+
+SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
+  nix develop -c bash ./tests/headless-astral-loom.sh
 
 echo "spatial-suite: PASS"

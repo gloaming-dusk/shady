@@ -303,6 +303,13 @@ shared_module('shady-plugin-magnetic-windows',
   build_by_default: true,
   install: false)
 
+shared_module('shady-plugin-astral-loom',
+  'examples/plugins/astral_loom.c',
+  include_directories: include_directories('include'),
+  dependencies: [dependency('xkbcommon'), cc.find_library('m')],
+  build_by_default: true,
+  install: false)
+
 shared_module('shady-plugin-window-constellation',
   'examples/plugins/window_constellation.c',
   include_directories: include_directories('include'),
