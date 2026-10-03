@@ -5,6 +5,8 @@ ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"
 
 BUILD_DIR="${SHADY_SPATIAL_TEST_BUILD_DIR:-build-spatial-asan}"
+BUILD_TYPE="${SHADY_SPATIAL_BUILD_TYPE:-debug}"
+SANITIZE="${SHADY_SPATIAL_SANITIZE:-address,undefined}"
 
 configure() {
   if [[ -f "$BUILD_DIR/build.ninja" ]]; then
@@ -17,8 +19,8 @@ configure() {
       -Dclose_animation=enabled \
       -Dscene_effects=enabled \
       -Dshell=enabled \
-      -Dbuildtype=debug \
-      -Db_sanitize=address,undefined
+      -Dbuildtype="$BUILD_TYPE" \
+      -Db_sanitize="$SANITIZE"
   else
     nix develop -c meson setup "$BUILD_DIR" \
       -Dspatial=enabled \
@@ -29,8 +31,8 @@ configure() {
       -Dclose_animation=enabled \
       -Dscene_effects=enabled \
       -Dshell=enabled \
-      -Dbuildtype=debug \
-      -Db_sanitize=address,undefined
+      -Dbuildtype="$BUILD_TYPE" \
+      -Db_sanitize="$SANITIZE"
   fi
 }
 

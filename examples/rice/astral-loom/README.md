@@ -70,6 +70,8 @@ nix develop -c ninja -C build headless-automation-probe
 nix develop -c bash tests/headless-astral-loom.sh
 ./astral-loom-daily-driver.sh
 ./astral-loom-daily-driver.sh stress
+./astral-loom-daily-driver.sh input
+./astral-loom-daily-driver.sh reload
 ```
 
 The headless GLES scenario opens four clients and checks depth separation,
@@ -79,7 +81,11 @@ through focus, maximize/fullscreen transitions, plugin reload, multi-output
 session locking, and output disable/recovery. The fast stress gate runs ten
 rounds of four-window churn while switching workspaces, cycling focus, toggling
 FPS capture/orbit state, exercising Astral layout state, and validating stale
-Lua handles after every destruction batch.
+Lua handles after every destruction batch. The input stress gate separately
+mixes rapid Super+Tab cycling with workspace refocus, FPS on/off, capture
+release/restore, and destruction of the currently focused window. The reload
+stress gate performs repeated ABI V2 migration while windows move through hidden
+workspaces, maximize/fullscreen, FPS interaction, and final geometry restoration.
 Set `SHADY_ASTRAL_SCREENSHOT=/tmp/astral.png` to keep its captured frame. For a
 sanitized build, set `SHADY_SPATIAL_TEST_BUILD_DIR` to that build directory.
 

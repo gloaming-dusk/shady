@@ -193,6 +193,21 @@ if shell_enabled
     output: 'ext-session-lock-v1-protocol.c',
     command: [wayland_scanner, 'private-code', '@INPUT@', '@OUTPUT@'],
   )
+  output_management_xml = join_paths(
+    wlr_protocols_dir,
+    'unstable/wlr-output-management-unstable-v1.xml')
+  output_management_client_header = custom_target(
+    'wlr-output-management-unstable-v1-client-protocol.h',
+    input: output_management_xml,
+    output: 'wlr-output-management-unstable-v1-client-protocol.h',
+    command: [wayland_scanner, 'client-header', '@INPUT@', '@OUTPUT@'],
+  )
+  output_management_protocol_code = custom_target(
+    'wlr-output-management-unstable-v1-protocol.c',
+    input: output_management_xml,
+    output: 'wlr-output-management-unstable-v1-protocol.c',
+    command: [wayland_scanner, 'private-code', '@INPUT@', '@OUTPUT@'],
+  )
   executable('shady-shell',
     [
       layer_shell_protocol_header,
@@ -221,6 +236,8 @@ if shell_enabled
     [
       ext_session_lock_client_header,
       ext_session_lock_protocol_code,
+      output_management_client_header,
+      output_management_protocol_code,
       'tests/headless-session-lock-probe.c',
     ],
     include_directories: include_directories('.'),

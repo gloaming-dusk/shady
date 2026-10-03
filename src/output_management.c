@@ -5,6 +5,7 @@
 #include <wlr/types/wlr_output_management_v1.h>
 
 #include "shady.h"
+#include "session_lock.h"
 #include "modules/desktop/state.h"
 
 void shady_output_manager_publish(struct shady_server *server) {
@@ -26,6 +27,15 @@ void shady_output_manager_publish(struct shady_server *server) {
 	wlr_output_manager_v1_set_configuration(shady_desktop_state(server)->output_manager, config);
 }
 
+static struct shady_output *find_shady_output(struct shady_server *server,
+		struct wlr_output *wlr_output) {
+	struct shady_output *output;
+	wl_list_for_each(output, &server->outputs, link) {
+		if (output->wlr_output == wlr_output) return output;
+	}
+	return NULL;
+}
+
 static bool handle_configuration(struct shady_server *server,
 		struct wlr_output_configuration_v1 *config, bool apply) {
 	bool ok = true;
@@ -39,13 +49,18 @@ static bool handle_configuration(struct shady_server *server,
 		if (apply) {
 			if (!wlr_output_commit_state(head->state.output, &state)) {
 				ok = false;
-			} else if (head->state.enabled) {
-				wlr_output_layout_add(
-					server->output_layout, head->state.output,
-					head->state.x, head->state.y);
 			} else {
-				wlr_output_layout_remove(
-					server->output_layout, head->state.output);
+				if (head->state.enabled) {
+					wlr_output_layout_add(
+						server->output_layout, head->state.output,
+						head->state.x, head->state.y);
+				} else {
+					wlr_output_layout_remove(
+						server->output_layout, head->state.output);
+				}
+				struct shady_output *output = find_shady_output(
+					server, head->state.output);
+				if (output) shady_session_lock_output_state_changed(output);
 			}
 		} else if (!wlr_output_test_state(head->state.output, &state)) {
 			ok = false;

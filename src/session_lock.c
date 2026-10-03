@@ -122,6 +122,32 @@ void shady_session_lock_output_removed(struct shady_output *output) {
 	maybe_send_locked(server);
 }
 
+void shady_session_lock_output_state_changed(struct shady_output *output) {
+	if (!output) return;
+	struct shady_server *server = output->server;
+	struct shady_desktop_state *desktop = shady_desktop_state(server);
+	if (!desktop || !desktop->session_locked) return;
+
+	if (!output->wlr_output->enabled) {
+		/* A disabled output no longer displays pixels, so it must not keep the
+		 * initial lock acknowledgement waiting for a presentation that can never
+		 * happen. */
+		if (desktop->session_lock_pending_locked_event) {
+			clear_output_wait(output);
+			maybe_send_locked(server);
+		}
+		return;
+	}
+
+	/* If an output becomes active while the initial lock handshake is still in
+	 * flight, require a newly damaged lock frame from that output as well. */
+	if (desktop->session_lock_pending_locked_event) {
+		mark_output_wait(output);
+		damage_lock_tree(server);
+	}
+	shady_render_schedule_output(output);
+}
+
 void shady_session_lock_output_committed(struct shady_output *output,
 		uint32_t previous_commit_seq) {
 	if (!output || !output->lock_frame_pending || output->lock_commit_seq != 0) return;

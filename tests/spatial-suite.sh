@@ -53,6 +53,12 @@ SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
   nix develop -c bash ./tests/headless-astral-loom-stress.sh
 
 SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
+  nix develop -c bash ./tests/headless-astral-input-focus-stress.sh
+
+SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
+  nix develop -c bash ./tests/headless-astral-reload-stress.sh
+
+SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
   nix develop -c bash ./tests/headless-motion.sh
 
 SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \

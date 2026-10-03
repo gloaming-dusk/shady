@@ -13,6 +13,17 @@
 #include <wayland-client.h>
 
 #include "ext-session-lock-v1-client-protocol.h"
+#include "wlr-output-management-unstable-v1-client-protocol.h"
+
+struct probe;
+
+struct output_head {
+	struct probe *probe;
+	struct zwlr_output_head_v1 *head;
+	char name[128];
+	bool enabled;
+	bool finished;
+};
 
 struct probe {
 	struct wl_display *display;
@@ -20,6 +31,14 @@ struct probe {
 	struct wl_shm *shm;
 	struct wl_output *output;
 	struct ext_session_lock_manager_v1 *manager;
+	struct zwlr_output_manager_v1 *output_manager;
+	struct output_head heads[16];
+	size_t head_count;
+	uint32_t output_serial;
+	bool output_manager_done;
+	struct zwlr_output_configuration_v1 *output_config;
+	bool output_config_done;
+	bool output_config_success;
 	struct ext_session_lock_v1 *lock;
 	struct ext_session_lock_surface_v1 *lock_surface;
 	struct wl_surface *surface;
@@ -31,6 +50,8 @@ struct probe {
 	uint64_t locked_at_ms;
 	uint32_t hold_ms;
 	bool exit_locked;
+	const char *disable_output;
+	bool disable_before_locked;
 };
 
 static uint64_t now_ms(void) {
@@ -85,6 +106,8 @@ static void lock_locked(void *data, struct ext_session_lock_v1 *lock) {
 	p->locked = true;
 	p->locked_at_ms = now_ms();
 	status(p, "LOCKED=PASS");
+	if (p->disable_output && *p->disable_output && !p->output_config_done)
+		status(p, "OUTPUT_DISABLED_BEFORE_LOCKED=FAIL");
 }
 
 static void lock_finished(void *data, struct ext_session_lock_v1 *lock) {
@@ -123,6 +146,144 @@ static const struct ext_session_lock_surface_v1_listener lock_surface_listener =
 	.configure = lock_surface_configure,
 };
 
+static void head_name(void *data, struct zwlr_output_head_v1 *head,
+		const char *name) {
+	(void)head;
+	struct output_head *state = data;
+	snprintf(state->name, sizeof(state->name), "%s", name ? name : "");
+}
+static void head_description(void *data, struct zwlr_output_head_v1 *head,
+		const char *description) {(void)data;(void)head;(void)description;}
+static void head_physical_size(void *data, struct zwlr_output_head_v1 *head,
+		int32_t width, int32_t height) {(void)data;(void)head;(void)width;(void)height;}
+static void head_mode(void *data, struct zwlr_output_head_v1 *head,
+		struct zwlr_output_mode_v1 *mode) {(void)data;(void)head;(void)mode;}
+static void head_enabled(void *data, struct zwlr_output_head_v1 *head,
+		int32_t enabled) {(void)head;((struct output_head *)data)->enabled = enabled != 0;}
+static void head_current_mode(void *data, struct zwlr_output_head_v1 *head,
+		struct zwlr_output_mode_v1 *mode) {(void)data;(void)head;(void)mode;}
+static void head_position(void *data, struct zwlr_output_head_v1 *head,
+		int32_t x, int32_t y) {(void)data;(void)head;(void)x;(void)y;}
+static void head_transform(void *data, struct zwlr_output_head_v1 *head,
+		int32_t transform) {(void)data;(void)head;(void)transform;}
+static void head_scale(void *data, struct zwlr_output_head_v1 *head,
+		wl_fixed_t scale) {(void)data;(void)head;(void)scale;}
+static void head_finished(void *data, struct zwlr_output_head_v1 *head) {
+	(void)head; ((struct output_head *)data)->finished = true;
+}
+static void head_make(void *data, struct zwlr_output_head_v1 *head,
+		const char *make) {(void)data;(void)head;(void)make;}
+static void head_model(void *data, struct zwlr_output_head_v1 *head,
+		const char *model) {(void)data;(void)head;(void)model;}
+static void head_serial_number(void *data, struct zwlr_output_head_v1 *head,
+		const char *serial_number) {(void)data;(void)head;(void)serial_number;}
+static void head_adaptive_sync(void *data, struct zwlr_output_head_v1 *head,
+		uint32_t state) {(void)data;(void)head;(void)state;}
+
+static const struct zwlr_output_head_v1_listener output_head_listener = {
+	.name = head_name,
+	.description = head_description,
+	.physical_size = head_physical_size,
+	.mode = head_mode,
+	.enabled = head_enabled,
+	.current_mode = head_current_mode,
+	.position = head_position,
+	.transform = head_transform,
+	.scale = head_scale,
+	.finished = head_finished,
+	.make = head_make,
+	.model = head_model,
+	.serial_number = head_serial_number,
+	.adaptive_sync = head_adaptive_sync,
+};
+
+static void output_manager_head(void *data, struct zwlr_output_manager_v1 *manager,
+		struct zwlr_output_head_v1 *head) {
+	(void)manager;
+	struct probe *p = data;
+	if (p->head_count >= sizeof(p->heads) / sizeof(p->heads[0])) return;
+	struct output_head *state = &p->heads[p->head_count++];
+	state->probe = p;
+	state->head = head;
+	zwlr_output_head_v1_add_listener(head, &output_head_listener, state);
+}
+static void output_manager_done(void *data, struct zwlr_output_manager_v1 *manager,
+		uint32_t serial) {
+	(void)manager;
+	struct probe *p = data;
+	p->output_serial = serial;
+	p->output_manager_done = true;
+}
+static void output_manager_finished(void *data,
+		struct zwlr_output_manager_v1 *manager) {(void)data;(void)manager;}
+static const struct zwlr_output_manager_v1_listener output_manager_listener = {
+	.head = output_manager_head,
+	.done = output_manager_done,
+	.finished = output_manager_finished,
+};
+
+static void output_config_succeeded(void *data,
+		struct zwlr_output_configuration_v1 *config) {
+	struct probe *p = data;
+	p->output_config_done = true;
+	p->output_config_success = true;
+	p->disable_before_locked = !p->locked;
+	status(p, "OUTPUT_DISABLE_RACE=PASS");
+	status(p, p->disable_before_locked ?
+		"OUTPUT_DISABLED_BEFORE_LOCKED=PASS" :
+		"OUTPUT_DISABLED_BEFORE_LOCKED=FAIL");
+	zwlr_output_configuration_v1_destroy(config);
+	p->output_config = NULL;
+}
+static void output_config_failed(void *data,
+		struct zwlr_output_configuration_v1 *config) {
+	struct probe *p = data;
+	p->output_config_done = true;
+	status(p, "OUTPUT_DISABLE_RACE=FAIL");
+	zwlr_output_configuration_v1_destroy(config);
+	p->output_config = NULL;
+}
+static void output_config_cancelled(void *data,
+		struct zwlr_output_configuration_v1 *config) {
+	struct probe *p = data;
+	p->output_config_done = true;
+	status(p, "OUTPUT_DISABLE_RACE=FAIL");
+	zwlr_output_configuration_v1_destroy(config);
+	p->output_config = NULL;
+}
+static const struct zwlr_output_configuration_v1_listener output_config_listener = {
+	.succeeded = output_config_succeeded,
+	.failed = output_config_failed,
+	.cancelled = output_config_cancelled,
+};
+
+static bool request_output_disable(struct probe *p) {
+	if (!p || !p->output_manager || !p->output_manager_done) return false;
+	p->output_config = zwlr_output_manager_v1_create_configuration(
+		p->output_manager, p->output_serial);
+	if (!p->output_config) return false;
+	zwlr_output_configuration_v1_add_listener(
+		p->output_config, &output_config_listener, p);
+
+	bool found = false;
+	for (size_t i = 0; i < p->head_count; ++i) {
+		struct output_head *head = &p->heads[i];
+		if (!head->head || head->finished) continue;
+		if (strcmp(head->name, p->disable_output) == 0) {
+			zwlr_output_configuration_v1_disable_head(p->output_config, head->head);
+			found = true;
+		} else if (head->enabled) {
+			(void)zwlr_output_configuration_v1_enable_head(
+				p->output_config, head->head);
+		} else {
+			zwlr_output_configuration_v1_disable_head(p->output_config, head->head);
+		}
+	}
+	if (!found) return false;
+	zwlr_output_configuration_v1_apply(p->output_config);
+	return true;
+}
+
 static void registry_global(void *data, struct wl_registry *registry,
 		uint32_t name, const char *interface, uint32_t version) {
 	struct probe *p = data;
@@ -137,6 +298,11 @@ static void registry_global(void *data, struct wl_registry *registry,
 	} else if (strcmp(interface, ext_session_lock_manager_v1_interface.name) == 0) {
 		p->manager = wl_registry_bind(registry, name,
 			&ext_session_lock_manager_v1_interface, 1);
+	} else if (strcmp(interface, zwlr_output_manager_v1_interface.name) == 0) {
+		p->output_manager = wl_registry_bind(registry, name,
+			&zwlr_output_manager_v1_interface, version < 4 ? version : 4);
+		zwlr_output_manager_v1_add_listener(
+			p->output_manager, &output_manager_listener, p);
 	}
 }
 
@@ -157,6 +323,7 @@ static int dispatch_until_unlock(struct probe *p) {
 	for (;;) {
 		if (p->finished) return 5;
 		if (p->locked && p->configured &&
+				(!p->disable_output || !*p->disable_output || p->output_config_done) &&
 				now_ms() - p->locked_at_ms >= p->hold_ms) {
 			if (p->exit_locked) {
 				status(p, "CLIENT_EXIT=PASS");
@@ -186,6 +353,7 @@ int main(void) {
 		.status_path = getenv("SHADY_SESSION_LOCK_STATUS"),
 		.hold_ms = hold && *hold ? (uint32_t)strtoul(hold, NULL, 10) : 800u,
 		.exit_locked = getenv("SHADY_SESSION_LOCK_EXIT_LOCKED") != NULL,
+		.disable_output = getenv("SHADY_SESSION_LOCK_DISABLE_OUTPUT"),
 	};
 	p.display = wl_display_connect(NULL);
 	if (!p.display) return 1;
@@ -194,9 +362,17 @@ int main(void) {
 	wl_registry_add_listener(registry, &registry_listener, &p);
 	if (wl_display_roundtrip(p.display) < 0) return 2;
 	if (!p.compositor || !p.shm || !p.output || !p.manager) return 3;
+	if (p.disable_output && *p.disable_output) {
+		if (!p.output_manager || wl_display_roundtrip(p.display) < 0 ||
+				!p.output_manager_done) return 14;
+	}
 
 	p.lock = ext_session_lock_manager_v1_lock(p.manager);
 	ext_session_lock_v1_add_listener(p.lock, &lock_listener, &p);
+	if (p.disable_output && *p.disable_output) {
+		if (!request_output_disable(&p)) return 15;
+	}
+
 	p.surface = wl_compositor_create_surface(p.compositor);
 	p.lock_surface = ext_session_lock_v1_get_lock_surface(
 		p.lock, p.surface, p.output);
@@ -208,6 +384,11 @@ int main(void) {
 	if (p.lock_surface) ext_session_lock_surface_v1_destroy(p.lock_surface);
 	if (p.surface) wl_surface_destroy(p.surface);
 	if (p.buffer) wl_buffer_destroy(p.buffer);
+	if (p.output_config) zwlr_output_configuration_v1_destroy(p.output_config);
+	for (size_t i = 0; i < p.head_count; ++i) {
+		if (p.heads[i].head) zwlr_output_head_v1_release(p.heads[i].head);
+	}
+	if (p.output_manager) zwlr_output_manager_v1_stop(p.output_manager);
 	if (p.manager) ext_session_lock_manager_v1_destroy(p.manager);
 	if (p.output) wl_output_destroy(p.output);
 	if (p.shm) wl_shm_destroy(p.shm);

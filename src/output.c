@@ -32,7 +32,8 @@ static void output_present(struct wl_listener *listener, void *data) {
 static void output_request_state(struct wl_listener *listener, void *data) {
 	struct shady_output *output = wl_container_of(listener, output, request_state);
 	const struct wlr_output_event_request_state *event = data;
-	wlr_output_commit_state(output->wlr_output, event->state);
+	if (wlr_output_commit_state(output->wlr_output, event->state))
+		shady_session_lock_output_state_changed(output);
 }
 
 static bool point_on_managed_output(struct shady_server *server,

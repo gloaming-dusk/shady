@@ -17,7 +17,8 @@ static shady_shader_program sky, glass;
 static shady_render_hook_id hook;
 static bool sky_logged;
 struct loom_state { bool active, restoring, paused, helix, initialized; float time, restore_time; };
-struct window_state { bool captured; double x, y; float z; };
+struct window_state { bool captured, origin_valid; double x, y; float z; };
+struct window_state_v1 { bool captured; double x, y; float z; };
 struct panel_state {
     struct shady_representation_vertex vertices[SIDE * SIDE];
     uint16_t indices[N * N * 6];
@@ -106,19 +107,30 @@ static const struct shady_window_representation_provider panel = {
 static void capture(shady_window w) {
     if (!managed(w)) return;
     struct window_state *s = ws(w);
-    if (!s || s->captured) return;
-    if (!api->window_position(w, &s->x, &s->y, &s->z)) return;
+    if (!s) return;
+    if (!s->origin_valid) {
+        if (!api->window_position(w, &s->x, &s->y, &s->z)) return;
+        s->origin_valid = true;
+    }
+    if (s->captured) return;
+    if (!rep->attach_provider(host, w, &panel)) return;
+    if (!api->window_set_shader(host, w, glass)) {
+        rep->detach_provider(host, w, &panel);
+        return;
+    }
     s->captured = true;
-    rep->attach_provider(host, w, &panel);
-    api->window_set_shader(host, w, glass);
 }
-static void release(shady_window w, bool restore) {
+static void release(shady_window w, bool restore, bool forget_origin) {
     struct window_state *s = ws(w);
-    if (!s || !s->captured) return;
-    if (restore) api->window_set_position(host, w, s->x, s->y, s->z);
-    rep->detach_provider(host, w, &panel);
-    api->window_reset_shader(host, w);
-    s->captured = false;
+    if (!s) return;
+    if (restore && s->origin_valid)
+        api->window_set_position(host, w, s->x, s->y, s->z);
+    if (s->captured) {
+        rep->detach_provider(host, w, &panel);
+        api->window_reset_shader(host, w);
+        s->captured = false;
+    }
+    if (forget_origin) s->origin_valid = false;
 }
 static void draw(shady_host h, const struct shady_render_context *ctx, void *user) {
     (void)user;
@@ -161,17 +173,19 @@ static void start(struct shady_server *server) {
     }
     for (size_t i = 0; i < api->window_count(host); ++i) {
         shady_window w = api->window_at(host, i);
-        if (managed(w) && ws(w) && ws(w)->captured) {
-            rep->attach_provider(host, w, &panel);
-            api->window_set_shader(host, w, glass);
-        } else if (state()->active) capture(w);
+        struct window_state *saved = ws(w);
+        /* Provider/shader ownership never survives a shared-object reload even
+         * when the logical per-window snapshot says it was captured. */
+        if (saved) saved->captured = false;
+        if (state()->active || state()->restoring) capture(w);
     }
     api->log(SHADY_PLUGIN_LOG_INFO, "astral-loom: ready; Super+j layout, Super+Shift+j helix, Super+B pause");
     api->schedule_render(host);
 }
 static void stop(struct shady_server *server) {
     (void)server;
-    for (size_t i = 0; i < api->window_count(host); ++i) release(api->window_at(host, i), true);
+    for (size_t i = 0; i < api->window_count(host); ++i)
+        release(api->window_at(host, i), true, false);
 }
 static void destroy(struct shady_server *server) {
     (void)server;
@@ -220,10 +234,14 @@ static void tick(struct shady_server *server, float dt, float width, float heigh
     size_t slot = 0;
     for (size_t i = 0; i < api->window_count(host); ++i) {
         shady_window w = api->window_at(host, i);
-        if (!managed(w)) { release(w, true); continue; }
+        bool restore_done = s->restoring && s->restore_time >= 1.5f;
+        if (!managed(w)) {
+            release(w, true, restore_done || (!s->active && !s->restoring));
+            continue;
+        }
         if (s->active) capture(w);
         struct window_state *saved = ws(w);
-        if (!saved || !saved->captured) continue;
+        if (!saved || !saved->origin_valid) continue;
         double x, y; float z; int ww, wh;
         if (!api->window_position(w, &x, &y, &z) || !api->window_size(w, &ww, &wh)) continue;
         double tx = saved->x, ty = saved->y; float tz = saved->z;
@@ -244,7 +262,7 @@ static void tick(struct shady_server *server, float dt, float width, float heigh
         }
         float blend = 1.f - expf(-6.f * dt);
         api->window_set_position(host, w, x + (tx - x) * blend, y + (ty - y) * blend, z + (tz - z) * blend);
-        if (s->restoring && s->restore_time >= 1.5f) release(w, true);
+        if (restore_done) release(w, true, true);
     }
     if (s->restoring && s->restore_time >= 1.5f) s->restoring = false;
     if (!s->paused || s->active || s->restoring) api->schedule_render(host);
@@ -268,7 +286,8 @@ static bool save_module(shady_host h, const void *value, void *snapshot, size_t 
 static bool restore_module(shady_host h, void *value, const void *snapshot,
         size_t size, uint32_t schema) {
     (void)h;
-    if (schema != 1 || !value || !snapshot || size != sizeof(struct loom_state)) return false;
+    if ((schema != 1 && schema != 2) || !value || !snapshot ||
+            size != sizeof(struct loom_state)) return false;
     memcpy(value, snapshot, size); return true;
 }
 static size_t window_size(shady_host h, shady_window w, const void *value) {
@@ -283,11 +302,22 @@ static bool save_window(shady_host h, shady_window w, const void *value,
 static bool restore_window(shady_host h, shady_window w, void *value,
         const void *snapshot, size_t size, uint32_t schema) {
     (void)h; (void)w;
-    if (schema != 1 || !value || !snapshot || size != sizeof(struct window_state)) return false;
-    memcpy(value, snapshot, size); return true;
+    if (!value || !snapshot) return false;
+    struct window_state *out = value;
+    if (schema == 1 && size == sizeof(struct window_state_v1)) {
+        const struct window_state_v1 *old = snapshot;
+        *out = (struct window_state){
+            .captured = old->captured,
+            .origin_valid = old->captured,
+            .x = old->x, .y = old->y, .z = old->z,
+        };
+        return true;
+    }
+    if (schema != 2 || size != sizeof(struct window_state)) return false;
+    memcpy(out, snapshot, size); return true;
 }
 static const struct shady_plugin_v2 plugin = {
-    .struct_size = sizeof(plugin), .module = &module, .state_schema_version = 1,
+    .struct_size = sizeof(plugin), .module = &module, .state_schema_version = 2,
     .module_snapshot_size = module_size, .save_module_state = save_module,
     .restore_module_state = restore_module, .window_snapshot_size = window_size,
     .save_window_state = save_window, .restore_window_state = restore_window,
