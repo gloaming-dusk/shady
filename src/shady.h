@@ -80,6 +80,7 @@ struct shady_config {
 	float window_tint[3];
 	float window_effect_strength;
 	float window_brightness;
+	float window_opacity;
 	bool environment_obj;
 	char environment_obj_path[512];
 

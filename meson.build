@@ -313,3 +313,18 @@ physics_collision_test = executable('physics-collision-test',
   install: false)
 
 test('physics-collision', physics_collision_test)
+
+config_opacity_test = executable('config-opacity-test',
+  [
+    'tests/config-opacity.c',
+    'src/config.c',
+  ],
+  c_args: [
+    '-DWLR_USE_UNSTABLE',
+    '-D_POSIX_C_SOURCE=200809L',
+  ],
+  include_directories: include_directories('src', 'include'),
+  dependencies: [wlroots, dependency('wayland-server'), dependency('xkbcommon')],
+  install: false)
+
+test('config-opacity', config_opacity_test)

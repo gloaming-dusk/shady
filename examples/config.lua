@@ -6,6 +6,7 @@ shady.set("window_gravity", false)
 shady.set("window_wobble", true)
 shady.set("shadows", true)
 shady.set("floor", true)
+shady.set("window_opacity", 1.0)
 
 shady.bind("quit", "Escape")
 shady.bind("fps_toggle", "F2")

@@ -1110,7 +1110,7 @@ void shady_gl_pipeline_draw_window(
 		GL_CLAMP_TO_EDGE
 	);
 
-	if (has_alpha) {
+	if (has_alpha || tint[3] < 0.999f) {
 		glEnable(GL_BLEND);
 
 		glBlendFunc(

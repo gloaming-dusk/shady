@@ -116,6 +116,8 @@ void main() {
 	/* Tint and exposure are explicit compositor configuration. */
 	color.rgb *= u_tint.rgb;
 	color.rgb *= u_brightness;
+	/* Premultiplied-alpha pipeline: global opacity must scale RGB and A. */
+	color.rgb *= u_tint.a;
 	color.a *= u_tint.a;
 
 	/* Light follows the normal of the deformed 3D sheet. */

@@ -254,6 +254,7 @@ shady.set("floor_fade_end", 3.5)
 shady.set("window_tint", "#FFFFFF")
 shady.set("window_effect_strength", 0.15)
 shady.set("window_brightness", 1.10)
+shady.set("window_opacity", 0.92) -- 0.0 transparent, 1.0 opaque
 
 shady.bind("fps_toggle", "F2")
 shady.bind("fps_capture", "F3")

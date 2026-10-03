@@ -571,7 +571,7 @@ static void render_spatial_subsurface_buffer(struct wlr_scene_buffer *buffer,
 		server->config.window_tint[0] * (focused ? 0.92f : 1.0f),
 		server->config.window_tint[1] * (focused ? 1.06f : 1.0f),
 		server->config.window_tint[2] * (focused ? 1.16f : 1.0f),
-		1.0f,
+		server->config.window_opacity,
 	};
 
 	float water[4] = {
@@ -1036,7 +1036,7 @@ void shady_render_output_frame(
 			window_tint[0] * (focused ? 0.92f : 1.0f),
 			window_tint[1] * (focused ? 1.06f : 1.0f),
 			window_tint[2] * (focused ? 1.16f : 1.0f),
-			1.0f,
+			server->config.window_opacity,
 		};
 		float water[4] = {
 			toplevel->fullscreen ? 0.f : toplevel->water_amplitude,

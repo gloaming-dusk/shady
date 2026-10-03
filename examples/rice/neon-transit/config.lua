@@ -22,6 +22,7 @@ shady.set("background_bottom", "#020308")
 shady.set("window_tint", "#F8F5FF")
 shady.set("window_effect_strength", 0.12)
 shady.set("window_brightness", 1.28)
+shady.set("window_opacity", 0.90)
 
 shady.set("floor_base_color", "#03040A")
 shady.set("floor_grid_color", "#00D9FF")

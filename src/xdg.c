@@ -17,6 +17,21 @@
 
 #define FOCUS_BORDER_WIDTH 3
 
+static void set_scene_buffer_opacity(struct wlr_scene_buffer *buffer,
+		int sx, int sy, void *data) {
+	(void)sx;
+	(void)sy;
+	float opacity = *(float *)data;
+	wlr_scene_buffer_set_opacity(buffer, opacity);
+}
+
+static void apply_toplevel_opacity(struct shady_toplevel *toplevel) {
+	if (!toplevel || !toplevel->scene_tree) return;
+	float opacity = toplevel->server->config.window_opacity;
+	wlr_scene_node_for_each_buffer(&toplevel->scene_tree->node,
+		set_scene_buffer_opacity, &opacity);
+}
+
 static void focus_border_set_enabled(struct shady_toplevel *toplevel, bool enabled) {
 	if (toplevel && toplevel->focus_border_tree)
 		wlr_scene_node_set_enabled(&toplevel->focus_border_tree->node, enabled);
@@ -319,6 +334,7 @@ static void xdg_toplevel_map(struct wl_listener *listener, void *data) {
 	wl_list_insert(&toplevel->server->toplevels, &toplevel->link);
 	toplevel->mapped = true;
 	place_toplevel_initial(toplevel);
+	apply_toplevel_opacity(toplevel);
 	focus_border_update_geometry(toplevel);
 	if (toplevel->xdg_toplevel->requested.maximized ||
 			toplevel->xdg_toplevel->requested.fullscreen) {
@@ -385,6 +401,7 @@ static void xdg_toplevel_commit(struct wl_listener *listener, void *data) {
 	}
 
 	shady_modules_toplevel_commit(toplevel);
+	apply_toplevel_opacity(toplevel);
 
 	int width = surface->current.width;
 	int height = surface->current.height;
