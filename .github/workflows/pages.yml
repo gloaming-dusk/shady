@@ -7,7 +7,7 @@ on:
       - ".github/workflows/pages.yml"
       - "website/**"
       - "docs/**"
-      - "examples/rice/astral-loom/preview.png"
+      - "examples/rice/astral-loom/hero.png"
   workflow_dispatch:
 
 permissions:
