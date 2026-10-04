@@ -168,6 +168,12 @@ wayland_client = dependency('wayland-client', required: shell_option)
 cairo = dependency('cairo', required: shell_option)
 pangocairo = dependency('pangocairo', required: shell_option)
 shell_xkbcommon = dependency('xkbcommon', required: shell_option)
+# GL composition for the shell; without these it renders with wl_shm only.
+shell_egl = dependency('egl', required: false)
+shell_glesv2 = dependency('glesv2', required: false)
+shell_wayland_egl = dependency('wayland-egl', required: false)
+shell_gl_deps_found = shell_egl.found() and shell_glesv2.found() and shell_wayland_egl.found()
+shell_gl_deps = shell_gl_deps_found ? [shell_egl, shell_glesv2, shell_wayland_egl] : []
 wayland_protocols = dependency('wayland-protocols', required: shell_option)
 shell_enabled = wayland_client.found() and cairo.found() and pangocairo.found() and shell_xkbcommon.found() and wayland_protocols.found()
 
@@ -224,9 +230,19 @@ if shell_enabled
       shady_shell_client_header,
       shady_shell_protocol_code,
       'src/shell/main.c',
+      'src/shell/core.c',
+      'src/shell/render_gl.c',
+      'src/shell/render_shm.c',
+      'src/shell/theme.c',
+      'src/shell/apps.c',
+      'src/shell/bar.c',
+      'src/shell/launcher.c',
+      'src/shell/menu.c',
+      'src/shell/quick.c',
     ],
     include_directories: include_directories('.'),
-    dependencies: [wayland_client, cairo, pangocairo, shell_xkbcommon],
+    c_args: ['-DSHELL_HAS_GL=@0@'.format(shell_gl_deps_found ? 1 : 0)],
+    dependencies: [wayland_client, cairo, pangocairo, shell_xkbcommon] + shell_gl_deps,
     install: true)
 
   executable('headless-automation-probe',

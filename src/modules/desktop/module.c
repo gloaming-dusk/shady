@@ -110,6 +110,13 @@ static void new_virtual_keyboard(struct wl_listener *listener, void *data) {
 	wl_list_insert(&state->pending_virtual_keyboards, &pending->link);
 }
 
+static void output_layout_change(struct wl_listener *listener, void *data) {
+	(void)data;
+	struct shady_desktop_state *state =
+		wl_container_of(listener, state, output_layout_change);
+	shady_layers_arrange(state->server);
+}
+
 static void desktop_protocols_destroy(struct shady_server *server);
 
 static bool desktop_protocols_init(struct shady_server *server) {
@@ -122,6 +129,8 @@ static bool desktop_protocols_init(struct shady_server *server) {
 	state->new_layer_surface.notify = server_new_layer_surface;
 	wl_signal_add(&state->layer_shell->events.new_surface,
 		&state->new_layer_surface);
+	state->output_layout_change.notify = output_layout_change;
+	wl_signal_add(&server->output_layout->events.change, &state->output_layout_change);
 	if (!shady_shell_protocol_init(server)) goto fail;
 
 	state->relative_pointer_manager =
@@ -214,6 +223,8 @@ static void desktop_protocols_destroy(struct shady_server *server) {
 		wl_list_remove(&state->xdg_activation_request.link);
 	if (state->new_layer_surface.link.prev)
 		wl_list_remove(&state->new_layer_surface.link);
+	if (state->output_layout_change.link.prev)
+		wl_list_remove(&state->output_layout_change.link);
 	if (state->output_manager_apply.link.prev)
 		wl_list_remove(&state->output_manager_apply.link);
 	if (state->output_manager_test.link.prev)

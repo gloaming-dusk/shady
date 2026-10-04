@@ -60,6 +60,7 @@ test_daily() {
   SHADY_BORDER_TEST_BUILD_DIR="$BUILD_DIR" bash ./tests/headless-border-plugin.sh
   SHADY_DAILY_BUILD_DIR="$BUILD_DIR" bash ./tests/headless-shell-taskbar.sh
   SHADY_DAILY_BUILD_DIR="$BUILD_DIR" bash ./tests/headless-shell-quick.sh
+  SHADY_DAILY_BUILD_DIR="$BUILD_DIR" bash ./tests/headless-shell-outputs.sh
 }
 
 case "${1:-all}" in

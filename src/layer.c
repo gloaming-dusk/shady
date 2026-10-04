@@ -130,6 +130,25 @@ static void configure_layer_surface(struct shady_layer_surface *layer) {
 	wlr_scene_layer_surface_v1_configure(layer->scene_layer, &full, &usable);
 }
 
+/* Output geometry changed (mode, scale, position, hotplug): give every
+ * initialised layer surface its output's new box, so bars follow the
+ * output instead of keeping the size from their last own commit. */
+void shady_layers_arrange(struct shady_server *server) {
+	struct shady_desktop_state *state = shady_desktop_state(server);
+	if (!state) return;
+	struct shady_layer_surface *layer;
+	wl_list_for_each(layer, &state->layer_surfaces, link) {
+		struct wlr_layer_surface_v1 *surface = layer->layer_surface;
+		if (!surface || !surface->initialized) continue;
+		if (surface->output && !wlr_output_layout_get(server->output_layout, surface->output))
+			continue;
+		configure_layer_surface(layer);
+	}
+	struct shady_output *output;
+	wl_list_for_each(output, &server->outputs, link)
+		refresh_maximized_for_output(server, output->wlr_output);
+}
+
 static void layer_surface_commit(struct wl_listener *listener, void *data) {
 	(void)data;
 	struct shady_layer_surface *layer =

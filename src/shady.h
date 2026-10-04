@@ -374,6 +374,7 @@ void server_new_xdg_popup(struct wl_listener *listener, void *data);
 
 /* layer.c */
 void server_new_layer_surface(struct wl_listener *listener, void *data);
+void shady_layers_arrange(struct shady_server *server);
 void shady_output_work_area(struct shady_server *server,
 	struct wlr_output *output, struct wlr_box *box);
 

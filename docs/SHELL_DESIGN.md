@@ -1,8 +1,8 @@
 # Shell design
 
-Status: design, phase 1 (IPC) implemented. This document describes where
-`shady-shell` is going and why. API references for finished pieces live in
-their own documents ([IPC API](IPC_API.md)).
+Status: phases 1 (IPC) and 2 (shell core and render) implemented. This
+document describes where `shady-shell` is going and why. API references for
+finished pieces live in their own documents ([IPC API](IPC_API.md)).
 
 ## Problem
 
@@ -109,8 +109,12 @@ shell.bar {
 1. **Compositor IPC** — done. Unix socket with JSON lines: queries,
    commands and event subscriptions, plus the `shadyctl` CLI. Useful on its
    own to scripts and other bars. See [IPC_API.md](IPC_API.md).
-2. **Shell core and render** — EGL, per-output layer surfaces, HiDPI, cairo
-   textures, GL composite, poll-based event loop.
+2. **Shell core and render** — done. One bar per output that follows
+   hotplug and scale changes, integer HiDPI scaling, a poll loop with
+   timers and fd watches, repaints coalesced on frame callbacks, and two
+   renderers: GLES2 composition through EGL (default) and a `wl_shm`
+   fallback. The UI was split out of the old single `main.c` without
+   changing its behaviour; see "Code layout" below.
 3. **UI and Lua** — widget tree, layout, signals, hot reload. Rebuild the
    current bar, launcher, context menu and Quick Settings in Lua; the
    existing `headless-shell-*` tests must keep passing.
@@ -130,3 +134,30 @@ shell.bar {
   `~/.config/shady/shell.lua`.
 - Font and icon theme discovery (fontconfig is already a dependency; icon
   themes are not).
+
+## Code layout
+
+```
+src/shell/
+  core.c/.h        Wayland globals, outputs, seat input routing, layer
+                   surfaces, timers, fd watches, the poll loop
+  render.h         renderer interface: begin() gives a cairo image, end() commits
+  render_gl.c      EGL + GLES2: upload the image, draw it with a shader, swap
+  render_shm.c     double-buffered wl_shm fallback
+  theme.c/.h       palette (SHADY_SHELL_* colours) and drawing primitives
+  shell.h          the UI's model and the functions below
+  main.c           shady-shell-v1 model, one bar per output, the clock timer
+  bar.c launcher.c menu.c quick.c
+                   one surface each: draw(), pointer and key handlers
+  apps.c           .desktop index for the launcher
+```
+
+A surface is a `shell_surface` with a handler table. `shell_surface_redraw()`
+only marks it dirty; the loop paints dirty surfaces once per iteration and
+not faster than the compositor's frame callbacks, so a burst of protocol
+events costs one repaint. `draw()` receives a cairo context already scaled
+to the surface's buffer scale, so all UI code works in logical pixels.
+
+The compositor side gained one fix here: layer surfaces are re-configured
+whenever the output layout changes, so any layer-shell bar (not only this
+one) follows mode and scale changes.

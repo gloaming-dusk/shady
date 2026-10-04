@@ -182,7 +182,9 @@ the GLES2 renderer, so it can run with `WLR_RENDERER=pixman` as well.
 
 ### Standalone shell
 
-The default build also produces `build/shady-shell`, a separate Wayland client rather than compositor-internal UI. Its first version is a 32px top `wlr-layer-shell` bar rendered with wl_shm + Cairo/Pango. It reserves a 32px exclusive zone so maximized windows use the remaining work area, while fullscreen windows still occupy the entire output.
+The default build also produces `build/shady-shell`, a separate Wayland client rather than compositor-internal UI. It puts a 38px top `wlr-layer-shell` bar on every output, follows outputs as they are added, removed or rescaled, and draws at the output's integer scale so text stays sharp on HiDPI screens. It reserves a 38px exclusive zone so maximized windows use the remaining work area, while fullscreen windows still occupy the entire output.
+
+Widgets are drawn with Cairo/Pango and composited with GLES2 through EGL, the basis for shader effects in the shell (see [docs/SHELL_DESIGN.md](docs/SHELL_DESIGN.md)). Without EGL it falls back to plain `wl_shm` buffers; `SHADY_SHELL_RENDERER=gl|shm` forces one.
 
 ```sh
 ./build/shady-shell
