@@ -30,8 +30,13 @@ struct shell_renderer_impl {
         struct shell_surface *surface, int width, int height);
     /* Attach, damage and commit what was painted since begin(). */
     bool (*end)(struct shell_renderer *renderer, struct shell_surface *surface);
+    /* Composite again from the last uploaded content, for animated shaders.
+     * Optional; false if nothing was committed. */
+    bool (*composite)(struct shell_renderer *renderer, struct shell_surface *surface);
     /* Release per-surface resources before the wl_surface goes away. */
     void (*surface_finish)(struct shell_renderer *renderer, struct shell_surface *surface);
+    /* Drop compiled shaders so edited files are read again. Optional. */
+    void (*forget_shaders)(struct shell_renderer *renderer);
 };
 
 struct shell_renderer {

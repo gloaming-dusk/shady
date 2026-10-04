@@ -19,6 +19,7 @@
 #include <unistd.h>
 
 #include "shady-shell-v1-client-protocol.h"
+#include "render.h"
 #include "shell.h"
 #include "theme.h"
 #include "ui.h"
@@ -45,6 +46,8 @@ struct view_def {
     bool all_outputs;
     char outputs[MAX_DEF_OUTPUTS][NAME_MAX_LEN];
     size_t output_count;
+    char *shader; /* whole-surface shader, absolute path */
+    int uniforms; /* registry ref: table or function returning one */
 };
 
 /* A live surface showing one view_def. */
@@ -226,6 +229,59 @@ static struct ui_node *build_tree(struct view *view, double width, double height
     return tree;
 }
 
+static void collect_widgets(struct shell_effects *effects, const struct ui_node *node) {
+    if (node->hidden) return;
+    if (node->shader) {
+        struct shell_effect *effect = shell_effects_add(effects);
+        if (effect && (effect->shader = strdup(node->shader))) {
+            effect->x = node->x;
+            effect->y = node->y;
+            effect->width = node->w;
+            effect->height = node->h;
+            effect->radius = node->radius;
+            effect->uniform_count = node->uniform_count;
+            if (node->uniform_count)
+                memcpy(effect->uniforms, node->uniforms,
+                    node->uniform_count * sizeof(*node->uniforms));
+        } else if (effect) {
+            effects->count--;
+        }
+    }
+    for (size_t i = 0; i < node->child_count; i++) collect_widgets(effects, node->children[i]);
+}
+
+/* Hand this paint's shaders to the renderer: the surface's own, then every
+ * visible widget's, in drawing order. */
+static void collect_effects(struct view *view, struct shell_surface *surface,
+        const struct ui_node *tree, double width, double height) {
+    struct shell_effects *effects = &surface->effects;
+    shell_effects_clear(effects);
+    const struct view_def *def = view->def;
+    if (def->shader && (effects->surface.shader = strdup(def->shader))) {
+        effects->surface.width = width;
+        effects->surface.height = height;
+        if (def->uniforms != LUA_NOREF) {
+            lua_State *L = view->lua->L;
+            lua_rawgeti(L, LUA_REGISTRYINDEX, def->uniforms);
+            bool ok = true;
+            if (lua_isfunction(L, -1))
+                ok = call(L, 0, 1, "uniforms", view->last_error, sizeof(view->last_error));
+            char error[128];
+            if (ok && !ui_read_uniforms(L, -1, effects->surface.uniforms, SHELL_EFFECT_UNIFORMS,
+                    &effects->surface.uniform_count, error, sizeof(error)))
+                fprintf(stderr, "shady-shell: %s: %s\n", def->name, error);
+            if (ok) lua_pop(L, 1);
+        }
+    }
+    if (tree) collect_widgets(effects, tree);
+    static bool warned;
+    struct shell_renderer *renderer = surface->core->renderer;
+    if (!warned && shell_effects_any(effects) && !renderer->impl->composite) {
+        warned = true;
+        fprintf(stderr, "shady-shell: shader effects need the gl renderer; drawing without them\n");
+    }
+}
+
 static void view_draw(void *data, struct shell_surface *surface, cairo_t *cr,
         double width, double height) {
     struct view *view = data;
@@ -249,6 +305,7 @@ static void view_draw(void *data, struct shell_surface *surface, cairo_t *cr,
     view->tree = tree;
     if (view->pointer_in) view->hovered = ui_hit(tree, view->px, view->py, false);
     ui_draw(cr, tree, view->hovered, &defaults);
+    collect_effects(view, surface, tree, width, height);
 }
 
 static void set_hover(struct view *view, struct ui_node *node) {
@@ -490,6 +547,14 @@ static struct view_def *new_def(lua_State *L, bool popup) {
     lua_pop(L, 1); /* name */
     lua_getfield(L, 1, "on_key");
     def->on_key = lua_isfunction(L, -1) ? luaL_ref(L, LUA_REGISTRYINDEX) : (lua_pop(L, 1), LUA_NOREF);
+    lua_getfield(L, 1, "shader");
+    if (lua_istable(L, -1)) lua_getfield(L, -1, "path");
+    else lua_pushvalue(L, -1);
+    if (lua_type(L, -1) == LUA_TSTRING) def->shader = strdup(lua_tostring(L, -1));
+    lua_pop(L, 2);
+    lua_getfield(L, 1, "uniforms");
+    def->uniforms = lua_istable(L, -1) || lua_isfunction(L, -1)
+        ? luaL_ref(L, LUA_REGISTRYINDEX) : (lua_pop(L, 1), LUA_NOREF);
     lua->def_count++;
     return def;
 }
@@ -983,6 +1048,43 @@ static int l_date(lua_State *L) {
     return 1;
 }
 
+/* ---- the `shell` API: shaders ---------------------------------------- */
+
+static bool is_file(const char *path) {
+    struct stat st;
+    return stat(path, &st) == 0 && S_ISREG(st.st_mode);
+}
+
+/* shell.shader(path): a fragment shader for `shader =` on a widget, bar or
+ * popup. Relative paths are looked up next to the config, then in the data
+ * directory (which ships shell/shaders/). */
+static int l_shader(lua_State *L) {
+    const char *name = luaL_checkstring(L, 1);
+    char path[2 * PATH_MAX];
+    bool found = false;
+    if (name[0] == '/') {
+        snprintf(path, sizeof(path), "%s", name);
+        found = is_file(path);
+    } else {
+        char dir[sizeof(host.config)];
+        snprintf(dir, sizeof(dir), "%s", host.config);
+        char *slash = strrchr(dir, '/');
+        if (slash) *slash = '\0';
+        const char *roots[] = { slash ? dir : ".", host.data_dir };
+        for (int i = 0; i < 2 && !found; i++) {
+            snprintf(path, sizeof(path), "%s/%s", roots[i], name);
+            found = is_file(path);
+        }
+    }
+    if (!found) return luaL_error(L, "shader not found: %s", name);
+    lua_createtable(L, 0, 2);
+    lua_pushstring(L, "shader");
+    lua_setfield(L, -2, "type");
+    lua_pushstring(L, path);
+    lua_setfield(L, -2, "path");
+    return 1;
+}
+
 /* ---- the `shell` API: colours ----------------------------------------- */
 
 static void check_color(lua_State *L, int index, double rgba[4]) {
@@ -1072,6 +1174,7 @@ static const luaL_Reg api[] = {
     { "poll", l_poll },
     { "listen", l_listen },
     { "date", l_date },
+    { "shader", l_shader },
     { "mix", l_mix },
     { "alpha", l_alpha },
     { NULL, NULL },
@@ -1104,6 +1207,7 @@ static void generation_free(struct shell_lua *lua) {
         free(poll->value);
         free(poll);
     }
+    for (size_t i = 0; i < lua->def_count; i++) free(lua->defs[i].shader);
     shell_timer_cancel(lua->date_timer);
     if (lua->L) lua_close(lua->L);
     free(lua);
@@ -1210,6 +1314,9 @@ static void reload(void *data) {
     }
     generation_free(shell->lua);
     shell->lua = NULL;
+    /* Shader files may have changed too: compile them again on next use. */
+    struct shell_renderer *renderer = shell->core.renderer;
+    if (renderer && renderer->impl->forget_shaders) renderer->impl->forget_shaders(renderer);
     generation_start(shell, next);
     fprintf(stderr, "shady-shell: reloaded %s\n", host.config);
 }
@@ -1225,7 +1332,9 @@ static void config_changed(int fd, short revents, void *data) {
         for (char *p = buffer; p < buffer + n;) {
             struct inotify_event *event = (struct inotify_event *)p;
             size_t len = event->len ? strlen(event->name) : 0;
-            if (len > 4 && !strcmp(event->name + len - 4, ".lua")) relevant = true;
+            const char *dot = len ? strrchr(event->name, '.') : NULL;
+            if (dot && (!strcmp(dot, ".lua") || !strcmp(dot, ".frag") || !strcmp(dot, ".glsl")))
+                relevant = true;
             p += sizeof(*event) + event->len;
         }
     }

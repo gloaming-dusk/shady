@@ -245,6 +245,7 @@ void shell_surface_destroy(struct shell_surface *surface) {
     if (core->renderer) core->renderer->impl->surface_finish(core->renderer, surface);
     if (surface->frame) wl_callback_destroy(surface->frame);
     zwlr_layer_surface_v1_destroy(surface->layer_surface);
+    shell_effects_finish(&surface->effects);
     wl_surface_destroy(surface->wl_surface);
     wl_list_remove(&surface->link);
     free(surface);
@@ -266,6 +267,36 @@ void shell_surface_set_size(struct shell_surface *surface, uint32_t width, uint3
 void shell_core_redraw_all(struct shell_core *core) {
     struct shell_surface *surface;
     wl_list_for_each(surface, &core->surfaces, link) surface->dirty = true;
+}
+
+void shell_effects_clear(struct shell_effects *effects) {
+    shell_effect_reset(&effects->surface);
+    for (size_t i = 0; i < effects->count; i++) shell_effect_reset(&effects->widgets[i]);
+    effects->count = 0;
+}
+
+void shell_effects_finish(struct shell_effects *effects) {
+    shell_effects_clear(effects);
+    free(effects->widgets);
+    effects->widgets = NULL;
+    effects->capacity = 0;
+}
+
+struct shell_effect *shell_effects_add(struct shell_effects *effects) {
+    if (effects->count == effects->capacity) {
+        size_t next = effects->capacity ? effects->capacity * 2 : 4;
+        struct shell_effect *grown = realloc(effects->widgets, next * sizeof(*grown));
+        if (!grown) return NULL;
+        effects->widgets = grown;
+        effects->capacity = next;
+    }
+    struct shell_effect *effect = &effects->widgets[effects->count++];
+    memset(effect, 0, sizeof(*effect));
+    return effect;
+}
+
+bool shell_effects_any(const struct shell_effects *effects) {
+    return effects->surface.shader || effects->count > 0;
 }
 
 static void frame_done(void *data, struct wl_callback *callback, uint32_t time) {
@@ -306,13 +337,31 @@ static void paint(struct shell_surface *surface) {
     }
 }
 
-/* Paint every dirty surface that is configured and not waiting on a frame. */
+/* Animated shaders: composite again from the uploaded content, without
+ * running the owner's draw(), once per frame. */
+static void composite(struct shell_surface *surface) {
+    struct shell_core *core = surface->core;
+    surface->frame = wl_surface_frame(surface->wl_surface);
+    wl_callback_add_listener(surface->frame, &frame_listener, surface);
+    if (!core->renderer->impl->composite(core->renderer, surface)) {
+        wl_callback_destroy(surface->frame);
+        surface->frame = NULL;
+        surface->animated = false;
+    }
+}
+
+/* Paint every dirty surface that is configured and not waiting on a frame,
+ * and re-composite animated ones. */
 static void paint_dirty(struct shell_core *core) {
     struct shell_surface *surface;
     wl_list_for_each(surface, &core->surfaces, link) {
-        if (!surface->dirty || !surface->configured || surface->frame) continue;
-        surface->dirty = false;
-        paint(surface);
+        if (!surface->configured || surface->frame) continue;
+        if (surface->dirty) {
+            surface->dirty = false;
+            paint(surface);
+        } else if (surface->animated && core->renderer->impl->composite) {
+            composite(surface);
+        }
     }
 }
 

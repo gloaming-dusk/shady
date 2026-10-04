@@ -20,6 +20,8 @@
 
 #include "wlr-layer-shell-unstable-v1-protocol.h"
 
+#include "effects.h"
+
 struct shell_core;
 struct shell_surface;
 struct shell_renderer;
@@ -143,6 +145,8 @@ struct shell_surface {
     bool dirty;
     struct wl_callback *frame;
     void *render_data; /* owned by the renderer */
+    struct shell_effects effects; /* filled by the owner on each paint */
+    bool animated; /* set by the renderer: an effect uses u_time */
     char name[32]; /* layer namespace, for logs */
 };
 

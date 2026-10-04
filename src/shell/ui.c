@@ -220,6 +220,51 @@ static cairo_surface_t *load_image(const char *path) {
     return surface;
 }
 
+bool ui_read_uniforms(lua_State *L, int index, struct shell_uniform *out, size_t max,
+        size_t *count, char *error, size_t error_size) {
+    *count = 0;
+    if (lua_isnil(L, index)) return true;
+    if (!lua_istable(L, index)) {
+        snprintf(error, error_size, "uniforms must be a table");
+        return false;
+    }
+    index = lua_absindex(L, index);
+    lua_pushnil(L);
+    while (lua_next(L, index)) {
+        const char *key = lua_type(L, -2) == LUA_TSTRING ? lua_tostring(L, -2) : NULL;
+        if (!key || strlen(key) + 3 > SHELL_UNIFORM_NAME_MAX || *count == max) {
+            snprintf(error, error_size, key ? "too many uniforms or name too long: %s"
+                : "uniform names must be strings%s", key ? key : "");
+            lua_pop(L, 2);
+            return false;
+        }
+        struct shell_uniform *u = &out[*count];
+        snprintf(u->name, sizeof(u->name), "u_%s", key);
+        double rgba[4];
+        if (lua_type(L, -1) == LUA_TNUMBER) {
+            u->size = 1;
+            u->value[0] = (float)lua_tonumber(L, -1);
+        } else if (lua_type(L, -1) == LUA_TSTRING && ui_parse_hex(lua_tostring(L, -1), rgba)) {
+            u->size = 4;
+            for (int i = 0; i < 4; i++) u->value[i] = (float)rgba[i];
+        } else if (lua_istable(L, -1) && lua_rawlen(L, -1) >= 1 && lua_rawlen(L, -1) <= 4) {
+            u->size = (int)lua_rawlen(L, -1);
+            for (int i = 0; i < u->size; i++) {
+                lua_rawgeti(L, -1, i + 1);
+                u->value[i] = (float)lua_tonumber(L, -1);
+                lua_pop(L, 1);
+            }
+        } else {
+            snprintf(error, error_size, "uniform %s must be a number, a colour or 1-4 numbers", key);
+            lua_pop(L, 2);
+            return false;
+        }
+        (*count)++;
+        lua_pop(L, 1);
+    }
+    return true;
+}
+
 static void add_child(struct build *b, struct ui_node *parent, struct ui_node *child, size_t *cap) {
     if (parent->child_count == *cap) {
         size_t next = *cap ? *cap * 2 : 4;
@@ -324,6 +369,25 @@ static struct ui_node *build_node(struct build *b, int t, int depth) {
     lua_getfield(L, t, "on_click");
     if (lua_isfunction(L, -1)) node->on_click = luaL_ref(L, LUA_REGISTRYINDEX);
     else lua_pop(L, 1);
+    lua_getfield(L, t, "shader");
+    if (lua_istable(L, -1)) lua_getfield(L, -1, "path");
+    else lua_pushvalue(L, -1);
+    if (lua_type(L, -1) == LUA_TSTRING) node->shader = strdup(lua_tostring(L, -1));
+    lua_pop(L, 2);
+    if (node->shader) {
+        struct shell_uniform uniforms[SHELL_EFFECT_UNIFORMS];
+        size_t count = 0;
+        char message[128];
+        lua_getfield(L, t, "uniforms");
+        if (!ui_read_uniforms(L, -1, uniforms, SHELL_EFFECT_UNIFORMS, &count, message,
+                sizeof(message)))
+            build_error(b, "%s", message);
+        lua_pop(L, 1);
+        if (count && (node->uniforms = malloc(count * sizeof(*uniforms)))) {
+            memcpy(node->uniforms, uniforms, count * sizeof(*uniforms));
+            node->uniform_count = count;
+        }
+    }
 
     switch (node->kind) {
     case UI_NODE_TEXT:
@@ -375,6 +439,8 @@ void ui_free(lua_State *L, struct ui_node *node) {
     if (node->image) cairo_surface_destroy(node->image);
     free(node->text);
     free(node->font);
+    free(node->shader);
+    free(node->uniforms);
     free(node->id);
     free(node);
 }

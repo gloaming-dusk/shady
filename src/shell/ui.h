@@ -17,6 +17,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+#include "effects.h"
+
 enum ui_kind { UI_NODE_BOX, UI_NODE_TEXT, UI_NODE_PIP, UI_NODE_IMAGE };
 enum ui_direction { UI_ROW, UI_COLUMN };
 enum ui_align { UI_START, UI_CENTER, UI_END, UI_STRETCH, UI_SPACE_BETWEEN };
@@ -76,6 +78,11 @@ struct ui_node {
     int on_click; /* Lua registry ref or LUA_NOREF */
     char *id;
 
+    /* Widget shader (absolute path) and its uniforms. */
+    char *shader;
+    struct shell_uniform *uniforms;
+    size_t uniform_count;
+
     /* Computed by ui_measure/ui_layout. */
     double nat_w, nat_h;
     double x, y, w, h;
@@ -104,6 +111,11 @@ void ui_draw(cairo_t *cr, const struct ui_node *node, const struct ui_node *hove
 /* Deepest visible node under (x, y) that is clickable or has an id or a
  * hover style (or, with `clickable`, that has on_click); NULL if none. */
 struct ui_node *ui_hit(struct ui_node *node, double x, double y, bool clickable);
+
+/* Read a uniforms table ({name = number | "#colour" | {n1..n4}}) at `index`.
+ * Returns false with a message in `error`. */
+bool ui_read_uniforms(lua_State *L, int index, struct shell_uniform *out, size_t max,
+    size_t *count, char *error, size_t error_size);
 
 /* Colour parsing shared with the Lua API: "#RGB", "#RRGGBB", "#RRGGBBAA". */
 bool ui_parse_hex(const char *text, double rgba[4]);

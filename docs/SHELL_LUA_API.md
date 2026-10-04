@@ -208,3 +208,63 @@ local battery = shell.poll("cat /sys/class/power_supply/BAT0/capacity", 30000)
 |---|---|
 | `"launcher"` | the compositor asked for the launcher (`shady.toggle_launcher()`), or the shell started with `SHADY_SHELL_OPEN_LAUNCHER=1` |
 | `"change"` | the compositor's workspaces or windows changed |
+
+## Shader effects
+
+With the GL renderer (the default), any bar, popup or widget can be drawn
+through a GLSL ES 1.0 fragment shader. Effects are skipped, with one log
+line, on the `wl_shm` renderer.
+
+```lua
+shell.bar {
+    name = "top",
+    shader = shell.shader("shaders/aurora.frag"),
+    uniforms = { strength = 0.55, accent = shell.theme.accent },
+    view = function(ctx)
+        return shell.row {
+            shell.row { shader = shell.shader("shaders/glow.frag"),
+                        uniforms = { color = "#28e6ff", strength = 0.9 }, radius = 9, ... },
+        }
+    end,
+}
+```
+
+- `shell.shader(path)` finds a fragment shader by absolute path, next to
+  the config, or in the data directory, which ships
+  `shaders/aurora.frag` and `shaders/glow.frag`.
+  [`shell/examples/aurora.lua`](../shell/examples/aurora.lua) puts both on
+  the default UI.
+- A **surface shader** (`shader` on `shell.bar`/`shell.popup`) covers the
+  whole surface. Its `uniforms` may be a table or a function returning one,
+  called on every repaint.
+- A **widget shader** (`shader` on a widget) covers the widget's rectangle
+  after the surface is drawn. Its `uniforms` is a table.
+- Both receive the surface's cairo drawing as `u_tex`, so they can keep,
+  tint, distort or replace it. A shader that fails to compile is logged
+  and the content is drawn as if it had none.
+
+Shaders declare only the uniforms they use. The shell supplies:
+
+| Uniform | Type | |
+|---|---|---|
+| `u_tex` | `sampler2D` | the surface's drawing, premultiplied RGBA |
+| `u_time` | `float` | seconds since the shell started |
+| `u_size` | `vec2` | the effect's size in logical px |
+| `u_rect` | `vec4` | its x, y, width, height within the surface |
+| `u_resolution` | `vec2` | its size in buffer px |
+| `u_scale` | `float` | buffer scale |
+| `u_mouse` | `vec2` | pointer position relative to the effect, `-1` when outside the surface |
+| `u_hover` | `float` | 1 while the pointer is inside the effect |
+| `u_radius` | `float` | the widget's `radius` |
+
+and two varyings: `v_uv`, the surface position to sample `u_tex` at, and
+`v_local`, running 0..1 across the effect (both with y pointing down). A
+precision statement is added for you.
+
+Lua uniforms become `u_<name>`: a number is a `float`, a colour a `vec4`,
+and a list of 1–4 numbers a `float` to `vec4`.
+
+Output premultiplied colour, like `u_tex`. A shader that declares `u_time`
+is animated: the shell composites it every frame from the last drawing,
+without running any view, so an animated bar costs GPU time but almost no
+CPU. Shader files are watched with the config, and saving one reloads it.

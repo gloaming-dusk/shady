@@ -5,6 +5,9 @@
 -- SHADY_SHELL_CONFIG at your own file). The shell reloads it whenever it
 -- changes. The API is documented in docs/SHELL_LUA_API.md.
 
+-- Options a config can set before dofile()-ing this file; see
+-- shell/examples/aurora.lua.
+local options = shell.options or {}
 local t = shell.theme
 local WHITE, BLACK = "#ffffff", "#000000"
 local BAR = 38
@@ -350,6 +353,8 @@ local function tasks(ctx)
                 background = w.focused and sheen(t.accent_deep, 0.90, 0.08)
                     or a(WHITE, hovered and 0.06 or 0.025),
                 border = w.focused and a(t.accent, 0.38) or a(WHITE, hovered and 0.12 or 0.06),
+                shader = w.focused and options.focus_shader or nil,
+                uniforms = options.focus_uniforms,
                 on_click = function(button, info)
                     if button == "left" then
                         shell.close("menu")
@@ -385,6 +390,8 @@ shell.bar {
     name = "shady-shell",
     edge = "top",
     size = BAR,
+    shader = options.bar_shader,
+    uniforms = options.bar_uniforms,
     view = function(ctx)
         local surface = t.surface
         return shell.column {

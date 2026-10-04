@@ -1,9 +1,9 @@
 # Shell design
 
-Status: phases 1 to 3 (IPC, shell core and render, Lua UI) implemented.
-This document describes where `shady-shell` is going and why. API references
-for finished pieces live in their own documents ([IPC API](IPC_API.md),
-[Shell Lua API](SHELL_LUA_API.md)).
+Status: phases 1 to 4 (IPC, shell core and render, Lua UI, shader effects)
+implemented. This document describes where `shady-shell` is going and why.
+API references for finished pieces live in their own documents
+([IPC API](IPC_API.md), [Shell Lua API](SHELL_LUA_API.md)).
 
 ## Problem
 
@@ -127,7 +127,11 @@ with `shell.popup{}` and opened with `shell.open(name, args)`.
    new config fails. The bar, launcher, task menu and Quick Settings now live
    in `shell/default.lua`; the existing `headless-shell-*` tests pass
    unchanged.
-4. **Shader effects** in the shell.
+4. **Shader effects** — done. Surface and widget fragment shaders with the
+   cairo drawing as `u_tex`, host-supplied uniforms and Lua uniforms;
+   shaders using `u_time` are re-composited every frame without running
+   Lua, so the default (static) UI still costs nothing when idle. Example
+   shaders ship in `shell/shaders/`.
 5. **Shell C plugin ABI** for services that Lua cannot reach well (audio,
    tray, notifications).
 6. **Layer-surface effects** in the compositor.
