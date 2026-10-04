@@ -136,6 +136,8 @@ static struct shady_toplevel *desktop_toplevel_at(struct shady_server *server,
 	if (!scene_surface) {
 		return NULL;
 	}
+	/* A layer surface placed in 3D is not where the scene graph has it. */
+	if (shady_render_layer_is_transformed(server, scene_surface->surface)) return NULL;
 	*surface = scene_surface->surface;
 	struct wlr_surface *root = wlr_surface_get_root_surface(*surface);
 	struct wlr_xdg_toplevel *xdg = wlr_xdg_toplevel_try_from_wlr_surface(root);
@@ -154,12 +156,15 @@ static struct shady_toplevel *desktop_toplevel_at(struct shady_server *server,
 static bool overlay_surface_at(struct shady_server *server,
 		double lx, double ly, struct wlr_surface **surface, double *sx, double *sy) {
 	if (!server->overlay_tree) return false;
+	/* Layer surfaces placed in 3D take input where they are drawn, not at
+	 * their untransformed scene position. */
+	if (shady_render_layer_transform_pick(server, lx, ly, surface, sx, sy)) return true;
 	struct wlr_scene_node *node = wlr_scene_node_at(&server->overlay_tree->node,
 		lx, ly, sx, sy);
 	if (!node || node->type != WLR_SCENE_NODE_BUFFER) return false;
 	struct wlr_scene_buffer *buffer = wlr_scene_buffer_from_node(node);
 	struct wlr_scene_surface *scene_surface = wlr_scene_surface_try_from_buffer(buffer);
-	if (!scene_surface) return false;
+	if (!scene_surface || shady_render_layer_is_transformed(server, scene_surface->surface)) return false;
 	*surface = scene_surface->surface;
 	return true;
 }

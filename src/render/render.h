@@ -8,6 +8,7 @@ struct shady_output;
 struct shady_server;
 struct wlr_renderer;
 struct shady_toplevel;
+struct wlr_surface;
 
 bool shady_render_init(struct wlr_renderer *renderer);
 void shady_render_fini(void);
@@ -62,6 +63,27 @@ struct shady_layer_effect_desc {
  * when effects are unavailable (no spatial renderer) or the shader fails. */
 bool shady_render_set_layer_effect(struct shady_server *server, const char *name_space,
 	const struct shady_layer_effect_desc *desc);
+
+/* 3D placement for layer-shell surfaces (shady.layer_transform in Lua): the
+ * surface is drawn on a plane rotated about a pivot (by default the edge it
+ * is anchored to) and pushed back in depth, seen through a screen-attached
+ * perspective; pointer input is mapped back through the same plane.
+ * Spatial mode only. */
+struct shady_layer_transform_desc {
+	float tilt, yaw, roll; /* degrees about the x, y and z axes */
+	float depth; /* logical px away from the viewer (negative: closer) */
+	float perspective; /* focal length in logical px; 0 = 1.2 x output height */
+	bool pivot_center; /* false: pivot on the anchored edge */
+};
+bool shady_render_set_layer_transform(struct shady_server *server, const char *name_space,
+	const struct shady_layer_transform_desc *desc);
+/* Hit-test transformed layer surfaces at layout coordinates. Returns true
+ * and the surface under the point, if any. */
+bool shady_render_layer_transform_pick(struct shady_server *server, double lx, double ly,
+	struct wlr_surface **surface, double *sx, double *sy);
+/* Whether this surface belongs to a transformed layer (whose untransformed
+ * scene position must not take input). */
+bool shady_render_layer_is_transformed(struct shady_server *server, struct wlr_surface *surface);
 
 /* Shared with pick3d: build view/proj for the given output size. */
 void shady_render_camera_matrices(struct shady_server *server,

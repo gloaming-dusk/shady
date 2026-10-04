@@ -290,6 +290,34 @@ static int l_shady_layer_effect(lua_State *L) {
 	return 1;
 }
 
+/* shady.layer_transform(namespace, {tilt=, yaw=, roll=, depth=, perspective=,
+ * pivot="anchor"|"center"}) places layer surfaces with that namespace in 3D;
+ * nil restores them. Spatial mode only. */
+static int l_shady_layer_transform(lua_State *L) {
+	const char *name_space = luaL_checkstring(L, 1);
+	if (lua_isnoneornil(L, 2)) {
+		lua_pushboolean(L, shady_render_set_layer_transform(lua_server, name_space, NULL));
+		return 1;
+	}
+	luaL_checktype(L, 2, LUA_TTABLE);
+	struct shady_layer_transform_desc desc = {0};
+	static const char *const keys[] = { "tilt", "yaw", "roll", "depth", "perspective" };
+	float *fields[] = { &desc.tilt, &desc.yaw, &desc.roll, &desc.depth, &desc.perspective };
+	for (size_t i = 0; i < sizeof(keys) / sizeof(keys[0]); i++) {
+		lua_getfield(L, 2, keys[i]);
+		if (!lua_isnil(L, -1)) *fields[i] = (float)luaL_checknumber(L, -1);
+		lua_pop(L, 1);
+	}
+	lua_getfield(L, 2, "pivot");
+	const char *pivot = luaL_optstring(L, -1, "anchor");
+	if (strcmp(pivot, "anchor") != 0 && strcmp(pivot, "center") != 0)
+		return luaL_error(L, "layer_transform pivot is \"anchor\" or \"center\"");
+	desc.pivot_center = !strcmp(pivot, "center");
+	lua_pop(L, 1);
+	lua_pushboolean(L, shady_render_set_layer_transform(lua_server, name_space, &desc));
+	return 1;
+}
+
 static int l_shady_toggle_launcher(lua_State *L){(void)L;shady_shell_protocol_toggle_launcher(lua_server);return 0;}
 static int l_shady_spawn(lua_State *L){
 	const char *command=luaL_checkstring(L,1);
@@ -648,6 +676,7 @@ static void install_api(lua_State *L){
 	lua_pushcfunction(L,l_shady_spawn);lua_setfield(L,-2,"spawn");
 	lua_pushcfunction(L,l_shady_toggle_launcher);lua_setfield(L,-2,"toggle_launcher");
 	lua_pushcfunction(L,l_shady_layer_effect);lua_setfield(L,-2,"layer_effect");
+	lua_pushcfunction(L,l_shady_layer_transform);lua_setfield(L,-2,"layer_transform");
 	lua_pushcfunction(L,l_shady_windows);lua_setfield(L,-2,"windows");
 	lua_pushcfunction(L,l_shady_focused_window);lua_setfield(L,-2,"focused_window");
 	lua_pushcfunction(L,l_shady_outputs);lua_setfield(L,-2,"outputs");

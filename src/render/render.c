@@ -890,9 +890,11 @@ bool shady_render_init(
 }
 
 static void layer_effects_fini(void);
+static void layer_transforms_fini(void);
 
 void shady_render_fini(void) {
 	layer_effects_fini();
+	layer_transforms_fini();
 	if (plugin_make_current()) {
 		for (size_t i = 0; i < SHADY_PLUGIN_SHADER_MAX; i++) {
 			if (plugin_shaders[i].used) glDeleteProgram(plugin_shaders[i].program);
@@ -1451,6 +1453,325 @@ restore:
 	if (depth) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
 }
 
+/* ---- layer-shell 3D placement ----------------------------------------- */
+
+/*
+ * A transformed layer surface lies on a plane through a pivot point,
+ * rotated by roll (z), tilt (x) and yaw (y) and pushed `depth` away, and is
+ * seen through a perspective whose vanishing point is the output centre:
+ *
+ *   screen = O + (P.xy - O) * f / (f + P.z)
+ *
+ * All of this is in the output's logical pixels, attached to the screen
+ * rather than to the 3D camera, so a tilted bar stays put while the world
+ * moves. Drawing uses homogeneous clip coordinates (w = (f + z) / f) for
+ * perspective-correct texturing; input inverts the same mapping.
+ */
+
+#define LAYER_TRANSFORM_MAX 16
+
+struct layer_transform {
+	bool used;
+	char name_space[64];
+	struct shady_layer_transform_desc desc;
+};
+
+struct layer_plane {
+	double ox, oy; /* vanishing point */
+	double f;
+	double px, py, pz; /* pivot */
+	double a[3], b[3]; /* the plane's x and y axes */
+};
+
+static struct layer_transform layer_transforms[LAYER_TRANSFORM_MAX];
+static GLuint layer_transform_program[2];
+static bool layer_transform_failed[2];
+
+static struct layer_transform *layer_transform_for(const char *name_space) {
+	for (size_t i = 0; name_space && i < LAYER_TRANSFORM_MAX; i++)
+		if (layer_transforms[i].used && !strcmp(layer_transforms[i].name_space, name_space))
+			return &layer_transforms[i];
+	return NULL;
+}
+
+bool shady_render_set_layer_transform(struct shady_server *server, const char *name_space,
+		const struct shady_layer_transform_desc *desc) {
+	if (!name_space || !*name_space || strlen(name_space) >= sizeof(layer_transforms[0].name_space))
+		return false;
+	struct layer_transform *slot = layer_transform_for(name_space);
+	if (!desc) {
+		if (slot) memset(slot, 0, sizeof(*slot));
+		shady_render_schedule_all_outputs(server);
+		return true;
+	}
+	for (size_t i = 0; !slot && i < LAYER_TRANSFORM_MAX; i++)
+		if (!layer_transforms[i].used) slot = &layer_transforms[i];
+	if (!slot) return false;
+	slot->used = true;
+	snprintf(slot->name_space, sizeof(slot->name_space), "%s", name_space);
+	slot->desc = *desc;
+	shady_render_schedule_all_outputs(server);
+	return true;
+}
+
+/* box: the layer surface in output logical px; out_w/out_h: output size. */
+static void layer_plane_setup(struct layer_plane *pl, const struct shady_layer_transform_desc *t,
+		const struct wlr_box *box, uint32_t anchor, double out_w, double out_h) {
+	pl->ox = out_w / 2.0;
+	pl->oy = out_h / 2.0;
+	pl->f = t->perspective > 1.f ? t->perspective : 1.2 * out_h;
+	pl->px = box->x + box->width / 2.0;
+	pl->py = box->y + box->height / 2.0;
+	pl->pz = t->depth;
+	if (!t->pivot_center) {
+		bool top = anchor & ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP;
+		bool bottom = anchor & ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM;
+		bool left = anchor & ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT;
+		bool right = anchor & ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT;
+		/* Hinge on the edge the surface is attached to. */
+		if (top && !bottom) pl->py = box->y;
+		else if (bottom && !top) pl->py = box->y + box->height;
+		else if (left && !right) pl->px = box->x;
+		else if (right && !left) pl->px = box->x + box->width;
+	}
+	const double radians = 3.14159265358979323846 / 180.0;
+	double r = t->roll * radians, x = t->tilt * radians, y = t->yaw * radians;
+	/* Rotate the unit axes: roll, then tilt, then yaw. */
+	const double units[2][3] = { { 1, 0, 0 }, { 0, 1, 0 } };
+	for (int i = 0; i < 2; i++) {
+		double vx = units[i][0] * cos(r) - units[i][1] * sin(r);
+		double vy = units[i][0] * sin(r) + units[i][1] * cos(r);
+		double vz = 0;
+		double ty = vy * cos(x) - vz * sin(x), tz = vy * sin(x) + vz * cos(x);
+		vy = ty;
+		vz = tz;
+		double yx = vx * cos(y) + vz * sin(y), yz = -vx * sin(y) + vz * cos(y);
+		double *out = i == 0 ? pl->a : pl->b;
+		out[0] = yx;
+		out[1] = vy;
+		out[2] = yz;
+	}
+}
+
+/* Project the plane point at output position (x, y) (untransformed). */
+static bool layer_plane_project(const struct layer_plane *pl, double x, double y,
+		double *sx, double *sy, double *w) {
+	double u = x - pl->px, v = y - pl->py;
+	double X = pl->px + u * pl->a[0] + v * pl->b[0];
+	double Y = pl->py + u * pl->a[1] + v * pl->b[1];
+	double Z = pl->pz + u * pl->a[2] + v * pl->b[2];
+	double denom = pl->f + Z;
+	if (denom < pl->f * 0.05) return false; /* at or behind the eye */
+	*w = denom / pl->f;
+	*sx = pl->ox + (X - pl->ox) / *w;
+	*sy = pl->oy + (Y - pl->oy) / *w;
+	return true;
+}
+
+/* The untransformed output position that projects to screen (sx, sy). */
+static bool layer_plane_unproject(const struct layer_plane *pl, double sx, double sy,
+		double *x, double *y) {
+	double dx = sx - pl->ox, dy = sy - pl->oy, f = pl->f;
+	double m00 = f * pl->a[0] - dx * pl->a[2], m01 = f * pl->b[0] - dx * pl->b[2];
+	double m10 = f * pl->a[1] - dy * pl->a[2], m11 = f * pl->b[1] - dy * pl->b[2];
+	double r0 = dx * (f + pl->pz) - f * (pl->px - pl->ox);
+	double r1 = dy * (f + pl->pz) - f * (pl->py - pl->oy);
+	double det = m00 * m11 - m01 * m10;
+	if (fabs(det) < 1e-9) return false;
+	double u = (r0 * m11 - m01 * r1) / det;
+	double v = (m00 * r1 - r0 * m10) / det;
+	if (pl->f + pl->pz + u * pl->a[2] + v * pl->b[2] < pl->f * 0.05) return false;
+	*x = pl->px + u;
+	*y = pl->py + v;
+	return true;
+}
+
+static GLuint layer_transform_get_program(bool external) {
+	int v = external ? 1 : 0;
+	if (layer_transform_program[v] || layer_transform_failed[v]) return layer_transform_program[v];
+	static const char *vs_src =
+		"attribute vec4 a_clip;\n"
+		"attribute vec2 a_uv;\n"
+		"varying vec2 v_uv;\n"
+		"void main() { v_uv = a_uv; gl_Position = a_clip; }\n";
+	char fs_src[512];
+	snprintf(fs_src, sizeof(fs_src),
+		"%s"
+		"precision mediump float;\n"
+		"uniform %s u_tex;\n"
+		"uniform float u_alpha;\n"
+		"varying vec2 v_uv;\n"
+		"void main() { gl_FragColor = texture2D(u_tex, v_uv) * u_alpha; }\n",
+		external ? "#extension GL_OES_EGL_image_external : require\n" : "",
+		external ? "samplerExternalOES" : "sampler2D");
+	GLuint vs = plugin_compile_shader(GL_VERTEX_SHADER, vs_src, "layer transform");
+	GLuint fs = plugin_compile_shader(GL_FRAGMENT_SHADER, fs_src, "layer transform");
+	GLuint program = vs && fs ? glCreateProgram() : 0;
+	if (program) {
+		glAttachShader(program, vs);
+		glAttachShader(program, fs);
+		glBindAttribLocation(program, 0, "a_clip");
+		glBindAttribLocation(program, 1, "a_uv");
+		glLinkProgram(program);
+		GLint ok = GL_FALSE;
+		glGetProgramiv(program, GL_LINK_STATUS, &ok);
+		if (!ok) {
+			glDeleteProgram(program);
+			program = 0;
+		}
+	}
+	if (vs) glDeleteShader(vs);
+	if (fs) glDeleteShader(fs);
+	layer_transform_program[v] = program;
+	layer_transform_failed[v] = !program;
+	return program;
+}
+
+static void layer_transforms_fini(void) {
+	if (plugin_make_current())
+		for (int i = 0; i < 2; i++)
+			if (layer_transform_program[i]) glDeleteProgram(layer_transform_program[i]);
+	memset(layer_transform_program, 0, sizeof(layer_transform_program));
+	memset(layer_transform_failed, 0, sizeof(layer_transform_failed));
+	memset(layer_transforms, 0, sizeof(layer_transforms));
+}
+
+/* Draw one buffer (dst in output logical px) on the plane. */
+static void draw_transformed_buffer(const struct layer_plane *pl, struct wlr_texture *texture,
+		const struct wlr_fbox *src, double dx, double dy, double dw, double dh,
+		float scale, float alpha) {
+	struct wlr_gles2_texture_attribs attribs;
+	wlr_gles2_texture_get_attribs(texture, &attribs);
+	GLuint program = layer_transform_get_program(attribs.target != GL_TEXTURE_2D);
+	if (!program) return;
+	GLint viewport[4];
+	glGetIntegerv(GL_VIEWPORT, viewport);
+	if (viewport[2] <= 0 || viewport[3] <= 0) return;
+
+	double tw = texture->width, th = texture->height;
+	bool has_src = src && src->width > 0 && src->height > 0 && tw > 0 && th > 0;
+	float u0 = has_src ? (float)(src->x / tw) : 0.f, v0 = has_src ? (float)(src->y / th) : 0.f;
+	float u1 = has_src ? (float)((src->x + src->width) / tw) : 1.f;
+	float v1 = has_src ? (float)((src->y + src->height) / th) : 1.f;
+	const double corners[4][2] = { { dx, dy }, { dx + dw, dy }, { dx, dy + dh }, { dx + dw, dy + dh } };
+	const float uvs[4][2] = { { u0, v0 }, { u1, v0 }, { u0, v1 }, { u1, v1 } };
+	GLfloat clip[16], uv[8];
+	for (int i = 0; i < 4; i++) {
+		double sx, sy, w;
+		if (!layer_plane_project(pl, corners[i][0], corners[i][1], &sx, &sy, &w)) return;
+		/* Buffer px, top-down, to NDC, then scale by w for perspective. */
+		double nx = 2.0 * sx * scale / viewport[2] - 1.0;
+		double ny = 2.0 * sy * scale / viewport[3] - 1.0;
+		clip[i * 4 + 0] = (GLfloat)(nx * w);
+		clip[i * 4 + 1] = (GLfloat)(ny * w);
+		clip[i * 4 + 2] = 0.f;
+		clip[i * 4 + 3] = (GLfloat)w;
+		uv[i * 2 + 0] = uvs[i][0];
+		uv[i * 2 + 1] = uvs[i][1];
+	}
+
+	GLint old_program = 0, old_buffer = 0, old_active = 0, old_texture = 0;
+	GLint blend_src_rgb = 0, blend_dst_rgb = 0, blend_src_alpha = 0, blend_dst_alpha = 0;
+	GLboolean blend = glIsEnabled(GL_BLEND), scissor = glIsEnabled(GL_SCISSOR_TEST);
+	GLboolean depth = glIsEnabled(GL_DEPTH_TEST);
+	glGetIntegerv(GL_CURRENT_PROGRAM, &old_program);
+	glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &old_buffer);
+	glGetIntegerv(GL_ACTIVE_TEXTURE, &old_active);
+	glGetIntegerv(GL_BLEND_SRC_RGB, &blend_src_rgb);
+	glGetIntegerv(GL_BLEND_DST_RGB, &blend_dst_rgb);
+	glGetIntegerv(GL_BLEND_SRC_ALPHA, &blend_src_alpha);
+	glGetIntegerv(GL_BLEND_DST_ALPHA, &blend_dst_alpha);
+	glActiveTexture(GL_TEXTURE0);
+	glGetIntegerv(GL_TEXTURE_BINDING_2D, &old_texture);
+
+	glUseProgram(program);
+	glBindTexture(attribs.target, attribs.tex);
+	glTexParameteri(attribs.target, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(attribs.target, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glUniform1i(glGetUniformLocation(program, "u_tex"), 0);
+	glUniform1f(glGetUniformLocation(program, "u_alpha"), alpha);
+	glDisable(GL_DEPTH_TEST);
+	glDisable(GL_SCISSOR_TEST);
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
+	glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, 0, clip);
+	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 0, uv);
+	glEnableVertexAttribArray(0);
+	glEnableVertexAttribArray(1);
+	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+	glDisableVertexAttribArray(0);
+	glDisableVertexAttribArray(1);
+
+	glBindTexture(attribs.target, 0);
+	glBindTexture(GL_TEXTURE_2D, (GLuint)old_texture);
+	glActiveTexture((GLenum)old_active);
+	glBindBuffer(GL_ARRAY_BUFFER, (GLuint)old_buffer);
+	glUseProgram((GLuint)old_program);
+	glBlendFuncSeparate((GLenum)blend_src_rgb, (GLenum)blend_dst_rgb,
+		(GLenum)blend_src_alpha, (GLenum)blend_dst_alpha);
+	if (blend) glEnable(GL_BLEND); else glDisable(GL_BLEND);
+	if (scissor) glEnable(GL_SCISSOR_TEST);
+	if (depth) glEnable(GL_DEPTH_TEST);
+}
+
+/* The layer surface's plane on its output, from layout geometry. */
+static bool layer_plane_for(struct shady_server *server, struct shady_layer_surface *layer,
+		const struct layer_transform *t, struct wlr_output *output, struct layer_plane *pl) {
+	struct wlr_layer_surface_v1 *ls = layer->layer_surface;
+	if (!ls->surface->mapped || !output) return false;
+	struct wlr_box out_box;
+	wlr_output_layout_get_box(server->output_layout, output, &out_box);
+	if (out_box.width <= 0 || out_box.height <= 0) return false;
+	int lx = 0, ly = 0;
+	wlr_scene_node_coords(&layer->scene_layer->tree->node, &lx, &ly);
+	const struct wlr_box box = {
+		.x = lx - out_box.x, .y = ly - out_box.y,
+		.width = ls->surface->current.width, .height = ls->surface->current.height,
+	};
+	layer_plane_setup(pl, &t->desc, &box, ls->current.anchor, out_box.width, out_box.height);
+	return true;
+}
+
+bool shady_render_layer_transform_pick(struct shady_server *server, double lx, double ly,
+		struct wlr_surface **surface, double *sx, double *sy) {
+	struct shady_desktop_state *desktop = shady_desktop_state(server);
+	if (!desktop || !server->config.spatial_mode || desktop->session_locked) return false;
+	/* Topmost first: overlay down to background, newest first. */
+	for (int z = ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY; z >= ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND; z--) {
+		struct shady_layer_surface *layer;
+		wl_list_for_each(layer, &desktop->layer_surfaces, link) {
+			struct wlr_layer_surface_v1 *ls = layer->layer_surface;
+			if ((int)ls->current.layer != z || !ls->output) continue;
+			struct layer_transform *t = layer_transform_for(ls->namespace);
+			struct layer_plane pl;
+			if (!t || !layer_plane_for(server, layer, t, ls->output, &pl)) continue;
+			struct wlr_box out_box;
+			wlr_output_layout_get_box(server->output_layout, ls->output, &out_box);
+			double x, y;
+			if (!layer_plane_unproject(&pl, lx - out_box.x, ly - out_box.y, &x, &y)) continue;
+			int nx = 0, ny = 0;
+			wlr_scene_node_coords(&layer->scene_layer->tree->node, &nx, &ny);
+			struct wlr_surface *hit = wlr_layer_surface_v1_surface_at(ls,
+				x - (nx - out_box.x), y - (ny - out_box.y), sx, sy);
+			if (hit) {
+				*surface = hit;
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+bool shady_render_layer_is_transformed(struct shady_server *server, struct wlr_surface *surface) {
+	/* Only the spatial renderer draws the transform. */
+	if (!surface || !server->config.spatial_mode || shady_desktop_state(server)->session_locked)
+		return false;
+	struct wlr_layer_surface_v1 *ls =
+		wlr_layer_surface_v1_try_from_wlr_surface(wlr_surface_get_root_surface(surface));
+	return ls && layer_transform_for(ls->namespace) != NULL;
+}
+
 struct shady_overlay_render_data {
 	struct wlr_render_pass *pass;
 	struct wlr_output *output;
@@ -1458,6 +1779,7 @@ struct shady_overlay_render_data {
 	float scale;
 	struct timespec now;
 	struct layer_effect *effect; /* backdrop for the layer being drawn */
+	const struct layer_plane *plane; /* 3D placement for the layer being drawn */
 };
 
 static void render_scene_overlay_buffer(struct wlr_scene_buffer *buffer,
@@ -1479,6 +1801,15 @@ static void render_scene_overlay_buffer(struct wlr_scene_buffer *buffer,
 	int height = buffer->dst_height > 0
 		? buffer->dst_height : scene_surface->surface->current.height;
 	if (width <= 0 || height <= 0) {
+		return;
+	}
+
+	if (ctx->plane) {
+		if (plugin_make_current())
+			draw_transformed_buffer(ctx->plane, texture, &buffer->src_box,
+				(double)sx - ctx->ox, (double)sy - ctx->oy, width, height,
+				ctx->scale, buffer->opacity);
+		wlr_scene_surface_send_frame_done(scene_surface, &ctx->now);
 		return;
 	}
 
@@ -1642,10 +1973,16 @@ static void render_spatial_overlays(struct shady_server *server,
 				layer->layer_surface->output != output) {
 			continue;
 		}
-		ctx.effect = layer_effect_for(layer->layer_surface->namespace);
+		struct layer_transform *transform = layer_transform_for(layer->layer_surface->namespace);
+		struct layer_plane plane;
+		ctx.plane = transform && layer_plane_for(server, layer, transform, output, &plane)
+			? &plane : NULL;
+		/* Backdrop effects work on the untransformed rectangle only. */
+		ctx.effect = ctx.plane ? NULL : layer_effect_for(layer->layer_surface->namespace);
 		wlr_scene_node_for_each_buffer(&layer->scene_layer->tree->node,
 			render_scene_overlay_buffer, &ctx);
 		ctx.effect = NULL;
+		ctx.plane = NULL;
 	}
 
 	/* XDG popups remain readable/interactive while their parent is spatial. */

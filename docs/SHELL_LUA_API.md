@@ -295,3 +295,12 @@ Glass shows through translucent backgrounds, so pair it with
 [`shell/examples/glass.lua`](../shell/examples/glass.lua), which sets
 `shell.options.bar_opacity` and `panel_opacity`. See
 [LUA_API.md](LUA_API.md) for the options.
+
+## 3D placement
+
+The compositor can also tilt, turn or recede any layer surface in spatial
+mode, with clicks mapped to where it is drawn:
+`shady.layer_transform("shady-shell", { tilt = -30, depth = 40 })` in the
+compositor's `init.lua` leans the default bar back from its top edge. Like
+`layer_effect`, it selects surfaces by namespace. See
+[LUA_API.md](LUA_API.md).

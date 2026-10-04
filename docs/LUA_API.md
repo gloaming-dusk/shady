@@ -99,6 +99,30 @@ The effect is masked by the surface's own alpha, so rounded or shaped
 panels get glass only where they draw. It needs spatial mode and returns
 false elsewhere, or when the shader fails to compile.
 
+### `shady.layer_transform(namespace, options | nil) -> boolean`
+
+Place layer-shell surfaces with this namespace in 3D: tilt a bar back, turn
+a panel toward the centre, or float a dock in depth. The surface is drawn on
+a rotated plane through a screen-attached perspective (it does not move with
+the 3D camera), and pointer input is mapped through the same plane, so it
+is clicked where it appears. `nil` restores it.
+
+```lua
+shady.layer_transform("shady-shell", { tilt = -30, depth = 40 })  -- hinged on its top edge
+shady.layer_transform("quick", { yaw = -18, depth = 30, pivot = "center" })
+```
+
+| Option | Default | |
+|---|---|---|
+| `tilt`, `yaw`, `roll` | 0 | rotation in degrees about the x, y and z axes |
+| `depth` | 0 | logical px away from the viewer; negative comes closer |
+| `perspective` | 1.2 × output height | focal length in logical px; smaller is more dramatic |
+| `pivot` | `"anchor"` | `"anchor"` hinges on the edge the surface is attached to, `"center"` rotates about its centre |
+
+Positive tilt leans the far edge away from the viewer. Spatial mode only;
+a transformed surface is drawn without its `layer_effect`, and transformed
+surfaces take input before untransformed layers.
+
 ## Runtime objects
 
 ### `shady.windows() -> Window[]`

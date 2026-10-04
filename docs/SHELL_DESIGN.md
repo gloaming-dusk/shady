@@ -1,8 +1,8 @@
 # Shell design
 
 Status: phases 1 to 7 implemented (IPC, shell core and render, Lua UI,
-shader effects, native plugins, layer backdrop effects, standard
-protocols); placing layer surfaces in 3D remains open. This document describes where `shady-shell` is
+shader effects and native plugins in the shell; layer backdrop effects, 3D
+placement and standard protocols in the compositor). This document describes where `shady-shell` is
 going and why. API references for finished pieces live in their own
 documents ([IPC API](IPC_API.md), [Shell Lua API](SHELL_LUA_API.md),
 [Shell plugin API](SHELL_PLUGIN_API.md)).
@@ -148,8 +148,10 @@ with `shell.popup{}` and opened with `shell.open(name, args)`.
    works for any layer client, `shady-shell` or not, in spatial mode.
    `shell/examples/glass.lua` makes the default UI translucent for it.
    Fixed on the way: spatial mode now draws layer surfaces in layer order.
-   Still open: placing layer surfaces in 3D (tilt, depth), which needs
-   pointer input mapped through the same transform.
+   3D placement is done too: `shady.layer_transform(namespace, ...)` tilts,
+   turns and recedes layer surfaces through a screen-attached perspective,
+   and maps pointer input back through the same plane. The two do not
+   combine yet: a transformed surface is drawn without its backdrop.
 7. **Standard protocols** — done. `wlr-foreign-toplevel-management-unstable-v1`,
    `ext-foreign-toplevel-list-v1` and `ext-workspace-v1` mirror the
    compositor's windows and workspaces (`src/standard_protocols.c`), so

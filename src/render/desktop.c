@@ -131,3 +131,17 @@ bool shady_render_set_layer_effect(struct shady_server *server, const char *name
 		const struct shady_layer_effect_desc *desc) {
 	(void)server; (void)name_space; (void)desc; return false;
 }
+
+bool shady_render_set_layer_transform(struct shady_server *server, const char *name_space,
+		const struct shady_layer_transform_desc *desc) {
+	(void)server; (void)name_space; (void)desc; return false;
+}
+
+bool shady_render_layer_transform_pick(struct shady_server *server, double lx, double ly,
+		struct wlr_surface **surface, double *sx, double *sy) {
+	(void)server; (void)lx; (void)ly; (void)surface; (void)sx; (void)sy; return false;
+}
+
+bool shady_render_layer_is_transformed(struct shady_server *server, struct wlr_surface *surface) {
+	(void)server; (void)surface; return false;
+}
