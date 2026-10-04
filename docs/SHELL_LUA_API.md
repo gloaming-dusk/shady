@@ -268,3 +268,18 @@ Output premultiplied colour, like `u_tex`. A shader that declares `u_time`
 is animated: the shell composites it every frame from the last drawing,
 without running any view, so an animated bar costs GPU time but almost no
 CPU. Shader files are watched with the config, and saving one reloads it.
+
+## Native plugins
+
+| Function | |
+|---|---|
+| `shell.plugin(name[, options])` | load a native plugin once per shell process; returns true, or false and a message |
+| `shell.value(key[, fallback])` | a value a plugin published (`"sysinfo.cpu"`); views reading it repaint when it changes |
+| `shell.action(name[, argument])` | run a plugin action; returns false if none is registered |
+| `shell.widget(type, props)` | a widget drawn by a plugin, sized with `width`/`height` or by its container |
+
+Plugins outlive config reloads. Writing them is covered in
+[SHELL_PLUGIN_API.md](SHELL_PLUGIN_API.md);
+[`shell/examples/sysinfo.lua`](../shell/examples/sysinfo.lua) adds a CPU
+graph to the default bar with the bundled `sysinfo` plugin, through the
+default UI's `shell.options.bar_extra` hook.

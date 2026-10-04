@@ -12,6 +12,7 @@
 #include <string.h>
 
 #include "shady-shell-v1-client-protocol.h"
+#include "plugins.h"
 #include "script.h"
 #include "shell.h"
 #include "theme.h"
@@ -188,6 +189,7 @@ int main(void) {
         fprintf(stderr, "shady-shell: compositor lacks the shady-shell-v1 protocol\n");
         goto out;
     }
+    shell_plugins_init(&shell);
     if (!shell_lua_init(&shell)) {
         fprintf(stderr, "shady-shell: no usable shell config\n");
         goto out;
@@ -199,6 +201,7 @@ int main(void) {
 
 out:
     shell_lua_finish(&shell);
+    shell_plugins_finish();
     if (shell.protocol) shady_shell_v1_destroy(shell.protocol);
     shell_core_finish(&shell.core);
     return status;

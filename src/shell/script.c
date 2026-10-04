@@ -19,6 +19,7 @@
 #include <unistd.h>
 
 #include "shady-shell-v1-client-protocol.h"
+#include "plugins.h"
 #include "render.h"
 #include "shell.h"
 #include "theme.h"
@@ -184,6 +185,7 @@ static void ui_defaults(struct ui_defaults *d) {
     d->accent[0] = UI_ACCENT.r; d->accent[1] = UI_ACCENT.g; d->accent[2] = UI_ACCENT.b;
     d->accent[3] = 1;
     d->font = "Sans Medium 9.5";
+    d->draw_custom = shell_plugins_draw_widget;
 }
 
 /* ---- views ------------------------------------------------------------ */
@@ -1048,6 +1050,47 @@ static int l_date(lua_State *L) {
     return 1;
 }
 
+/* ---- the `shell` API: native plugins --------------------------------- */
+
+/* shell.plugin(name[, options]): load a native plugin once per shell
+ * process. Returns true, or false and a message. */
+static int l_plugin(lua_State *L) {
+    const char *spec = luaL_checkstring(L, 1);
+    struct shady_shell_props_handle options = {0};
+    if (lua_istable(L, 2)) ui_read_props(L, 2, &options);
+    char dir[sizeof(host.config)];
+    snprintf(dir, sizeof(dir), "%s", host.config);
+    char *slash = strrchr(dir, '/');
+    if (slash) *slash = '\0';
+    else snprintf(dir, sizeof(dir), ".");
+    char error[512];
+    bool ok = shell_plugins_load(spec, &options, dir, error, sizeof(error));
+    ui_free_props(&options);
+    lua_pushboolean(L, ok);
+    if (ok) return 1;
+    fprintf(stderr, "shady-shell: %s\n", error);
+    lua_pushstring(L, error);
+    return 2;
+}
+
+/* shell.value(key[, fallback]): a value published by a plugin. */
+static int l_value(lua_State *L) {
+    const char *value = shell_plugins_value(luaL_checkstring(L, 1));
+    if (value) lua_pushstring(L, value);
+    else if (lua_isnoneornil(L, 2)) lua_pushnil(L);
+    else lua_pushvalue(L, 2);
+    return 1;
+}
+
+/* shell.action(name[, argument]): run a plugin action. */
+static int l_action(lua_State *L) {
+    no_view(L, "shell.action");
+    const char *name = luaL_checkstring(L, 1);
+    const char *argument = lua_isnoneornil(L, 2) ? "" : luaL_tolstring(L, 2, NULL);
+    lua_pushboolean(L, shell_plugins_action(name, argument));
+    return 1;
+}
+
 /* ---- the `shell` API: shaders ---------------------------------------- */
 
 static bool is_file(const char *path) {
@@ -1142,6 +1185,12 @@ static const char *prelude =
     "  props.type = 'text'\n"
     "  return props\n"
     "end\n"
+    "function shell.widget(kind, props)\n"
+    "  props = props or {}\n"
+    "  props.type = 'custom'\n"
+    "  props.widget = kind\n"
+    "  return props\n"
+    "end\n"
     "function shell.gradient(direction, ...)\n"
     "  return { gradient = direction, ... }\n"
     "end\n";
@@ -1175,6 +1224,9 @@ static const luaL_Reg api[] = {
     { "listen", l_listen },
     { "date", l_date },
     { "shader", l_shader },
+    { "plugin", l_plugin },
+    { "value", l_value },
+    { "action", l_action },
     { "mix", l_mix },
     { "alpha", l_alpha },
     { NULL, NULL },

@@ -63,6 +63,7 @@ test_daily() {
   SHADY_DAILY_BUILD_DIR="$BUILD_DIR" bash ./tests/headless-shell-outputs.sh
   SHADY_DAILY_BUILD_DIR="$BUILD_DIR" bash ./tests/headless-shell-lua.sh
   SHADY_DAILY_BUILD_DIR="$BUILD_DIR" bash ./tests/headless-shell-effects.sh
+  SHADY_DAILY_BUILD_DIR="$BUILD_DIR" bash ./tests/headless-shell-plugin.sh
 }
 
 case "${1:-all}" in

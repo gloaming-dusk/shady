@@ -4,6 +4,7 @@ export const docOrder = [
   'HEADLESS_API',
   'IPC_API',
   'SHELL_LUA_API',
+  'SHELL_PLUGIN_API',
   'C_PLUGIN_API',
   'SHADER_API',
   'ARCHITECTURE'
@@ -15,6 +16,7 @@ export const docLabels: Record<string, string> = {
   HEADLESS_API: 'Headless API',
   IPC_API: 'IPC API',
   SHELL_LUA_API: 'Shell Lua API',
+  SHELL_PLUGIN_API: 'Shell plugin API',
   SHELL_DESIGN: 'Shell design',
   C_PLUGIN_API: 'C plugin API',
   SHADER_API: 'Shader API',

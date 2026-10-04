@@ -237,14 +237,31 @@ if shell_enabled
       'src/shell/apps.c',
       'src/shell/ui.c',
       'src/shell/script.c',
+      'src/shell/plugins.c',
     ],
-    include_directories: include_directories('.'),
+    include_directories: include_directories('.', 'include'),
     c_args: [
       '-DSHELL_HAS_GL=@0@'.format(shell_gl_deps_found ? 1 : 0),
       '-DSHADY_SHELL_DATA_DIR="@0@"'.format(join_paths(meson.project_source_root(), 'shell')),
+      '-DSHADY_SHELL_PLUGIN_DIR="@0@"'.format(meson.current_build_dir()),
+      '-DSHADY_SHELL_PLUGIN_INSTALL_DIR="@0@"'.format(join_paths(get_option('prefix'), get_option('libdir'), 'shady', 'shell-plugins')),
     ],
-    dependencies: [wayland_client, cairo, pangocairo, shell_xkbcommon, lua, cc.find_library('m')] + shell_gl_deps,
+    dependencies: [wayland_client, cairo, pangocairo, shell_xkbcommon, lua, dl, cc.find_library('m')] + shell_gl_deps,
     install: true)
+
+  # Native shell plugins (include/shady/shell_plugin.h).
+  shared_module('shady-shell-plugin-sysinfo',
+    'examples/shell-plugins/sysinfo.c',
+    include_directories: include_directories('include'),
+    dependencies: [cairo],
+    install: true,
+    install_dir: join_paths(get_option('libdir'), 'shady', 'shell-plugins'))
+
+  shared_module('shady-shell-plugin-probe',
+    'tests/shell-plugin-probe.c',
+    include_directories: include_directories('include'),
+    dependencies: [cairo],
+    install: false)
 
   executable('headless-automation-probe',
     [
@@ -331,6 +348,7 @@ install_headers(
   'include/shady/representation.h',
   'include/shady/event.h',
   'include/shady/environment.h',
+  'include/shady/shell_plugin.h',
   subdir: 'shady')
 
 shared_module('shady-plugin-hello',

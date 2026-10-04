@@ -407,6 +407,8 @@ shell.bar {
                 workspaces(ctx),
                 shell.box { width = 2 },
                 tasks(ctx),
+                options.bar_extra and options.bar_extra(ctx) or false,
+                options.bar_extra and shell.box { width = 8 } or false,
                 clock(ctx),
             },
             shell.box { height = 1, background = shell.gradient("horizontal",

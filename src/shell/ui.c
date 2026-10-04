@@ -265,6 +265,57 @@ bool ui_read_uniforms(lua_State *L, int index, struct shell_uniform *out, size_t
     return true;
 }
 
+void ui_read_props(lua_State *L, int index, struct shady_shell_props_handle *out) {
+    out->items = NULL;
+    out->count = 0;
+    if (!lua_istable(L, index)) return;
+    index = lua_absindex(L, index);
+    size_t cap = 0;
+    lua_pushnil(L);
+    while (lua_next(L, index)) {
+        int vt = lua_type(L, -1);
+        if (lua_type(L, -2) == LUA_TSTRING &&
+                (vt == LUA_TSTRING || vt == LUA_TNUMBER || vt == LUA_TBOOLEAN)) {
+            if (out->count == cap) {
+                size_t next = cap ? cap * 2 : 8;
+                struct ui_prop *grown = realloc(out->items, next * sizeof(*grown));
+                if (!grown) {
+                    lua_pop(L, 2);
+                    return;
+                }
+                out->items = grown;
+                cap = next;
+            }
+            struct ui_prop *p = &out->items[out->count];
+            p->is_number = vt == LUA_TNUMBER;
+            p->number = p->is_number ? lua_tonumber(L, -1) : (vt == LUA_TBOOLEAN && lua_toboolean(L, -1));
+            p->key = strdup(lua_tostring(L, -2));
+            p->string = strdup(vt == LUA_TBOOLEAN ? (lua_toboolean(L, -1) ? "true" : "false")
+                : lua_tostring(L, -1));
+            if (p->key && p->string) out->count++;
+            else { free(p->key); free(p->string); }
+        }
+        lua_pop(L, 1);
+    }
+}
+
+void ui_free_props(struct shady_shell_props_handle *props) {
+    for (size_t i = 0; i < props->count; i++) {
+        free(props->items[i].key);
+        free(props->items[i].string);
+    }
+    free(props->items);
+    props->items = NULL;
+    props->count = 0;
+}
+
+const struct ui_prop *ui_find_prop(const struct shady_shell_props_handle *props,
+        const char *key) {
+    for (size_t i = 0; props && i < props->count; i++)
+        if (!strcmp(props->items[i].key, key)) return &props->items[i];
+    return NULL;
+}
+
 static void add_child(struct build *b, struct ui_node *parent, struct ui_node *child, size_t *cap) {
     if (parent->child_count == *cap) {
         size_t next = *cap ? *cap * 2 : 4;
@@ -334,6 +385,7 @@ static struct ui_node *build_node(struct build *b, int t, int depth) {
     else if (!strcmp(kind, "text")) node->kind = UI_NODE_TEXT;
     else if (!strcmp(kind, "pip")) node->kind = UI_NODE_PIP;
     else if (!strcmp(kind, "image")) node->kind = UI_NODE_IMAGE;
+    else if (!strcmp(kind, "custom")) node->kind = UI_NODE_CUSTOM;
     else {
         build_error(b, "unknown widget type '%s'", kind);
         free(node);
@@ -408,6 +460,11 @@ static struct ui_node *build_node(struct build *b, int t, int depth) {
         free(path);
         break;
     }
+    case UI_NODE_CUSTOM:
+        node->widget = get_string(L, t, "widget");
+        if (!node->widget) build_error(b, "plugin widget without a type%s", NULL);
+        ui_read_props(L, t, &node->props);
+        break;
     case UI_NODE_BOX: {
         size_t cap = 0;
         build_children(b, node, t, depth, &cap);
@@ -441,6 +498,8 @@ void ui_free(lua_State *L, struct ui_node *node) {
     free(node->font);
     free(node->shader);
     free(node->uniforms);
+    free(node->widget);
+    ui_free_props(&node->props);
     free(node->id);
     free(node);
 }
@@ -488,6 +547,8 @@ void ui_measure(cairo_t *cr, struct ui_node *node, const struct ui_defaults *def
     case UI_NODE_PIP:
         w = h = node->pip_radius * 2;
         break;
+    case UI_NODE_CUSTOM:
+        break; /* sized by width/height or by its parent */
     case UI_NODE_IMAGE:
         if (node->image) {
             w = cairo_image_surface_get_width(node->image);
@@ -695,6 +756,17 @@ void ui_draw(cairo_t *cr, const struct ui_node *node, const struct ui_node *hove
         break;
     case UI_NODE_PIP:
         draw_pip_node(cr, node, s.has_color ? s.color : defaults->accent, defaults->text);
+        break;
+    case UI_NODE_CUSTOM:
+        if (defaults->draw_custom && node->w > 0 && node->h > 0) {
+            cairo_save(cr);
+            cairo_translate(cr, node->x, node->y);
+            cairo_rectangle(cr, 0, 0, node->w, node->h);
+            cairo_clip(cr);
+            cairo_new_path(cr);
+            defaults->draw_custom(node->widget, cr, node->w, node->h, &node->props);
+            cairo_restore(cr);
+        }
         break;
     case UI_NODE_IMAGE:
         if (node->image) {

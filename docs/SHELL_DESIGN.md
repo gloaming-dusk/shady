@@ -1,9 +1,10 @@
 # Shell design
 
-Status: phases 1 to 4 (IPC, shell core and render, Lua UI, shader effects)
-implemented. This document describes where `shady-shell` is going and why.
-API references for finished pieces live in their own documents
-([IPC API](IPC_API.md), [Shell Lua API](SHELL_LUA_API.md)).
+Status: phases 1 to 5 (IPC, shell core and render, Lua UI, shader effects,
+native plugins) implemented. This document describes where `shady-shell` is
+going and why. API references for finished pieces live in their own
+documents ([IPC API](IPC_API.md), [Shell Lua API](SHELL_LUA_API.md),
+[Shell plugin API](SHELL_PLUGIN_API.md)).
 
 ## Problem
 
@@ -132,8 +133,13 @@ with `shell.popup{}` and opened with `shell.open(name, args)`.
    shaders using `u_time` are re-composited every frame without running
    Lua, so the default (static) UI still costs nothing when idle. Example
    shaders ship in `shell/shaders/`.
-5. **Shell C plugin ABI** for services that Lua cannot reach well (audio,
-   tray, notifications).
+5. **Shell C plugin ABI** — done. `include/shady/shell_plugin.h`: plugins
+   publish values, register actions and cairo-drawn widget types, and run
+   timers and fd watches in the shell loop, without touching Lua. They live
+   for the shell process and survive config reloads; the shell releases
+   what they registered. `sysinfo` (CPU, memory, load, a history graph)
+   ships as the example. Audio, tray and notification plugins can now be
+   written against it.
 6. **Layer-surface effects** in the compositor.
 7. **Standard protocols** (`wlr-foreign-toplevel-management`,
    `ext-workspace-v1`) so third-party bars work too.
@@ -163,6 +169,8 @@ src/shell/
   script.c/.h      Lua runtime: the shell API, bars and popups, poll/listen,
                    config loading and hot reload
   ui.c/.h          widget trees from Lua tables: layout, drawing, hit-testing
+  effects.h        shader effects handed from Lua to the GL renderer
+  plugins.c/.h     native shell plugins: loading, values, actions, widgets
   apps.c           .desktop index for the launcher
 shell/default.lua  the default UI
 ```
