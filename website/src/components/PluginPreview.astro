@@ -1,0 +1,55 @@
+---
+import { Image } from 'astro:assets';
+import type { ImageMetadata } from 'astro';
+
+interface Props { name: string }
+const { name } = Astro.props;
+const images = import.meta.glob<{ default: ImageMetadata }>('../assets/plugins/*.png', { eager: true });
+const screenshot = images[`../assets/plugins/${name}.png`]?.default;
+if (!screenshot) throw new Error(`Missing headless plugin preview: ${name}`);
+const captions: Record<string, string> = {
+  'window-motion': 'Wobble during a window drag',
+  'obj-loader': 'Loaded OBJ environment geometry',
+  'afterglow': 'Procedural sky and sea',
+  'water-windows': 'Animated liquid window surfaces',
+  'focus-depth': 'Focused window forward, background windows in depth',
+  'spatial-overview': 'Three windows in the 3D overview',
+  'magnetic-windows': 'Spring-docked window arrangement',
+  'window-constellation': 'Windows orbiting a focused anchor',
+  'window-portal': 'Live window texture through a portal',
+  'black-hole': 'Black hole mid-animation',
+  'astral-loom': 'Procedural sky and spatial window representations',
+  'fps-cube': 'Folded cube window bodies in FPS mode',
+  'fps-squash': 'Squash window bodies in FPS mode',
+  'fps-jelly': 'Springy jelly window bodies in FPS mode',
+  'fps-folded-paper': 'Folded-paper window bodies in FPS mode',
+  'fps-origami': 'Origami window bodies in FPS mode',
+  'border-accent': 'Magenta border override on the focused window',
+  'close-slide-fade': 'Slide-and-fade close animation in progress',
+  'close-burn': 'Burn close animation in progress',
+  'shader-overlay': 'Fullscreen shader overlay',
+  'orbit-layout': 'Focused window with surrounding satellites',
+  'hello': 'Lifecycle example with actual plugin logs; no visual effect',
+  'counter': 'Stateful example with actual plugin logs; no visual effect'
+};
+const caption = captions[name];
+---
+<figure class="plugin-preview">
+  <a href={screenshot.src} aria-label={`Open full-size ${name} screenshot`}>
+    <Image src={screenshot} width={640} height={360} format="webp" quality={85} loading="lazy" alt={`Shady headless capture of ${name}: ${caption}`} />
+  </a>
+  <figcaption><span>Headless capture</span>{caption}</figcaption>
+</figure>
+<style>
+  .plugin-preview { width: calc(100% + 48px); margin: -24px -24px 22px; }
+  a { display: block; }
+  img { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; object-fit: cover; transition: filter 160ms ease; }
+  a:hover img { filter: brightness(1.12); }
+  a:focus-visible { outline: 2px solid var(--amber); outline-offset: -3px; }
+  figcaption { padding: 12px 24px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 0.78rem; line-height: 1.5; }
+  figcaption span { display: block; margin-bottom: 3px; color: var(--amber-soft); font: 650 0.65rem/1.4 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; }
+  @media (max-width: 420px) {
+    .plugin-preview { width: calc(100% + 36px); margin: -18px -18px 18px; }
+    figcaption { padding-inline: 18px; }
+  }
+</style>

@@ -1,0 +1,121 @@
+---
+import { Code } from 'astro:components';
+import PluginPreview from '../components/PluginPreview.astro';
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { builtinPlugins, externalPlugins, coreModules } from '../lib/plugins';
+
+const repo = 'https://github.com/jihoo12/shady';
+const loadExample = `-- config.lua — load before module dependency resolution
+shady.plugins.load("water-windows")
+
+-- Optional: add a directory for your own plugins
+shady.plugins.path("~/.local/share/shady/plugins")
+
+-- Shipped defaults can be disabled here
+-- shady.plugins.disable("obj-loader")`;
+const buildExample = `# From the repository root
+nix develop
+./build.sh
+
+# Examples marked "Build explicitly"
+ninja -C build libshady-plugin-orbit-layout.so
+
+# Keep shader assets available to shader-based plugins
+export SHADY_ROOT="$PWD"
+./build/shady -c examples/config.lua`;
+---
+<BaseLayout title="Plugins — Shady" description="Browse Shady's built-in plugins, external native plugins, and core modules, with build and loading instructions." path="/plugins/">
+  <section class="page-hero">
+    <div class="shell">
+      <p class="eyebrow">Extend your desktop</p>
+      <h1>Plugins, <span class="gradient-text">ready to explore.</span></h1>
+      <p class="lede">Explore real headless captures of every available plugin, alongside shipped defaults, optional native plugins, and the core modules they build on.</p>
+      <div class="button-row">
+        <a class="button primary" href="#builtin">Built-in plugins · {builtinPlugins.length}</a>
+        <a class="button" href="#external">External plugins · {externalPlugins.length}</a>
+        <a class="button" href="#core">Core modules · {coreModules.length}</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="section plugin-section" id="builtin" aria-labelledby="builtin-title">
+    <div class="shell">
+      <div class="section-head">
+        <div><p class="eyebrow">Shipped defaults</p><h2 id="builtin-title">Built-in plugins</h2></div>
+        <p>These ship as shared libraries and load automatically after config.lua when their build options are enabled. The plugin manager reports them as <code>builtin = true</code>. Safe mode disables their automatic loading.</p>
+      </div>
+      <div class="card-grid">
+        {builtinPlugins.map((plugin) => (
+          <article class="card plugin-card">
+            <PluginPreview name={plugin.name} />
+            <span class="kicker">Built-in · Auto-loaded</span>
+            <h3>{plugin.name}</h3><p>{plugin.description}</p>
+            <a class="plugin-source" href={`${repo}/blob/main/${plugin.source}`}>View source ↗</a>
+          </article>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <section class="section plugin-section" id="external" aria-labelledby="external-title">
+    <div class="shell">
+      <div class="section-head">
+        <div><p class="eyebrow">Load what you need</p><h2 id="external-title">External plugins</h2></div>
+        <p>Optional native plugins loaded explicitly through <code>shady.plugins.load()</code>. All entries below are repository examples, not a third-party directory. Most are built by <code>./build.sh</code>, but none are auto-loaded or installed by default.</p>
+      </div>
+      <div class="card-grid">
+        {externalPlugins.map((plugin) => (
+          <article class="card plugin-card">
+            <PluginPreview name={plugin.name} />
+            <span class="kicker">External · {plugin.manualBuild ? 'Build explicitly' : 'Built by default'}</span>
+            <h3>{plugin.name}</h3><p>{plugin.description}</p>
+            <p class="plugin-note">{plugin.note}</p>
+            <code class="plugin-load">shady.plugins.load("{plugin.name}")</code>
+            <a class="plugin-source" href={`${repo}/blob/main/examples/plugins/${plugin.name.replaceAll('-', '_')}.c`}>View source ↗</a>
+          </article>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <section class="section plugin-section" id="core" aria-labelledby="core-title">
+    <div class="shell">
+      <div class="section-head">
+        <div><p class="eyebrow">Compositor foundation</p><h2 id="core-title">Core built-in modules</h2></div>
+        <p>Compiled into the compositor and selected with <code>shady.module()</code> or <code>shady.modules()</code>. Optional modules depend on your Meson build options; these are not shared-library plugins.</p>
+      </div>
+      <div class="docs-index">
+        {coreModules.map(([name, description]) => (
+          <article class="card"><span class="kicker">Core module</span><h3>{name}</h3><p>{description}</p></article>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <section class="section plugin-section" id="usage" aria-labelledby="usage-title">
+    <div class="shell">
+      <div class="section-head">
+        <div><p class="eyebrow">Try a plugin</p><h2 id="usage-title">Build, then load in config.lua.</h2></div>
+        <p>Add the load call to the config you launch with. Names resolve to <code>libshady-plugin-&lt;name&gt;.so</code>, including in the executable's build directory. Loading new plugins happens at startup; runtime Lua supports inspection, reload, and eligible unloads.</p>
+      </div>
+      <div class="code-grid">
+        <div class="code-window"><div class="code-title">terminal</div><Code code={buildExample} lang="bash" theme="github-dark-default" /></div>
+        <div class="code-window"><div class="code-title">config.lua</div><Code code={loadExample} lang="lua" theme="github-dark-default" /></div>
+      </div>
+      <div class="button-row">
+        <a class="button" href="/docs/plugin-manager/">Plugin manager guide</a>
+        <a class="button" href="/docs/c-plugin-api/">C plugin API</a>
+        <a class="button" href="/getting-started/">Build Shady</a>
+      </div>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .plugin-section { scroll-margin-top: 90px; }
+  .plugin-card { display: flex; flex-direction: column; align-items: flex-start; }
+  .plugin-card .plugin-note { margin-top: 14px; color: var(--faint); font-size: 0.85rem; }
+  .plugin-load { display: block; max-width: 100%; margin-top: 18px; overflow-x: auto; white-space: nowrap; }
+  .plugin-source { margin-top: auto; padding-top: 18px; color: var(--amber-soft); font-size: 0.88rem; }
+  @media (max-width: 420px) { .plugin-card { padding: 18px; } }
+</style>

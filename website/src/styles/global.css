@@ -900,6 +900,11 @@ kbd {
   .footer-base { flex-direction: column; }
 }
 
+@media (max-width: 480px) {
+  .nav { flex-wrap: wrap; gap: 8px; padding-block: 10px; }
+  .nav-links { width: 100%; justify-content: space-between; gap: 8px; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
   *, *::before, *::after { transition: none !important; }
