@@ -439,6 +439,13 @@ shared_module('shady-plugin-black-hole',
   build_by_default: true,
   install: false)
 
+shared_module('shady-plugin-frozen-window',
+  'examples/plugins/frozen_window.c',
+  include_directories: include_directories('include'),
+  dependencies: [dependency('xkbcommon')],
+  build_by_default: true,
+  install: false)
+
 shared_module('shady-plugin-shader-overlay',
   'examples/plugins/shader_overlay.c',
   include_directories: include_directories('include'),
@@ -577,3 +584,11 @@ black_hole_plugin_test = executable('black-hole-plugin-test',
   install: false)
 test('black-hole-plugin', black_hole_plugin_test,
   args: [join_paths(meson.current_build_dir(), 'libshady-plugin-black-hole.so')])
+
+frozen_window_plugin_test = executable('frozen-window-plugin-test',
+  'tests/frozen-window-plugin.c',
+  include_directories: include_directories('include'),
+  dependencies: [dl, dependency('xkbcommon'), cc.find_library('m', required: true)],
+  install: false)
+test('frozen-window-plugin', frozen_window_plugin_test,
+  args: [join_paths(meson.current_build_dir(), 'libshady-plugin-frozen-window.so')])

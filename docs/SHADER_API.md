@@ -243,5 +243,8 @@ If a custom per-window shader is missing or cannot be used, Shady falls back to 
 - `examples/plugins/water_windows.c` — per-window shader association.
 - `examples/plugins/shaders/water_window.vert`
 - `examples/plugins/shaders/water_window.frag`
+- `examples/plugins/frozen_window.c` — per-window animation through `u_params` (`window_set_shader_params`).
+- `examples/plugins/shaders/frozen_window.vert`
+- `examples/plugins/shaders/frozen_window.frag`
 
 The water-window example is the best starting point for a plugin that deforms both geometry and application pixels.

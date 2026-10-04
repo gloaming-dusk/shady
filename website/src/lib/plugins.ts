@@ -14,6 +14,7 @@ export const externalPlugins = [
   { name: 'window-constellation', description: 'Orbits windows around the focused window and spring-restores their original layout.', note: 'Requires spatial. Super+C toggles the constellation.' },
   { name: 'window-portal', description: 'A refractive circular portal into another live Wayland window.', note: 'Requires spatial. Super+P toggles the portal.' },
   { name: 'black-hole', description: 'Swallows workspace windows into a black hole and releases them through a white hole.', note: 'Requires spatial. Super+H toggles the effect.' },
+  { name: 'frozen-window', description: 'Frost crystallises across a window and melts away again, without touching its layout or input.', note: 'Requires spatial. Super+Z freezes the focused window; Super+Shift+Z the workspace.' },
   { name: 'astral-loom', description: 'Procedural sky, glass window representations, and animated spatial layouts.', note: 'Requires spatial. Includes shaders; the associated rice is archived.' },
   { name: 'fps-cube', description: 'Cube-shaped window bodies for FPS interaction.', note: 'Requires fps. Choose one FPS representation plugin at a time.' },
   { name: 'fps-squash', description: 'Animated squash representations for FPS window bodies.', note: 'Requires fps. Choose one FPS representation plugin at a time.' },

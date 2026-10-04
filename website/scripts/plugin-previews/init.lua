@@ -15,7 +15,8 @@ end
 local function demonstrate()
     assert(windows[1]:focus())
     local shortcut = ({["spatial-overview"]="Super+o", ["window-constellation"]="Super+c",
-        ["window-portal"]="Super+p", ["border-accent"]="Super+b"})[name]
+        ["window-portal"]="Super+p", ["border-accent"]="Super+b",
+        ["frozen-window"]="Super+Shift+z"})[name]
     if shortcut then assert(shady.automation.key(shortcut)) end
     if name:match("^fps%-") then
         shady.camera("distance", 0.75)
