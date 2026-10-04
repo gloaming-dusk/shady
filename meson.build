@@ -235,14 +235,15 @@ if shell_enabled
       'src/shell/render_shm.c',
       'src/shell/theme.c',
       'src/shell/apps.c',
-      'src/shell/bar.c',
-      'src/shell/launcher.c',
-      'src/shell/menu.c',
-      'src/shell/quick.c',
+      'src/shell/ui.c',
+      'src/shell/script.c',
     ],
     include_directories: include_directories('.'),
-    c_args: ['-DSHELL_HAS_GL=@0@'.format(shell_gl_deps_found ? 1 : 0)],
-    dependencies: [wayland_client, cairo, pangocairo, shell_xkbcommon] + shell_gl_deps,
+    c_args: [
+      '-DSHELL_HAS_GL=@0@'.format(shell_gl_deps_found ? 1 : 0),
+      '-DSHADY_SHELL_DATA_DIR="@0@"'.format(join_paths(meson.project_source_root(), 'shell')),
+    ],
+    dependencies: [wayland_client, cairo, pangocairo, shell_xkbcommon, lua, cc.find_library('m')] + shell_gl_deps,
     install: true)
 
   executable('headless-automation-probe',

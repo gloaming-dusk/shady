@@ -5,6 +5,7 @@ Shady exposes these extension surfaces:
 - [Lua API](LUA_API.md) — configuration, runtime scripting, events, window/workspace control.
 - [Headless / Automation API](HEADLESS_API.md) — deterministic keyboard, pointer, timer, screenshot, and CI helpers.
 - [IPC API](IPC_API.md) — Unix socket with JSON lines and the `shadyctl` CLI: query state, send commands and subscribe to events from shells, bars and scripts.
+- [Shell Lua API](SHELL_LUA_API.md) — configure `shady-shell` in Lua: bars, popups, widgets, live command output and hot reload.
 - [C Plugin API](C_PLUGIN_API.md) — native modules, events, window/output access, hot reload, render hooks.
 - [Plugin manager](PLUGIN_MANAGER.md) — loading plugins by name from Lua, search paths, shipped plugins, and runtime state.
 - [Shader API](SHADER_API.md) — standalone shader files, fullscreen passes, and per-window shader replacement.

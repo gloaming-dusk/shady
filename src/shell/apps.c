@@ -122,10 +122,9 @@ void apps_load(struct shell *shell) {
     fprintf(stderr, "shady-shell: indexed %zu applications\n", shell->app_count);
 }
 
-size_t apps_matching(struct shell *shell, const char *query,
-        size_t out[LAUNCHER_RESULTS]) {
+size_t apps_matching(struct shell *shell, const char *query, size_t *out, size_t max) {
     size_t count = 0;
-    for (size_t i = 0; i < shell->app_count && count < LAUNCHER_RESULTS; i++) {
+    for (size_t i = 0; i < shell->app_count && count < max; i++) {
         if (ascii_contains_ci(shell->apps[i].name, query) ||
                 ascii_contains_ci(shell->apps[i].exec, query)) {
             out[count++] = i;
@@ -134,12 +133,12 @@ size_t apps_matching(struct shell *shell, const char *query,
     return count;
 }
 
-void apps_spawn(const struct launcher_app *app) {
-    if (!app || !app->exec[0]) return;
+void apps_spawn(const char *command) {
+    if (!command || !command[0]) return;
     pid_t pid = fork();
     if (pid == 0) {
         setsid();
-        execl("/bin/sh", "sh", "-lc", app->exec, (char *)NULL);
+        execl("/bin/sh", "sh", "-lc", command, (char *)NULL);
         _exit(127);
     }
 }

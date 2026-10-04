@@ -223,6 +223,8 @@ struct shell_surface *shell_surface_create(struct shell_core *core,
     }
     zwlr_layer_surface_v1_add_listener(surface->layer_surface, &layer_listener, surface);
     zwlr_layer_surface_v1_set_size(surface->layer_surface, config->width, config->height);
+    surface->requested_width = config->width;
+    surface->requested_height = config->height;
     zwlr_layer_surface_v1_set_anchor(surface->layer_surface, config->anchor);
     zwlr_layer_surface_v1_set_exclusive_zone(surface->layer_surface, config->exclusive_zone);
     zwlr_layer_surface_v1_set_margin(surface->layer_surface, config->margin_top,
@@ -250,6 +252,15 @@ void shell_surface_destroy(struct shell_surface *surface) {
 
 void shell_surface_redraw(struct shell_surface *surface) {
     if (surface) surface->dirty = true;
+}
+
+void shell_surface_set_size(struct shell_surface *surface, uint32_t width, uint32_t height) {
+    if (!surface || (surface->requested_width == width && surface->requested_height == height))
+        return;
+    surface->requested_width = width;
+    surface->requested_height = height;
+    zwlr_layer_surface_v1_set_size(surface->layer_surface, width, height);
+    wl_surface_commit(surface->wl_surface);
 }
 
 void shell_core_redraw_all(struct shell_core *core) {

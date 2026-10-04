@@ -28,6 +28,7 @@ export WLR_HEADLESS_OUTPUTS=1
 export WLR_RENDERER=pixman
 export SHADY_LUA_INIT="$ROOT/tests/headless-shell-quick-init.lua"
 export SHADY_SHELL_BIN="$ROOT/$SHELL_BIN"
+export SHADY_SHELL_CONFIG="$ROOT/shell/default.lua"
 export SHADY_AUTOMATION_PROBE="$ROOT/$PROBE"
 export SHADY_SHELL_QUICK_STATUS="$status"
 export ASAN_OPTIONS="${ASAN_OPTIONS:-abort_on_error=1:halt_on_error=1:detect_leaks=0}"

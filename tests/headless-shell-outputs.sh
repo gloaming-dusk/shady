@@ -25,6 +25,7 @@ run() {
         export SHADY_LUA_INIT="$ROOT/tests/headless-shell-outputs-init.lua"
         export SHADY_SHELL_BIN="$ROOT/$BUILD_DIR/shady-shell"
         export SHADY_SHELL_RENDERER="$renderer"
+        export SHADY_SHELL_CONFIG="$ROOT/shell/default.lua"
         export ASAN_OPTIONS="${ASAN_OPTIONS:-abort_on_error=1:halt_on_error=1:detect_leaks=0}"
         export UBSAN_OPTIONS="${UBSAN_OPTIONS:-halt_on_error=1:print_stacktrace=1}"
         exec "$BUILD_DIR/shady" --safe -c "$ROOT/tests/headless-automation-config.lua"
@@ -48,8 +49,8 @@ run() {
     export XDG_RUNTIME_DIR="$tmp/runtime" WAYLAND_DISPLAY=wayland-0
 
     wait_for 1 "shady-shell: renderer $renderer"
-    wait_for 1 "shady-shell: bar on HEADLESS-1"
-    wait_for 1 "shady-shell: bar on HEADLESS-2"
+    wait_for 1 "shady-shell: shady-shell on HEADLESS-1"
+    wait_for 1 "shady-shell: shady-shell on HEADLESS-2"
 
     wlr-randr --output HEADLESS-2 --scale 2
     wait_for 1 "shady-shell: shady-shell scale 2"
@@ -65,9 +66,9 @@ run() {
     fi
 
     wlr-randr --output HEADLESS-2 --off
-    wait_for 1 "shady-shell: bar removed from HEADLESS-2"
+    wait_for 1 "shady-shell: shady-shell removed from HEADLESS-2"
     wlr-randr --output HEADLESS-2 --on
-    wait_for 2 "shady-shell: bar on HEADLESS-2"
+    wait_for 2 "shady-shell: shady-shell on HEADLESS-2"
 
     "$BUILD_DIR/shadyctl" quit >/dev/null
     wait "$comp" || fail "compositor exited with an error"

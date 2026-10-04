@@ -1,8 +1,9 @@
 # Shell design
 
-Status: phases 1 (IPC) and 2 (shell core and render) implemented. This
-document describes where `shady-shell` is going and why. API references for
-finished pieces live in their own documents ([IPC API](IPC_API.md)).
+Status: phases 1 to 3 (IPC, shell core and render, Lua UI) implemented.
+This document describes where `shady-shell` is going and why. API references
+for finished pieces live in their own documents ([IPC API](IPC_API.md),
+[Shell Lua API](SHELL_LUA_API.md)).
 
 ## Problem
 
@@ -76,33 +77,38 @@ Shared look without backdrop access comes from IPC: plugins publish values
 (for example afterglow's hour and sky palette) and shell shaders receive
 them as uniforms.
 
-## Lua sketch
+## Lua model
+
+Implemented in phase 3; the reference is [SHELL_LUA_API.md](SHELL_LUA_API.md).
 
 ```lua
-local shell = require("shell")
-
 shell.bar {
-  output = "*", edge = "top", height = 36,
-  effect = shell.shader("shaders/aurora.frag", { strength = 0.6 }),
-  shell.row { gap = 8, padding = { 0, 10 },
-    shell.workspaces {},
-    shell.tasks { max_width = 220 },
-    shell.spacer(),
-    shell.text { text = shell.poll("date +%H:%M", 1000) },
-    shell.text { text = shell.ipc.focused:map(function(w) return w and w.title or "" end) },
-  },
+  name = "top", edge = "top", size = 36,
+  view = function(ctx)
+    return shell.row { gap = 8, padding = { 0, 10 },
+      workspaces(ctx),            -- plain Lua functions returning widgets
+      shell.spacer(),
+      shell.text(shell.poll("wpctl get-volume @DEFAULT_AUDIO_SINK@", 2000)),
+      shell.text(shell.date("%H:%M")),
+    }
+  end,
 }
 ```
 
-- Widgets: `box`, `row`, `column`, `text`, `image`, `button`, `slider`,
-  `spacer`, plus built-ins (`workspaces`, `tasks`, `clock`).
-- Signals: values that redraw their bound widgets when they change.
-  `shell.ipc.*` signals mirror the compositor; `shell.poll(cmd, ms)` and
-  `shell.listen(cmd)` turn command output into signals (eww's
-  `defpoll`/`deflisten`), which covers most widgets before any native
-  service exists.
-- Popups (launcher, menus, Quick Settings) are separate layer surfaces
-  declared the same way.
+Each surface has a view function that returns a fresh widget tree every
+time the surface repaints. This replaced the signals planned earlier: a
+view simply reads the current state (`shell.windows()`, `shell.poll(...)`,
+its own Lua variables), so there is nothing to bind or unbind, and repaints
+are already coalesced by the core, so rebuilding a bar's few dozen widgets
+costs nothing noticeable. Anything that changes what a view would return
+(compositor state, a polled value, the clock, hover, `shell.redraw()`)
+marks the surfaces dirty.
+
+C owns layout (a small flexbox), drawing, hit-testing and hover; Lua owns
+structure, style and behaviour. Widgets are `row`, `column`, `text`, `pip`,
+`image` and `spacer`; anything richer (task chips, workspace pills, menu
+rows) is a Lua function, as `shell/default.lua` shows. Popups are declared
+with `shell.popup{}` and opened with `shell.open(name, args)`.
 
 ## Phases
 
@@ -115,9 +121,12 @@ shell.bar {
    renderers: GLES2 composition through EGL (default) and a `wl_shm`
    fallback. The UI was split out of the old single `main.c` without
    changing its behaviour; see "Code layout" below.
-3. **UI and Lua** — widget tree, layout, signals, hot reload. Rebuild the
-   current bar, launcher, context menu and Quick Settings in Lua; the
-   existing `headless-shell-*` tests must keep passing.
+3. **UI and Lua** — done. Widget trees from Lua view functions, flexbox
+   layout, hover and clicks, `shell.poll`/`shell.listen`/`shell.date`, popups
+   that size themselves, and hot reload that keeps the running UI when a
+   new config fails. The bar, launcher, task menu and Quick Settings now live
+   in `shell/default.lua`; the existing `headless-shell-*` tests pass
+   unchanged.
 4. **Shader effects** in the shell.
 5. **Shell C plugin ABI** for services that Lua cannot reach well (audio,
    tray, notifications).
@@ -145,11 +154,13 @@ src/shell/
   render_gl.c      EGL + GLES2: upload the image, draw it with a shader, swap
   render_shm.c     double-buffered wl_shm fallback
   theme.c/.h       palette (SHADY_SHELL_* colours) and drawing primitives
-  shell.h          the UI's model and the functions below
-  main.c           shady-shell-v1 model, one bar per output, the clock timer
-  bar.c launcher.c menu.c quick.c
-                   one surface each: draw(), pointer and key handlers
+  shell.h          the compositor model shared by the files below
+  main.c           shady-shell-v1 model, startup
+  script.c/.h      Lua runtime: the shell API, bars and popups, poll/listen,
+                   config loading and hot reload
+  ui.c/.h          widget trees from Lua tables: layout, drawing, hit-testing
   apps.c           .desktop index for the launcher
+shell/default.lua  the default UI
 ```
 
 A surface is a `shell_surface` with a handler table. `shell_surface_redraw()`

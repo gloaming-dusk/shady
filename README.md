@@ -18,6 +18,7 @@ The project is intentionally experimental. The imported TinyWL example is CC0; s
 - [C plugin API](docs/C_PLUGIN_API.md)
 - [Shader API](docs/SHADER_API.md)
 - [IPC API](docs/IPC_API.md)
+- [Shell Lua API](docs/SHELL_LUA_API.md)
 - [Shell design](docs/SHELL_DESIGN.md)
 
 ## Website
@@ -43,7 +44,7 @@ production output in `website/dist/`.
 - Native **3D overview** (`Super+O`) with keyboard selection, focus confirmation and layout restore
 - Native **water-window** effect (`Super+W`) with mesh waves, UV refraction, Fresnel light, specular glints, caustics and size-adaptive reflections
 - Configurable global window opacity with premultiplied-alpha blending in both spatial and safe scene-graph paths
-- Standalone `shady-shell` with taskbar, workspaces, launcher, window context menu and Quick Settings
+- Standalone `shady-shell` with taskbar, workspaces, launcher, window context menu and Quick Settings, defined in a hot-reloaded Lua config with live command-output widgets, one bar per output and HiDPI rendering
 - First-person WASD + mouse-look navigation, jumping and player collision
 - FPS window bodies are plugin-defined: cube, squash, springy jelly, folded-paper and spring-driven origami examples can be swapped while render, picking and physics share one representation contract, including cached single/compound convex collision bodies
 - **Magnetic Windows** plugin (`Super+M`) turns nearby windows into spring-docked spatial structures and hot-reloads through ABI v2 state migration without owning their representation
@@ -183,6 +184,8 @@ the GLES2 renderer, so it can run with `WLR_RENDERER=pixman` as well.
 ### Standalone shell
 
 The default build also produces `build/shady-shell`, a separate Wayland client rather than compositor-internal UI. It puts a 38px top `wlr-layer-shell` bar on every output, follows outputs as they are added, removed or rescaled, and draws at the output's integer scale so text stays sharp on HiDPI screens. It reserves a 38px exclusive zone so maximized windows use the remaining work area, while fullscreen windows still occupy the entire output.
+
+Everything the shell shows is defined in Lua. The default bar, Quick Settings, task menu and launcher are `shell/default.lua`; copy it to `~/.config/shady/shell.lua` (or set `SHADY_SHELL_CONFIG`) to make your own. View functions return widget trees that the shell lays out and draws, `shell.poll`/`shell.listen` turn any command into a live widget, and saving the file reloads the UI in place. See [docs/SHELL_LUA_API.md](docs/SHELL_LUA_API.md).
 
 Widgets are drawn with Cairo/Pango and composited with GLES2 through EGL, the basis for shader effects in the shell (see [docs/SHELL_DESIGN.md](docs/SHELL_DESIGN.md)). Without EGL it falls back to plain `wl_shm` buffers; `SHADY_SHELL_RENDERER=gl|shm` forces one.
 

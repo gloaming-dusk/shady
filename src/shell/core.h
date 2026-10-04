@@ -135,6 +135,7 @@ struct shell_surface {
     void *data;
 
     uint32_t width, height; /* logical, from configure */
+    uint32_t requested_width, requested_height;
     int32_t scale; /* buffer scale in use */
     struct shell_output *entered[8];
     size_t entered_count;
@@ -151,6 +152,8 @@ struct shell_surface *shell_surface_create(struct shell_core *core,
 /* Safe to call from the surface's own handlers. */
 void shell_surface_destroy(struct shell_surface *surface);
 void shell_surface_redraw(struct shell_surface *surface);
+/* Ask for a new logical size; the compositor answers with a configure. */
+void shell_surface_set_size(struct shell_surface *surface, uint32_t width, uint32_t height);
 void shell_core_redraw_all(struct shell_core *core);
 
 #endif

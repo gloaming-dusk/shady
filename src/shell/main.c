@@ -1,40 +1,36 @@
 #define _POSIX_C_SOURCE 200809L
 
 /*
- * shady-shell entry point: binds the shady-shell-v1 protocol, keeps the
- * workspace/window model it describes, and gives every output a bar.
- * Drawing and input live in bar.c, launcher.c, menu.c and quick.c; the
- * Wayland plumbing, rendering and event loop in core.c and render_*.c.
+ * shady-shell entry point: binds the shady-shell-v1 protocol and keeps the
+ * workspace/window model it describes. What the shell shows is defined in
+ * Lua (script.c, shell/default.lua); the Wayland plumbing, rendering and
+ * event loop live in core.c and render_*.c.
  */
 
 #include <signal.h>
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
 
 #include "shady-shell-v1-client-protocol.h"
+#include "script.h"
 #include "shell.h"
 #include "theme.h"
-
-struct shell_window *shell_find_window(struct shell *shell, uint32_t id) {
-    for (size_t i = 0; i < shell->window_count; i++)
-        if (shell->windows[i].id == id) return &shell->windows[i];
-    return NULL;
-}
 
 void shell_flush(struct shell *shell) {
     wl_display_flush(shell->core.display);
 }
 
-/* Every surface shows some of the model, and repaints are coalesced per
- * loop iteration, so any model change simply marks everything dirty. */
+/* Views read the model when they repaint, and repaints are coalesced per
+ * loop iteration, so any model change simply repaints every view. */
 static void model_changed(struct shell *shell) {
-    shell_core_redraw_all(&shell->core);
+    shell_lua_model_changed(shell);
+    shell_lua_emit(shell, "change");
 }
 
 static struct shell_window *ensure_window(struct shell *shell, uint32_t id) {
-    struct shell_window *window = shell_find_window(shell, id);
-    if (window) return window;
+    for (size_t i = 0; i < shell->window_count; i++)
+        if (shell->windows[i].id == id) return &shell->windows[i];
+    struct shell_window *window;
     if (shell->window_count >= MAX_WINDOWS) return NULL;
     window = &shell->windows[shell->window_count++];
     memset(window, 0, sizeof(*window));
@@ -43,7 +39,6 @@ static struct shell_window *ensure_window(struct shell *shell, uint32_t id) {
 }
 
 static void remove_window(struct shell *shell, uint32_t id) {
-    if (shell->menu.window_id == id) menu_hide(shell);
     for (size_t i = 0; i < shell->window_count; i++) {
         if (shell->windows[i].id != id) continue;
         if (i + 1 < shell->window_count)
@@ -70,14 +65,7 @@ static bool add_workspace(struct shell *shell, const char *name) {
 static void protocol_workspace(void *data, struct shady_shell_v1 *protocol, const char *name) {
     (void)protocol;
     struct shell *shell = data;
-    if (!add_workspace(shell, name)) return;
-    /* Quick Settings is sized by the workspace count: reopen it. */
-    if (shell->quick.surface) {
-        struct bar *bar = shell->quick.bar;
-        quick_hide(shell);
-        quick_show(shell, bar);
-    }
-    model_changed(shell);
+    if (add_workspace(shell, name)) model_changed(shell);
 }
 
 static void protocol_active_workspace(void *data, struct shady_shell_v1 *protocol,
@@ -137,7 +125,7 @@ static void protocol_window_state(void *data, struct shady_shell_v1 *protocol, u
 
 static void protocol_toggle_launcher(void *data, struct shady_shell_v1 *protocol) {
     (void)protocol;
-    launcher_toggle(data);
+    shell_lua_emit(data, "launcher");
 }
 
 static void protocol_done(void *data, struct shady_shell_v1 *protocol) {
@@ -166,14 +154,11 @@ static const struct shady_shell_v1_listener protocol_listener = {
 /* ---- core callbacks --------------------------------------------------- */
 
 static void output_added(void *data, struct shell_output *output) {
-    struct shell *shell = data;
-    if (!bar_for_output(shell, output)) bar_create(shell, output);
+    shell_lua_output_added(data, output);
 }
 
 static void output_removed(void *data, struct shell_output *output) {
-    struct shell *shell = data;
-    struct bar *bar = bar_for_output(shell, output);
-    if (bar) bar_destroy(bar);
+    shell_lua_output_removed(data, output);
 }
 
 static void global(void *data, struct wl_registry *registry, uint32_t name,
@@ -191,23 +176,10 @@ static const struct shell_core_listener core_listener = {
     .global = global,
 };
 
-/* The clock shows minutes: repaint the bars on each minute boundary. */
-static void clock_tick(void *data) {
-    struct shell *shell = data;
-    bars_redraw(shell);
-    time_t now = time(NULL);
-    uint32_t ms = (uint32_t)(60 - now % 60) * 1000u;
-    shell->clock_timer = shell_timer_add(&shell->core, ms, clock_tick, shell);
-}
-
 int main(void) {
     signal(SIGCHLD, SIG_IGN);
     ui_load_theme();
     static struct shell shell;
-    wl_list_init(&shell.bars);
-    shell.launcher.hovered = -1;
-    shell.menu.hovered = -1;
-    shell.quick.hovered = -1;
     apps_load(&shell);
 
     int status = 1;
@@ -216,18 +188,17 @@ int main(void) {
         fprintf(stderr, "shady-shell: compositor lacks the shady-shell-v1 protocol\n");
         goto out;
     }
+    if (!shell_lua_init(&shell)) {
+        fprintf(stderr, "shady-shell: no usable shell config\n");
+        goto out;
+    }
     const char *open_launcher = getenv("SHADY_SHELL_OPEN_LAUNCHER");
     if (open_launcher && *open_launcher && strcmp(open_launcher, "0") != 0)
-        launcher_show(&shell);
-    clock_tick(&shell);
+        shell_lua_emit(&shell, "launcher");
     status = shell_core_run(&shell.core) < 0 ? 1 : 0;
 
 out:
-    launcher_hide(&shell);
-    menu_hide(&shell);
-    quick_hide(&shell);
-    struct bar *bar, *tmp;
-    wl_list_for_each_safe(bar, tmp, &shell.bars, link) bar_destroy(bar);
+    shell_lua_finish(&shell);
     if (shell.protocol) shady_shell_v1_destroy(shell.protocol);
     shell_core_finish(&shell.core);
     return status;
