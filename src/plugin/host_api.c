@@ -547,6 +547,11 @@ static bool host_shader_draw_fullscreen(shady_host host, shady_shader_program pr
 		program);
 }
 
+static bool host_shader_draw_fullscreen_scene(shady_host host, shady_shader_program program) {
+	return shady_render_plugin_shader_draw_fullscreen_scene(HOST(host),
+		shady_plugin_owner_from_address(__builtin_return_address(0)), program);
+}
+
 static shady_render_hook_id host_render_hook_add(shady_host host, uint32_t stage,
 		shady_render_callback callback, void *user_data) {
 	return shady_render_plugin_hook_add(HOST(host), shady_plugin_owner_from_address(__builtin_return_address(0)),
@@ -565,6 +570,8 @@ static bool host_window_set_shader(shady_host host, shady_window window,
 	if (!owner || !shady_render_plugin_shader_valid(HOST(host), owner, program))
 		return false;
 	struct shady_toplevel *toplevel = WINDOW(window);
+	if (toplevel->plugin_shader_owner != owner)
+		memset(toplevel->plugin_shader_params, 0, sizeof(toplevel->plugin_shader_params));
 	toplevel->plugin_shader_program = program;
 	toplevel->plugin_shader_owner = owner;
 	if (HOST(host)->renderer) shady_render_schedule_all_outputs(HOST(host));
@@ -580,11 +587,28 @@ static bool host_window_reset_shader(shady_host host, shady_window window) {
 		return false;
 	toplevel->plugin_shader_program = 0;
 	toplevel->plugin_shader_owner = NULL;
+	memset(toplevel->plugin_shader_params, 0, sizeof(toplevel->plugin_shader_params));
 	if (!toplevel->plugin_shader_source_owner ||
 			toplevel->plugin_shader_source_owner == owner) {
 		toplevel->plugin_shader_source = NULL;
 		toplevel->plugin_shader_source_owner = NULL;
 	}
+	if (HOST(host)->renderer) shady_render_schedule_all_outputs(HOST(host));
+	return true;
+}
+
+static bool host_window_set_shader_params(shady_host host, shady_window window,
+		const float params[SHADY_WINDOW_SHADER_PARAMS * 4]) {
+	if (!params || !shady_plugin_window_valid(host, window)) return false;
+	void *owner = shady_plugin_owner_from_address(__builtin_return_address(0));
+	struct shady_toplevel *toplevel = WINDOW(window);
+	if (!owner || !toplevel->plugin_shader_program || toplevel->plugin_shader_owner != owner)
+		return false;
+	for (size_t i = 0; i < SHADY_WINDOW_SHADER_PARAMS * 4; i++)
+		if (!isfinite(params[i])) return false;
+	if (!memcmp(toplevel->plugin_shader_params, params, sizeof(toplevel->plugin_shader_params)))
+		return true;
+	memcpy(toplevel->plugin_shader_params, params, sizeof(toplevel->plugin_shader_params));
 	if (HOST(host)->renderer) shady_render_schedule_all_outputs(HOST(host));
 	return true;
 }
@@ -723,5 +747,7 @@ const struct shady_plugin_api_v1 shady_plugin_api = {
 	.window_set_shader_source = host_window_set_shader_source,
 	.window_reset_shader_source = host_window_reset_shader_source,
 	.window_shader_source = host_window_shader_source,
+	.window_set_shader_params = host_window_set_shader_params,
+	.shader_draw_fullscreen_scene = host_shader_draw_fullscreen_scene,
 };
 

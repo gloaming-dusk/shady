@@ -66,6 +66,11 @@ static struct plugin_hook_slot plugin_hooks[SHADY_PLUGIN_HOOK_MAX];
 static uint64_t next_plugin_shader_id = 1;
 static uint64_t next_plugin_hook_id = 1;
 static GLuint plugin_fullscreen_vbo;
+/* Snapshot of the output for shader_draw_fullscreen_scene; resized on demand. */
+static GLuint plugin_scene_texture;
+static GLint plugin_scene_width, plugin_scene_height;
+/* True only while render hooks run, i.e. while the output FBO is bound. */
+static bool plugin_hooks_running;
 
 static GLuint depth_rbo;
 static int depth_rbo_w;
@@ -302,7 +307,8 @@ static bool plugin_shader_draw_window(struct shady_server *server,
 		float close_progress, const float close_effect[4], const float tint[4],
 		float effect_strength, float brightness,
 		const float *mesh_vertices, size_t mesh_vertex_count,
-		const uint16_t *mesh_indices, size_t mesh_index_count) {
+		const uint16_t *mesh_indices, size_t mesh_index_count,
+		const float params[SHADY_WINDOW_SHADER_PARAMS * 4]) {
 	(void)server;
 	if (!shader_program || !shader_owner) return false;
 	struct plugin_shader_slot *slot = plugin_shader_find(shader_program, shader_owner);
@@ -388,6 +394,13 @@ static bool plugin_shader_draw_window(struct shady_server *server,
 	if (loc >= 0) glUniform1f(loc, portal_available ? 1.f : 0.f);
 	loc = glGetUniformLocation(slot->program, "u_portal_size");
 	if (loc >= 0) glUniform2f(loc, (float)portal_width, (float)portal_height);
+	/* GLES2 accepts either spelling for the first element of a uniform array. */
+	loc = glGetUniformLocation(slot->program, "u_params");
+	if (loc < 0) loc = glGetUniformLocation(slot->program, "u_params[0]");
+	if (loc >= 0) {
+		static const float no_params[SHADY_WINDOW_SHADER_PARAMS * 4];
+		glUniform4fv(loc, SHADY_WINDOW_SHADER_PARAMS, params ? params : no_params);
+	}
 	/* Optional rounded-frame contract (see docs/SHADER_API.md). Mesh
 	 * representations bring their own UV layout, so they opt out. */
 	bool rounded_frame = !mesh_vertices &&
@@ -467,11 +480,10 @@ static bool plugin_shader_draw_window(struct shady_server *server,
 	return true;
 }
 
-bool shady_render_plugin_shader_draw_fullscreen(struct shady_server *server, void *owner,
-		shady_shader_program program) {
-	(void)server;
-	struct plugin_shader_slot *slot = plugin_shader_find(program, owner);
-	if (!slot || !plugin_make_current()) return false;
+/* Draw a fullscreen triangle with `slot`. When scene_texture is non-zero it is
+ * bound to unit 0 as u_scene, with its size in u_scene_size. */
+static bool plugin_draw_fullscreen(struct plugin_shader_slot *slot,
+		GLuint scene_texture, GLint scene_width, GLint scene_height) {
 	if (!plugin_fullscreen_vbo) {
 		static const float verts[] = {-1.f,-1.f, 3.f,-1.f, -1.f,3.f};
 		glGenBuffers(1, &plugin_fullscreen_vbo);
@@ -488,22 +500,89 @@ bool shady_render_plugin_shader_draw_fullscreen(struct shady_server *server, voi
 	glGetIntegerv(GL_BLEND_DST_RGB, &blend_dst_rgb);
 	glGetIntegerv(GL_BLEND_SRC_ALPHA, &blend_src_alpha);
 	glGetIntegerv(GL_BLEND_DST_ALPHA, &blend_dst_alpha);
+	GLint old_active_texture = 0, old_texture = 0;
+	glGetIntegerv(GL_ACTIVE_TEXTURE, &old_active_texture);
+	glActiveTexture(GL_TEXTURE0);
+	glGetIntegerv(GL_TEXTURE_BINDING_2D, &old_texture);
 	glDisable(GL_DEPTH_TEST);
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 	glUseProgram(slot->program);
+	if (scene_texture) {
+		glBindTexture(GL_TEXTURE_2D, scene_texture);
+		GLint loc = glGetUniformLocation(slot->program, "u_scene");
+		if (loc >= 0) glUniform1i(loc, 0);
+		loc = glGetUniformLocation(slot->program, "u_scene_size");
+		if (loc >= 0) glUniform2f(loc, (float)scene_width, (float)scene_height);
+	}
 	glBindBuffer(GL_ARRAY_BUFFER, plugin_fullscreen_vbo);
 	glEnableVertexAttribArray(0);
 	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void *)0);
 	glDrawArrays(GL_TRIANGLES, 0, 3);
 	glDisableVertexAttribArray(0);
 	glBindBuffer(GL_ARRAY_BUFFER, (GLuint)old_buffer);
+	glBindTexture(GL_TEXTURE_2D, (GLuint)old_texture);
+	glActiveTexture((GLenum)old_active_texture);
 	glUseProgram((GLuint)old_program);
 	glBlendFuncSeparate((GLenum)blend_src_rgb, (GLenum)blend_dst_rgb,
 		(GLenum)blend_src_alpha, (GLenum)blend_dst_alpha);
 	if (depth) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
 	if (blend) glEnable(GL_BLEND); else glDisable(GL_BLEND);
 	return true;
+}
+
+bool shady_render_plugin_shader_draw_fullscreen(struct shady_server *server, void *owner,
+		shady_shader_program program) {
+	(void)server;
+	struct plugin_shader_slot *slot = plugin_shader_find(program, owner);
+	if (!slot || !plugin_make_current()) return false;
+	return plugin_draw_fullscreen(slot, 0, 0, 0);
+}
+
+/* Copy the bound output framebuffer into plugin_scene_texture. GL_RGB is a
+ * valid copy target for both alpha and alpha-less output formats. */
+static bool plugin_capture_scene(GLint *width, GLint *height) {
+	GLint viewport[4];
+	glGetIntegerv(GL_VIEWPORT, viewport);
+	if (viewport[2] <= 0 || viewport[3] <= 0) return false;
+	GLint old_active_texture = 0, old_texture = 0;
+	glGetIntegerv(GL_ACTIVE_TEXTURE, &old_active_texture);
+	glActiveTexture(GL_TEXTURE0);
+	glGetIntegerv(GL_TEXTURE_BINDING_2D, &old_texture);
+	if (!plugin_scene_texture) glGenTextures(1, &plugin_scene_texture);
+	glBindTexture(GL_TEXTURE_2D, plugin_scene_texture);
+	if (plugin_scene_width != viewport[2] || plugin_scene_height != viewport[3]) {
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, viewport[2], viewport[3], 0,
+			GL_RGB, GL_UNSIGNED_BYTE, NULL);
+		plugin_scene_width = viewport[2];
+		plugin_scene_height = viewport[3];
+	}
+	glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, viewport[0], viewport[1],
+		viewport[2], viewport[3]);
+	bool ok = glGetError() == GL_NO_ERROR;
+	glBindTexture(GL_TEXTURE_2D, (GLuint)old_texture);
+	glActiveTexture((GLenum)old_active_texture);
+	*width = viewport[2];
+	*height = viewport[3];
+	return ok;
+}
+
+bool shady_render_plugin_shader_draw_fullscreen_scene(struct shady_server *server,
+		void *owner, shady_shader_program program) {
+	(void)server;
+	if (!plugin_hooks_running) return false;
+	struct plugin_shader_slot *slot = plugin_shader_find(program, owner);
+	if (!slot || !plugin_make_current()) return false;
+	/* Drop stale errors so the copy check below sees only its own. Bounded:
+	 * a lost context reports an error on every call. */
+	for (int i = 0; i < 8 && glGetError() != GL_NO_ERROR; i++) {}
+	GLint width = 0, height = 0;
+	if (!plugin_capture_scene(&width, &height)) return false;
+	return plugin_draw_fullscreen(slot, plugin_scene_texture, width, height);
 }
 
 shady_render_hook_id shady_render_plugin_hook_add(struct shady_server *server, void *owner,
@@ -581,9 +660,11 @@ static void plugin_render_hooks_run(struct shady_server *server, uint32_t stage,
 	}
 	context.tan_half_fov_y = tanf(SHADY_CAMERA_FOV_Y * 0.5f);
 	context.aspect = height > 0 ? (float)width / (float)height : 1.f;
+	plugin_hooks_running = true;
 	for (size_t i = 0; i < SHADY_PLUGIN_HOOK_MAX; i++)
 		if (plugin_hooks[i].used && plugin_hooks[i].stage == stage)
 			plugin_hooks[i].callback((shady_host)server, &context, plugin_hooks[i].user_data);
+	plugin_hooks_running = false;
 }
 
 static bool render_stats_enabled(void) {
@@ -642,6 +723,7 @@ struct shady_close_snapshot {
 	float close_direction_y;
 	shady_shader_program plugin_shader_program;
 	void *plugin_shader_owner;
+	float plugin_shader_params[SHADY_WINDOW_SHADER_PARAMS * 4];
 };
 
 static struct shady_close_snapshot *
@@ -813,10 +895,13 @@ void shady_render_fini(void) {
 			if (plugin_shaders[i].used) glDeleteProgram(plugin_shaders[i].program);
 		}
 		if (plugin_fullscreen_vbo) glDeleteBuffers(1, &plugin_fullscreen_vbo);
+		if (plugin_scene_texture) glDeleteTextures(1, &plugin_scene_texture);
 	}
 	memset(plugin_shaders, 0, sizeof(plugin_shaders));
 	memset(plugin_hooks, 0, sizeof(plugin_hooks));
 	plugin_fullscreen_vbo = 0;
+	plugin_scene_texture = 0;
+	plugin_scene_width = plugin_scene_height = 0;
 	plugin_renderer = NULL;
 	if (depth_rbo) {
 		glDeleteRenderbuffers(
@@ -1569,6 +1654,8 @@ void shady_render_output_frame(
 					snapshot->close_direction_y = close_state->direction_y;
 					snapshot->plugin_shader_program = toplevel->plugin_shader_program;
 					snapshot->plugin_shader_owner = toplevel->plugin_shader_owner;
+					memcpy(snapshot->plugin_shader_params, toplevel->plugin_shader_params,
+						sizeof(snapshot->plugin_shader_params));
 					snapshot->dirty = false;
 				}
 			}
@@ -1728,7 +1815,8 @@ void shady_render_output_frame(
 				mesh_representation ? (const float *)representation_mesh.vertices : NULL,
 				mesh_representation ? representation_mesh.vertex_count : 0,
 				mesh_representation ? representation_mesh.indices : NULL,
-				mesh_representation ? representation_mesh.index_count : 0);
+				mesh_representation ? representation_mesh.index_count : 0,
+				toplevel->plugin_shader_params);
 		}
 		if (!custom_drawn && mesh_representation) {
 			shady_gl_pipeline_draw_window_mesh(
@@ -1809,7 +1897,8 @@ void shady_render_output_frame(
 						water, water_surface,
 						title_border_color, no_border_width,
 						close_state->progress, close_effect, title_tint,
-						0.f, 1.f, NULL, 0, NULL, 0);
+						0.f, 1.f, NULL, 0, NULL, 0,
+						toplevel->plugin_shader_params);
 				}
 				if (!custom_title_drawn) {
 					shady_gl_pipeline_draw_window(
@@ -1937,7 +2026,8 @@ void shady_render_output_frame(
 				no_border_color, no_border_width,
 				snapshot->progress, close_effect, window_tint,
 				server->config.window_effect_strength,
-				server->config.window_brightness, NULL, 0, NULL, 0);
+				server->config.window_brightness, NULL, 0, NULL, 0,
+				snapshot->plugin_shader_params);
 		}
 		if (!snapshot_custom_drawn) {
 			shady_gl_pipeline_draw_window(

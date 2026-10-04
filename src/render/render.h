@@ -31,6 +31,9 @@ bool shady_render_plugin_shader_uniform_vec4(struct shady_server *server, void *
 	shady_shader_program program, const char *name, float x, float y, float z, float w);
 bool shady_render_plugin_shader_draw_fullscreen(struct shady_server *server, void *owner,
 	shady_shader_program program);
+/* Only inside a render hook: snapshot the output, bind it as u_scene, draw. */
+bool shady_render_plugin_shader_draw_fullscreen_scene(struct shady_server *server,
+	void *owner, shady_shader_program program);
 shady_render_hook_id shady_render_plugin_hook_add(struct shady_server *server, void *owner,
 	uint32_t stage, shady_render_callback callback, void *user_data);
 bool shady_render_plugin_hook_remove(struct shady_server *server, void *owner,

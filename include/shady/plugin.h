@@ -18,6 +18,9 @@
 #define SHADY_PLUGIN_ABI_V2 2u
 #define SHADY_PLUGIN_ENTRY_V2 "shady_plugin_entry_v2"
 
+/* Number of vec4 slots in window_set_shader_params / u_params. */
+#define SHADY_WINDOW_SHADER_PARAMS 4
+
 enum shady_plugin_log_level {
 	SHADY_PLUGIN_LOG_DEBUG = 0,
 	SHADY_PLUGIN_LOG_INFO = 1,
@@ -220,6 +223,24 @@ struct shady_plugin_api_v1 {
 	/* Feature APIs are separately versioned immutable host tables. Unknown names
 	 * or unsupported versions return NULL. Check this field with SHADY_API_HAS first. */
 	const void *(*query_api)(shady_host host, const char *name, uint32_t version);
+	/* Per-window values for the window's plugin shader, exposed as
+	 * `uniform vec4 u_params[SHADY_WINDOW_SHADER_PARAMS]`. Only the plugin that
+	 * set the window's shader may set them. They return to zero on
+	 * window_reset_shader and when a different plugin sets a shader. Use them
+	 * for state that differs per window, such as animation progress; uniforms
+	 * set with shader_uniform_* are shared by every window using the program.
+	 * Check with SHADY_API_HAS. */
+	bool (*window_set_shader_params)(shady_host host, shady_window window,
+		const float params[SHADY_WINDOW_SHADER_PARAMS * 4]);
+	/* Post-processing: like shader_draw_fullscreen, but first copies what the
+	 * output shows so far and binds it as `uniform sampler2D u_scene` (texture
+	 * unit 0), with its pixel size in `uniform vec2 u_scene_size`. Sample it at
+	 * gl_FragCoord.xy / u_scene_size for an unchanged image; offset the lookup
+	 * to warp the scene. Output alpha 1 replaces the pixel. Only valid inside a
+	 * render hook; returns false elsewhere. The copy costs one full-output blit
+	 * per call, so call it only while the effect is visible. Check with
+	 * SHADY_API_HAS. */
+	bool (*shader_draw_fullscreen_scene)(shady_host host, shady_shader_program program);
 };
 
 typedef const struct shady_module *(*shady_plugin_entry_v1_fn)(

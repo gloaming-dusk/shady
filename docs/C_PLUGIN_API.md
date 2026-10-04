@@ -188,6 +188,14 @@ Stages:
 
 Remove with `render_hook_remove`.
 
+To post-process what has been drawn, call `shader_draw_fullscreen_scene` instead
+of `shader_draw_fullscreen`. The host copies the current output and binds it as
+`u_scene`, so the shader can warp, recolour or distort the scene. For example,
+`black_hole.c` uses it to lens the background and the windows around the hole.
+It is append-only (`SHADY_API_HAS(api, shader_draw_fullscreen_scene)`), works only
+inside a render hook, and costs one full-output copy per call. See
+[SHADER_API.md](SHADER_API.md#post-processing-the-scene).
+
 #### Camera-aware hooks
 
 The render context also describes the spatial camera, so a hook can build a
@@ -549,6 +557,28 @@ api->window_reset_shader(host, window);
 ```
 
 Query the current handle with `window_shader(window)`.
+
+### Per-window shader parameters
+
+Uniforms set with `shader_uniform_*` belong to the program, so every window
+using it sees the same values. For values that differ per window, such as
+animation progress or a direction, use the append-only
+`window_set_shader_params`:
+
+```c
+if (SHADY_API_HAS(api, window_set_shader_params)) {
+    float params[SHADY_WINDOW_SHADER_PARAMS * 4] = { progress, dir_x, dir_y, 0 };
+    api->window_set_shader_params(host, window, params);
+}
+```
+
+The 16 floats are exposed to the window's plugin shader as
+`uniform vec4 u_params[4]`. Only the plugin that set the window's shader may
+set them, and non-finite values are rejected. They return to zero when the
+shader is reset or when another plugin sets a shader on the window. Close
+animations keep the values the window had when it closed.
+`examples/plugins/black_hole.c` drives a whole orbit animation this way
+without ever moving the window.
 
 Resources are associated with the plugin that created them. On plugin unload/hot reload, Shady removes its hooks, window shader associations, and shader programs.
 

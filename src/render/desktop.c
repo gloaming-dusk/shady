@@ -64,6 +64,10 @@ bool shady_render_plugin_shader_draw_fullscreen(struct shady_server *server, voi
 		shady_shader_program program) {
 	(void)server; (void)owner; (void)program; return false;
 }
+bool shady_render_plugin_shader_draw_fullscreen_scene(struct shady_server *server,
+		void *owner, shady_shader_program program) {
+	(void)server; (void)owner; (void)program; return false;
+}
 shady_render_hook_id shady_render_plugin_hook_add(struct shady_server *server, void *owner,
 		uint32_t stage, shady_render_callback callback, void *user_data) {
 	(void)server; (void)owner; (void)stage; (void)callback; (void)user_data; return 0;

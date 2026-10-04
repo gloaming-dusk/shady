@@ -33,6 +33,7 @@ nix develop -c ninja -C "$BUILD_DIR" \
   libshady-plugin-afterglow.so \
   libshady-plugin-obj-loader.so \
   libshady-plugin-counter.so \
+  libshady-plugin-black-hole.so \
   obj-loader-test
 
 export SHADY_FPS_REPRESENTATION_PLUGIN="$ROOT/$BUILD_DIR/libshady-plugin-fps-cube.so"
@@ -60,6 +61,9 @@ SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
 
 SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
   nix develop -c bash ./tests/headless-plugin-manager.sh
+
+SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
+  nix develop -c bash ./tests/headless-black-hole.sh
 
 SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
   nix develop -c bash ./tests/headless-fps-toggle.sh

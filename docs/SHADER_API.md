@@ -79,6 +79,42 @@ api->shader_draw_fullscreen(host, program);
 
 The host preserves the important GL state around the draw.
 
+### Post-processing the scene
+
+`shader_draw_fullscreen_scene` draws the same way, but first copies what the
+output shows so far into a texture:
+
+| Uniform | Type | Meaning |
+|---|---|---|
+| `u_scene` | sampler2D | everything drawn before this call, on texture unit 0 |
+| `u_scene_size` | vec2 | that texture's size in pixels |
+
+```glsl
+uniform sampler2D u_scene;
+uniform vec2 u_scene_size;
+
+void main() {
+    vec2 uv = gl_FragCoord.xy / u_scene_size;  /* unchanged image */
+    uv += 0.01 * sin(uv.yx * 40.0);            /* ...or warp it */
+    gl_FragColor = vec4(texture2D(u_scene, uv).rgb, 1.0);
+}
+```
+
+```c
+if (SHADY_API_HAS(api, shader_draw_fullscreen_scene))
+    api->shader_draw_fullscreen_scene(host, program);
+```
+
+- It works only inside a render hook and returns false anywhere else. The
+  stage chooses what the scene contains: `SHADY_RENDER_STAGE_AFTER_WINDOWS`
+  sees the background, floor, environment and windows.
+- Output alpha 1 replaces the pixel. Blending is the same as for
+  `shader_draw_fullscreen`.
+- The texture is RGB only.
+- Each call copies the whole output once, so draw only while the effect is
+  visible. `examples/plugins/black_hole.c` stops calling it once its
+  aftershock has decayed.
+
 ## Per-window shaders
 
 A window shader runs on Shady's subdivided window mesh and replaces the built-in window shader for that window.
@@ -133,6 +169,7 @@ If declared by the shader, Shady automatically supplies:
 | `u_light_dir` | vec3 | compositor light direction |
 | `u_frame_px` | vec2 | decorated frame (title bar + client) size in logical px; `0,0` when the rounded frame does not apply |
 | `u_frame_shape` | vec2 | rounded-frame corner radius and border width, both in px |
+| `u_params` | vec4[4] | per-window values set by the shader's owner with `window_set_shader_params`; zero otherwise |
 
 Uniforms are optional. Shady checks whether each uniform exists before assigning it.
 

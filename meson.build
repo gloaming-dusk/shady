@@ -432,6 +432,13 @@ shared_module('shady-plugin-close-burn',
   build_by_default: true,
   install: false)
 
+shared_module('shady-plugin-black-hole',
+  'examples/plugins/black_hole.c',
+  include_directories: include_directories('include'),
+  dependencies: [dependency('xkbcommon'), cc.find_library('m')],
+  build_by_default: true,
+  install: false)
+
 shared_module('shady-plugin-shader-overlay',
   'examples/plugins/shader_overlay.c',
   include_directories: include_directories('include'),
@@ -562,3 +569,11 @@ if obj_loader_enabled
       meson.current_build_dir()],
     depends: [obj_loader_plugin])
 endif
+
+black_hole_plugin_test = executable('black-hole-plugin-test',
+  'tests/black-hole-plugin.c',
+  include_directories: include_directories('include'),
+  dependencies: [dl, dependency('xkbcommon'), cc.find_library('m', required: true)],
+  install: false)
+test('black-hole-plugin', black_hole_plugin_test,
+  args: [join_paths(meson.current_build_dir(), 'libshady-plugin-black-hole.so')])
