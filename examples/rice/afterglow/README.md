@@ -64,8 +64,19 @@ default `foot`). Pass `-s '<command>'` to start something else.
 - **No floor.** The sea runs to the horizon and window shadows land on the
   water. Set `SHADY_AFTERGLOW_FLOOR=1` to bring back a faint coral grid. Its
   horizon fog fades into the sky drawn behind it.
-- **Shell theme.** `theme.sh` sets the `SHADY_SHELL_*` palette: amber accent,
-  rose badge gradient and plum glass.
+- **The shell follows the light.** The plugin publishes the hour and a shell
+  palette as compositor values (`afterglow.hour` = `golden-hour`, `afterglow`,
+  `blue-hour` or `night`; `afterglow.accent`, `accent_2`, `accent_deep`,
+  `surface`, `text`, `text_dim`; and the sky itself as `afterglow.sky_top`,
+  `sky_mid`, `horizon` and `sun`) and re-publishes it on every tick of a
+  cross-fade. The rice's `shell.lua` reads `shell.theme` from those values, so
+  the bar, Quick Settings, the task menu and the launcher fade with the sky.
+  `theme.sh` (`SHADY_SHELL_*`) is only the palette until the first values
+  arrive. Any IPC client can follow the same values: `shadyctl subscribe
+  events=value.changed`.
+- **Frosted glass.** `init.lua` turns the bar and the shell's panels into
+  frosted glass (`shady.layer_effect`), and `shell.lua` keeps them translucent,
+  so the sunset shows through them.
 
 ## Tuning
 
@@ -73,6 +84,7 @@ default `foot`). Pass `-s '<command>'` to start something else.
 |---|---|
 | `SHADY_AFTERGLOW_PHASE` | Start hour: `golden hour`, `afterglow`, `blue hour`, `night` |
 | `SHADY_AFTERGLOW_FLOOR=1` | Show the grid floor over the sea |
+| `SHADY_SHELL_CONFIG` | Use another shell config instead of `shell.lua` |
 | `SHADY_SHELL_*` | Override any shell colour (see the top-level README) |
 
 Window shape lives in `config.lua`: 14 px corners, a 2 px rim, 95 % opacity and
@@ -82,8 +94,11 @@ a warm tint. Change those freely; the plugin only manages accent colours.
 
 ```sh
 nix develop -c bash tests/headless-afterglow.sh
+nix develop -c bash tests/headless-afterglow-shell.sh
 ```
 
-The test runs the rice headless and checks that the sky hook draws, that
+The first runs the rice headless and checks that the sky hook draws, that
 `Super+T` and `Super+Shift+T` change the hour in both directions, and that a
-closing window finishes its sink. It is part of `tests/spatial-suite.sh`.
+closing window finishes its sink. The second runs it with the rice's shell
+and checks that the hour and palette are published, cross-fade, and recolour
+the bar. Both are part of `tests/spatial-suite.sh`.

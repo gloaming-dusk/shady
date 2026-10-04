@@ -11,6 +11,13 @@ shady.rule({ app_id = "discord", workspace = "harbor" })
 shady.rule({ app_id = "vesktop", workspace = "harbor" })
 
 if shady.has_capability("spatial") then
+    -- Frosted glass: the bar and the shell's panels show the sunset behind
+    -- them, softened (see shell.lua, which keeps them translucent).
+    shady.layer_effect("shady-shell", { blur = 18, saturation = 1.25, tint = "#1a0e1a30" })
+    for _, panel in ipairs({ "quick", "menu", "launcher" }) do
+        shady.layer_effect(panel, { blur = 26, saturation = 1.2 })
+    end
+
     -- Standing a little above the water, looking slightly up: the horizon
     -- sits in the lower third so the sky gets the stage, and windows hang
     -- in front of the sun like panes against a window seat.

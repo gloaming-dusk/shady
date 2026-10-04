@@ -6,6 +6,10 @@
  * phase also drives the compositor's accent colours, so focus borders and the
  * floor grid always belong to the sky they sit under. Closing windows sink
  * into the sea.
+ *
+ * The hour and a shell palette are published as values (afterglow.hour,
+ * afterglow.accent, ...; see publish_palette) so shady-shell and other IPC
+ * clients can follow the light, cross-fades included.
  */
 #include <math.h>
 #include <stdio.h>
@@ -22,6 +26,7 @@ struct rgb { float r, g, b; };
 
 struct phase {
 	const char *name;
+	const char *id; /* published as afterglow.hour */
 	struct rgb zenith, mid, horizon, glow;
 	float glow_strength;
 	float sun_azimuth, sun_elevation, sun_disk;
@@ -33,7 +38,7 @@ struct phase {
 
 static const struct phase phases[PHASE_COUNT] = {
 	{
-		.name = "golden hour",
+		.name = "golden hour", .id = "golden-hour",
 		.zenith = { 0.10f, 0.16f, 0.36f }, .mid = { 0.44f, 0.38f, 0.62f },
 		.horizon = { 1.00f, 0.74f, 0.50f }, .glow = { 1.00f, 0.62f, 0.30f },
 		.glow_strength = 0.85f,
@@ -43,7 +48,7 @@ static const struct phase phases[PHASE_COUNT] = {
 		.accent = { 1.00f, 0.76f, 0.48f }, .grid = { 1.00f, 0.63f, 0.36f },
 	},
 	{
-		.name = "afterglow",
+		.name = "afterglow", .id = "afterglow",
 		.zenith = { 0.055f, 0.060f, 0.200f }, .mid = { 0.34f, 0.16f, 0.42f },
 		.horizon = { 1.00f, 0.50f, 0.38f }, .glow = { 1.00f, 0.45f, 0.22f },
 		.glow_strength = 1.0f,
@@ -53,7 +58,7 @@ static const struct phase phases[PHASE_COUNT] = {
 		.accent = { 1.00f, 0.69f, 0.44f }, .grid = { 1.00f, 0.48f, 0.36f },
 	},
 	{
-		.name = "blue hour",
+		.name = "blue hour", .id = "blue-hour",
 		.zenith = { 0.030f, 0.050f, 0.160f }, .mid = { 0.12f, 0.16f, 0.40f },
 		.horizon = { 0.62f, 0.42f, 0.62f }, .glow = { 0.95f, 0.45f, 0.45f },
 		.glow_strength = 0.55f,
@@ -64,7 +69,7 @@ static const struct phase phases[PHASE_COUNT] = {
 	},
 	{
 		/* The "sun" becomes a moon: higher, silver and on the other side. */
-		.name = "night",
+		.name = "night", .id = "night",
 		.zenith = { 0.012f, 0.016f, 0.050f }, .mid = { 0.030f, 0.045f, 0.120f },
 		.horizon = { 0.10f, 0.11f, 0.24f }, .glow = { 0.35f, 0.40f, 0.80f },
 		.glow_strength = 0.25f,
@@ -121,6 +126,7 @@ static struct phase current_phase(void) {
 	float t = ease(s ? s->blend : 1.f);
 	return (struct phase){
 		.name = b->name,
+		.id = b->id,
 		.zenith = mix_rgb(a->zenith, b->zenith, t),
 		.mid = mix_rgb(a->mid, b->mid, t),
 		.horizon = mix_rgb(a->horizon, b->horizon, t),
@@ -139,13 +145,45 @@ static struct phase current_phase(void) {
 	};
 }
 
-static void set_color(const char *key, struct rgb c) {
-	char value[16];
-	snprintf(value, sizeof(value), "#%02X%02X%02X",
+static void format_color(char out[16], struct rgb c) {
+	snprintf(out, 16, "#%02X%02X%02X",
 		(unsigned)lrintf(fminf(fmaxf(c.r, 0.f), 1.f) * 255.f),
 		(unsigned)lrintf(fminf(fmaxf(c.g, 0.f), 1.f) * 255.f),
 		(unsigned)lrintf(fminf(fmaxf(c.b, 0.f), 1.f) * 255.f));
+}
+
+static void set_color(const char *key, struct rgb c) {
+	char value[16];
+	format_color(value, c);
 	api->config_set(host, key, value);
+}
+
+static void publish_color(const char *key, struct rgb c) {
+	char value[16];
+	format_color(value, c);
+	api->publish_value(host, key, value);
+}
+
+/*
+ * The shell palette for the current light, named like shell.theme
+ * (afterglow.accent, afterglow.surface, ...), plus the sky itself for
+ * shells that want more. Published on every tick of a cross-fade, so a bar
+ * follows the sky smoothly; unchanged values cost nothing.
+ */
+static void publish_palette(const struct phase *p) {
+	if (!SHADY_API_HAS(api, publish_value)) return;
+	const struct rgb white = { 1.f, 1.f, 1.f }, black = { 0.f, 0.f, 0.f };
+	api->publish_value(host, "afterglow.hour", p->id);
+	publish_color("afterglow.accent", p->accent);
+	publish_color("afterglow.accent_2", p->glow);
+	publish_color("afterglow.accent_deep", mix_rgb(mix_rgb(p->mid, p->accent, 0.25f), black, 0.45f));
+	publish_color("afterglow.surface", mix_rgb(p->zenith, black, 0.45f));
+	publish_color("afterglow.text", mix_rgb(white, p->accent, 0.10f));
+	publish_color("afterglow.text_dim", mix_rgb(mix_rgb(white, p->mid, 0.55f), p->accent, 0.15f));
+	publish_color("afterglow.sky_top", p->zenith);
+	publish_color("afterglow.sky_mid", p->mid);
+	publish_color("afterglow.horizon", p->horizon);
+	publish_color("afterglow.sun", p->sun);
 }
 
 /* Keep compositor-drawn accents in the same light as the sky. */
@@ -157,6 +195,7 @@ static void sync_config(const struct phase *p) {
 	set_color("background_top", p->zenith);
 	set_color("background_horizon", p->horizon);
 	set_color("background_bottom", mix_rgb(p->zenith, (struct rgb){ 0, 0, 0 }, 0.5f));
+	publish_palette(p);
 }
 
 static void draw(shady_host h, const struct shady_render_context *ctx, void *user) {

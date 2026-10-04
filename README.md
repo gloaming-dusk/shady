@@ -272,7 +272,7 @@ This suite uses an AddressSanitizer/UndefinedBehaviorSanitizer spatial build and
 
 The **Neon Transit** rice demonstrates a native-plugin approach to depth: `focus-depth` leaves screen-space x/y placement alone but animates focused/background windows along Z using the C plugin API and module tick callback.
 
-**Afterglow** sets the desktop above an open sea at sunset. Its `afterglow` plugin draws a camera-aware procedural sky and sea, cycles through golden hour, afterglow, blue hour and night (`Super+T`), keeps window and shell accents on the sky's palette, and makes closing windows sink into the water. See `examples/rice/afterglow/README.md`.
+**Afterglow** sets the desktop above an open sea at sunset. Its `afterglow` plugin draws a camera-aware procedural sky and sea, cycles through golden hour, afterglow, blue hour and night (`Super+T`), keeps window accents on the sky's palette, publishes that palette so its frosted-glass shell cross-fades with the sky, and makes closing windows sink into the water. See `examples/rice/afterglow/README.md`.
 
 ```sh
 ./examples/rice/afterglow/run.sh

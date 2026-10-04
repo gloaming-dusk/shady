@@ -13,6 +13,7 @@ export SHADY_ROOT="$ROOT"
 export SHADY_LUA_INIT="$ROOT/examples/rice/afterglow/init.lua"
 export WLR_BACKENDS="${WLR_BACKENDS:-wayland}"
 source "$ROOT/examples/rice/afterglow/theme.sh"
+export SHADY_SHELL_CONFIG="${SHADY_SHELL_CONFIG:-$ROOT/examples/rice/afterglow/shell.lua}"
 
 if [[ $# -eq 0 ]]; then
   default_startup="'$ROOT/build/shady-shell' & exec ${TERMINAL:-foot}"
