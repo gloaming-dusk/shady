@@ -1,4 +1,10 @@
+/* Ray tracing and time-driven noise need more range than mediump on GPUs
+ * that execute it at 16-bit precision. Keep a GLES2 fallback. */
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+precision highp float;
+#else
 precision mediump float;
+#endif
 
 /*
  * Black hole (or white hole) post-process for the black-hole plugin.
@@ -33,13 +39,15 @@ uniform vec4 u_shock0; /* age seconds (< 0 = unused), strength */
 uniform vec4 u_shock1;
 uniform vec4 u_shock2;
 
-varying vec2 v_uv;
+varying mediump vec2 v_uv;
 
 const float PI = 3.14159265;
 const float SHOCK_SPEED = 1.7;  /* world units per second */
 const float SHOCK_WIDTH = 0.07;
 
 float hash(vec2 p) {
+	/* Bound the dot product even on the mediump fallback as time grows. */
+	p = mod(p, 64.0);
 	return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
 }
 
@@ -88,7 +96,7 @@ vec4 disk(vec3 p, vec3 d, vec3 c, vec3 n, float r_shadow, float white) {
 	vec3 ax = normalize(cross(n, abs(n.y) < 0.9 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0)));
 	vec3 ay = cross(n, ax);
 	float phi = atan(dot(rel, ay), dot(rel, ax));
-	float x = (r - r_in) / (r_out - r_in);
+	float x = clamp((r - r_in) / (r_out - r_in), 0.0, 1.0);
 
 	/* Keplerian shear: inner gas laps the outer gas, smearing noise into arcs. */
 	float spin = u_state.z * (white > 0.5 ? -1.0 : 1.0);
@@ -120,6 +128,9 @@ float shock(vec4 s, float b) {
 	if (s.x < 0.0) return 0.0;
 	float radius = s.x * SHOCK_SPEED;
 	float x = (b - radius) / SHOCK_WIDTH;
+	/* The Gaussian is negligible outside this band. Avoid squaring large
+	 * distances in the mediump fallback. */
+	if (abs(x) > 8.0) return 0.0;
 	/* Leading compression, trailing rarefaction, fading as it spreads. */
 	return s.y * x * exp(-x * x) * exp(-s.x * 1.6);
 }
@@ -203,7 +214,10 @@ void main() {
 		}
 		back = over(back, far_disk * step(r_shadow, b));
 
-		float ring = exp(-pow((b - r_shadow * 1.04) / (r_shadow * (0.04 + 0.05 * u_fx.z)), 2.0));
+		/* pow() is undefined for a negative base, even with exponent 2. */
+		float ring_distance = clamp((b - r_shadow * 1.04) /
+			(r_shadow * (0.04 + 0.05 * u_fx.z)), -8.0, 8.0);
+		float ring = exp(-ring_distance * ring_distance);
 		float halo = exp(-max(b - r_shadow, 0.0) / (r_shadow * 0.7)) * step(r_shadow, b);
 		vec3 ring_col = mix(vec3(1.0, 0.80, 0.52), vec3(0.75, 0.88, 1.0), white);
 		vec3 halo_col = mix(vec3(1.0, 0.38, 0.10), vec3(0.35, 0.55, 1.0), white);

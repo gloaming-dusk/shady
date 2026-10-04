@@ -102,12 +102,12 @@ if portal_enabled then
         (root .. "/build/libshady-plugin-window-portal.so"))
 end
 
--- Native liquid-surface effect is part of the Neon Transit look by default.
--- Set SHADY_NEON_WATER=0 to disable it when battery/idle usage matters more.
-if not portal_enabled and os.getenv("SHADY_NEON_WATER") ~= "0" then
+-- Keep application text stable by default. Opt into animated liquid
+-- surfaces with SHADY_NEON_WATER=1; Super+W then toggles the effect.
+if not portal_enabled and os.getenv("SHADY_NEON_WATER") == "1" then
     shady.plugin(os.getenv("SHADY_WATER_PLUGIN") or
         (root .. "/build/libshady-plugin-water-windows.so"))
-elseif portal_enabled and os.getenv("SHADY_NEON_WATER") ~= "0" then
+elseif portal_enabled and os.getenv("SHADY_NEON_WATER") == "1" then
     shady.log("Neon Transit: portal mode takes precedence over the water window shader")
 end
 
@@ -117,6 +117,8 @@ if os.getenv("SHADY_NEON_CLOSE_STYLE") == "burn" then
     shady.plugin(os.getenv("SHADY_CLOSE_PLUGIN") or
         (root .. "/build/libshady-plugin-close-burn.so"))
 end
+
+shady.plugins.load("black-hole")
 
 shady.bind("quit", "Super+Shift+Escape")
 shady.bind("cycle_windows", "Super+Tab")
