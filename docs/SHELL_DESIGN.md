@@ -150,8 +150,9 @@ with `shell.popup{}` and opened with `shell.open(name, args)`.
    Fixed on the way: spatial mode now draws layer surfaces in layer order.
    3D placement is done too: `shady.layer_transform(namespace, ...)` tilts,
    turns and recedes layer surfaces through a screen-attached perspective,
-   and maps pointer input back through the same plane. The two do not
-   combine yet: a transformed surface is drawn without its backdrop.
+   and maps pointer input back through the same plane. Backdrop effects
+   follow transformed surfaces (the effect is drawn over the projected quad),
+   and pointer input is resolved across all layer surfaces in stacking order.
 7. **Standard protocols** — done. `wlr-foreign-toplevel-management-unstable-v1`,
    `ext-foreign-toplevel-list-v1` and `ext-workspace-v1` mirror the
    compositor's windows and workspaces (`src/standard_protocols.c`), so

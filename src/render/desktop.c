@@ -137,9 +137,9 @@ bool shady_render_set_layer_transform(struct shady_server *server, const char *n
 	(void)server; (void)name_space; (void)desc; return false;
 }
 
-bool shady_render_layer_transform_pick(struct shady_server *server, double lx, double ly,
+int shady_render_layer_pick(struct shady_server *server, double lx, double ly,
 		struct wlr_surface **surface, double *sx, double *sy) {
-	(void)server; (void)lx; (void)ly; (void)surface; (void)sx; (void)sy; return false;
+	(void)server; (void)lx; (void)ly; (void)surface; (void)sx; (void)sy; return -1;
 }
 
 bool shady_render_layer_is_transformed(struct shady_server *server, struct wlr_surface *surface) {

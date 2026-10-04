@@ -53,28 +53,45 @@ magenta() { [[ "$(pixel "$1" "$2")" == "255 0 255" ]]; }
 clicks() { grep -c "lua: clicked" "$log" || true; }
 
 wait_mark TILT
-magenta 640 5 || fail "tilted bar missing at the hinge: $(pixel 640 5)"
-magenta 640 34 && fail "tilted bar not foreshortened: (640,34) is still magenta"
+magenta 100 5 || fail "tilted bar missing at the hinge: $(pixel 100 5)"
+magenta 100 34 && fail "tilted bar not foreshortened: (100,34) is still magenta"
 echo NEXT1 >>"$status"
 wait_mark CLICK_TILT
 (( $(clicks) == 1 )) || fail "click on the tilted bar was not delivered ($(clicks))"
 echo NEXT2 >>"$status"
 wait_mark MISS_TILT
 (( $(clicks) == 1 )) || fail "a click below the tilted bar reached it"
+count() { grep -c "lua: $1$" "$log" || true; }
+echo STACK1 >>"$status"
+wait_mark CLICK_OVER
+(( $(count over) == 1 && $(count bar) == 0 )) ||
+    fail "the overlay popup above the tilted bar did not take the click (over $(count over), bar $(count bar))"
+echo STACK2 >>"$status"
+wait_mark CLICK_UNDER
+(( $(count bar) == 1 )) || fail "the tilted bar below the popup did not take the click"
 echo NEXT3 >>"$status"
 
 wait_mark DEPTH
-magenta 640 80 || fail "bar pushed back is not at the expected place: $(pixel 640 80)"
-magenta 640 5 && fail "bar pushed back still covers the top edge"
+magenta 200 80 || fail "bar pushed back is not at the expected place: $(pixel 200 80)"
+magenta 200 5 && fail "bar pushed back still covers the top edge"
 magenta 60 80 && fail "bar pushed back did not shrink horizontally"
 echo NEXT4 >>"$status"
 wait_mark CLICK_DEPTH
 (( $(clicks) == 2 )) || fail "click on the receded bar was not delivered ($(clicks))"
 echo NEXT5 >>"$status"
 
-wait_mark REMOVED
-magenta 640 34 || fail "removing the transform did not restore the bar"
+# The nearly transparent part shows the green backdrop where the receded bar
+# is drawn, and nothing at its untransformed place.
+wait_mark EFFECT
+green() { read -r r g b <<<"$(pixel "$1" "$2")"; (( g > 200 && r < 40 && b < 40 )); }
+green 640 80 || fail "effect missing on the transformed bar: $(pixel 640 80)"
+green 640 20 && fail "effect drawn at the untransformed place: $(pixel 640 20)"
 echo NEXT6 >>"$status"
+
+wait_mark REMOVED
+magenta 100 34 || fail "removing the transform did not restore the bar"
+green 640 34 || fail "effect missing on the restored bar: $(pixel 640 34)"
+echo NEXT7 >>"$status"
 wait_mark CLICK_PLAIN
 (( $(clicks) == 3 )) || fail "plain bar did not take the click ($(clicks))"
 echo DONE >>"$status"

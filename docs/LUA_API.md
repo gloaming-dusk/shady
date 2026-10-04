@@ -119,9 +119,9 @@ shady.layer_transform("quick", { yaw = -18, depth = 30, pivot = "center" })
 | `perspective` | 1.2 × output height | focal length in logical px; smaller is more dramatic |
 | `pivot` | `"anchor"` | `"anchor"` hinges on the edge the surface is attached to, `"center"` rotates about its centre |
 
-Positive tilt leans the far edge away from the viewer. Spatial mode only;
-a transformed surface is drawn without its `layer_effect`, and transformed
-surfaces take input before untransformed layers.
+Positive tilt leans the far edge away from the viewer. Spatial mode only. A
+`layer_effect` on the same namespace follows the transformed surface, and
+input is resolved in stacking order across transformed and plain layers.
 
 ## Runtime objects
 

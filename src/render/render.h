@@ -77,9 +77,11 @@ struct shady_layer_transform_desc {
 };
 bool shady_render_set_layer_transform(struct shady_server *server, const char *name_space,
 	const struct shady_layer_transform_desc *desc);
-/* Hit-test transformed layer surfaces at layout coordinates. Returns true
- * and the surface under the point, if any. */
-bool shady_render_layer_transform_pick(struct shady_server *server, double lx, double ly,
+/* Hit-test every layer surface at layout coordinates in stacking order,
+ * transformed ones where they are drawn. Returns 1 with the surface (or a
+ * subsurface) under the point, 0 for none, and -1 when the spatial renderer
+ * is not drawing (callers then use the scene graph). */
+int shady_render_layer_pick(struct shady_server *server, double lx, double ly,
 	struct wlr_surface **surface, double *sx, double *sy);
 /* Whether this surface belongs to a transformed layer (whose untransformed
  * scene position must not take input). */

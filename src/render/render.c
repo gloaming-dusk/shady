@@ -1126,8 +1126,10 @@ static GLint layer_capture_width, layer_capture_height;
 static bool layer_effects_animating;
 
 static const char *layer_vertex_source =
-	"attribute vec2 a_pos;\n"
-	"void main() { gl_Position = vec4(a_pos, 0.0, 1.0); }\n";
+	"attribute vec4 a_clip;\n"
+	"attribute vec2 a_local;\n"
+	"varying vec2 v_local;\n"
+	"void main() { v_local = a_local; gl_Position = a_clip; }\n";
 
 /* Declared for every effect shader; custom shaders use these helpers and
  * must not redeclare the uniforms. */
@@ -1140,7 +1142,7 @@ static const char *layer_prelude =
 	"uniform sampler2D u_scene;\n"
 	"uniform vec4 u_capture;\n"   /* the copied rect, buffer px */
 	"uniform vec2 u_capture_texture;\n" /* size of the texture it sits in */
-	"uniform vec4 u_region;\n"    /* the layer buffer's rect, buffer px */
+	"uniform vec4 u_region;\n"    /* the buffer's bounding box on screen, buffer px */
 	"uniform vec4 u_mask_rect;\n" /* mask uv origin and extent */
 	"uniform float u_scale;\n"
 	"uniform float u_time;\n"
@@ -1149,7 +1151,8 @@ static const char *layer_prelude =
 	"    vec2 p = clamp(pixel, u_capture.xy + 0.5, u_capture.xy + u_capture.zw - 0.5);\n"
 	"    return texture2D(u_scene, (p - u_capture.xy) / u_capture_texture);\n"
 	"}\n"
-	"vec2 local() { return (gl_FragCoord.xy - u_region.xy) / u_region.zw; }\n";
+	"varying vec2 v_local;\n"
+	"vec2 local() { return v_local; }\n";
 
 static const char *layer_mask_2d =
 	"uniform sampler2D u_mask;\n"
@@ -1243,7 +1246,8 @@ static GLuint layer_effect_program(struct layer_effect *effect, bool external) {
 	if (program) {
 		glAttachShader(program, vs);
 		glAttachShader(program, fs);
-		glBindAttribLocation(program, 0, "a_pos");
+		glBindAttribLocation(program, 0, "a_clip");
+		glBindAttribLocation(program, 1, "a_local");
 		glLinkProgram(program);
 		GLint ok = GL_FALSE;
 		glGetProgramiv(program, GL_LINK_STATUS, &ok);
@@ -1347,8 +1351,47 @@ static bool layer_capture(GLint x, GLint y, GLint w, GLint h, GLint out[4]) {
 	return true;
 }
 
+/* A buffer's quad on screen: clip-space corners (top-left, top-right,
+ * bottom-left, bottom-right; w > 1 when receding) and the screen box they
+ * cover, in buffer px top-down. */
+struct layer_quad {
+	GLfloat clip[16];
+	GLint box[4];
+};
+
+static void layer_quad_finish_box(struct layer_quad *q, const double xs[4], const double ys[4]) {
+	double x0 = xs[0], x1 = xs[0], y0 = ys[0], y1 = ys[0];
+	for (int i = 1; i < 4; i++) {
+		if (xs[i] < x0) x0 = xs[i];
+		if (xs[i] > x1) x1 = xs[i];
+		if (ys[i] < y0) y0 = ys[i];
+		if (ys[i] > y1) y1 = ys[i];
+	}
+	q->box[0] = (GLint)floor(x0);
+	q->box[1] = (GLint)floor(y0);
+	q->box[2] = (GLint)ceil(x1) - q->box[0];
+	q->box[3] = (GLint)ceil(y1) - q->box[1];
+}
+
+/* An untransformed buffer at dst (buffer px) in a viewport of vw x vh. */
+static void layer_quad_from_rect(struct layer_quad *q, const struct wlr_box *dst, int vw, int vh) {
+	const double xs[4] = { dst->x, dst->x + dst->width, dst->x, dst->x + dst->width };
+	const double ys[4] = { dst->y, dst->y, dst->y + dst->height, dst->y + dst->height };
+	for (int i = 0; i < 4; i++) {
+		q->clip[i * 4 + 0] = (GLfloat)(2.0 * xs[i] / vw - 1.0);
+		q->clip[i * 4 + 1] = (GLfloat)(2.0 * ys[i] / vh - 1.0);
+		q->clip[i * 4 + 2] = 0.f;
+		q->clip[i * 4 + 3] = 1.f;
+	}
+	layer_quad_finish_box(q, xs, ys);
+}
+
+/* Draw a buffer's backdrop over `quad` (logical size w x h), masked by the
+ * buffer's alpha: capture the screen under the quad's box plus the blur
+ * margin, then run the effect over the quad itself. */
 static void draw_layer_backdrop(struct layer_effect *effect, struct wlr_texture *texture,
-		const struct wlr_fbox *src_box, const struct wlr_box *dst, float scale, float time) {
+		const struct wlr_fbox *src_box, const struct layer_quad *quad,
+		double logical_w, double logical_h, float scale, float time) {
 	struct wlr_gles2_texture_attribs attribs;
 	wlr_gles2_texture_get_attribs(texture, &attribs);
 	bool external = attribs.target != GL_TEXTURE_2D;
@@ -1356,14 +1399,12 @@ static void draw_layer_backdrop(struct layer_effect *effect, struct wlr_texture 
 	if (!program) return;
 
 	GLint old_program = 0, old_buffer = 0, old_active = 0, old_tex0 = 0, old_tex1 = 0;
-	GLint old_scissor[4];
 	GLint blend_src_rgb = 0, blend_dst_rgb = 0, blend_src_alpha = 0, blend_dst_alpha = 0;
 	GLboolean blend = glIsEnabled(GL_BLEND), scissor = glIsEnabled(GL_SCISSOR_TEST);
 	GLboolean depth = glIsEnabled(GL_DEPTH_TEST);
 	glGetIntegerv(GL_CURRENT_PROGRAM, &old_program);
 	glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &old_buffer);
 	glGetIntegerv(GL_ACTIVE_TEXTURE, &old_active);
-	glGetIntegerv(GL_SCISSOR_BOX, old_scissor);
 	glGetIntegerv(GL_BLEND_SRC_RGB, &blend_src_rgb);
 	glGetIntegerv(GL_BLEND_DST_RGB, &blend_dst_rgb);
 	glGetIntegerv(GL_BLEND_SRC_ALPHA, &blend_src_alpha);
@@ -1373,23 +1414,23 @@ static void draw_layer_backdrop(struct layer_effect *effect, struct wlr_texture 
 	glActiveTexture(GL_TEXTURE1);
 	glGetIntegerv(GL_TEXTURE_BINDING_2D, &old_tex1);
 
-	/* Blur taps reach past the region; capture a margin around it. */
+	/* Blur taps reach past the quad; capture a margin around it. */
 	GLint margin = (GLint)ceilf(effect->desc.blur * scale) + 2;
 	GLint capture[4];
+	const GLint *box = quad->box;
 	glActiveTexture(GL_TEXTURE0);
-	if (!layer_capture(dst->x - margin, dst->y - margin, dst->width + 2 * margin,
-			dst->height + 2 * margin, capture))
+	if (!layer_capture(box[0] - margin, box[1] - margin, box[2] + 2 * margin,
+			box[3] + 2 * margin, capture))
 		goto restore;
 
 	glUseProgram(program);
 	glUniform1i(glGetUniformLocation(program, "u_scene"), 0);
-	/* scene() maps window pixels into the texture's normalised range. */
 	glUniform4f(glGetUniformLocation(program, "u_capture"), (float)capture[0], (float)capture[1],
 		(float)capture[2], (float)capture[3]);
 	glUniform2f(glGetUniformLocation(program, "u_capture_texture"),
 		(float)layer_capture_width, (float)layer_capture_height);
-	glUniform4f(glGetUniformLocation(program, "u_region"), (float)dst->x, (float)dst->y,
-		(float)dst->width, (float)dst->height);
+	glUniform4f(glGetUniformLocation(program, "u_region"), (float)box[0], (float)box[1],
+		(float)box[2], (float)box[3]);
 	float tex_w = (float)texture->width, tex_h = (float)texture->height;
 	bool has_src = src_box && src_box->width > 0 && src_box->height > 0 && tex_w > 0 && tex_h > 0;
 	glUniform4f(glGetUniformLocation(program, "u_mask_rect"),
@@ -1397,8 +1438,7 @@ static void draw_layer_backdrop(struct layer_effect *effect, struct wlr_texture 
 		has_src ? (float)src_box->width / tex_w : 1.f, has_src ? (float)src_box->height / tex_h : 1.f);
 	glUniform1f(glGetUniformLocation(program, "u_scale"), scale);
 	glUniform1f(glGetUniformLocation(program, "u_time"), time);
-	glUniform2f(glGetUniformLocation(program, "u_size"), (float)dst->width / scale,
-		(float)dst->height / scale);
+	glUniform2f(glGetUniformLocation(program, "u_size"), (float)logical_w, (float)logical_h);
 	glUniform1f(glGetUniformLocation(program, "u_blur"), effect->desc.blur);
 	glUniform1f(glGetUniformLocation(program, "u_saturation"), effect->desc.saturation);
 	glUniform4fv(glGetUniformLocation(program, "u_tint"), 1, effect->desc.tint);
@@ -1417,24 +1457,19 @@ static void draw_layer_backdrop(struct layer_effect *effect, struct wlr_texture 
 	glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_2D, layer_capture_texture);
 
-	if (!plugin_fullscreen_vbo) {
-		static const float verts[] = {-1.f,-1.f, 3.f,-1.f, -1.f,3.f};
-		glGenBuffers(1, &plugin_fullscreen_vbo);
-		glBindBuffer(GL_ARRAY_BUFFER, plugin_fullscreen_vbo);
-		glBufferData(GL_ARRAY_BUFFER, sizeof(verts), verts, GL_STATIC_DRAW);
-	}
+	static const GLfloat locals[] = { 0, 0, 1, 0, 0, 1, 1, 1 };
 	glDisable(GL_DEPTH_TEST);
+	glDisable(GL_SCISSOR_TEST);
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-	glEnable(GL_SCISSOR_TEST);
-	GLint viewport[4];
-	glGetIntegerv(GL_VIEWPORT, viewport);
-	glScissor(viewport[0] + dst->x, viewport[1] + dst->y, dst->width, dst->height);
-	glBindBuffer(GL_ARRAY_BUFFER, plugin_fullscreen_vbo);
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
+	glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, 0, quad->clip);
+	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 0, locals);
 	glEnableVertexAttribArray(0);
-	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void *)0);
-	glDrawArrays(GL_TRIANGLES, 0, 3);
+	glEnableVertexAttribArray(1);
+	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 	glDisableVertexAttribArray(0);
+	glDisableVertexAttribArray(1);
 	if (effect->uses_time) layer_effects_animating = true;
 
 restore:
@@ -1445,7 +1480,6 @@ restore:
 	glActiveTexture((GLenum)old_active);
 	glBindBuffer(GL_ARRAY_BUFFER, (GLuint)old_buffer);
 	glUseProgram((GLuint)old_program);
-	glScissor(old_scissor[0], old_scissor[1], old_scissor[2], old_scissor[3]);
 	if (scissor) glEnable(GL_SCISSOR_TEST); else glDisable(GL_SCISSOR_TEST);
 	glBlendFuncSeparate((GLenum)blend_src_rgb, (GLenum)blend_dst_rgb,
 		(GLenum)blend_src_alpha, (GLenum)blend_dst_alpha);
@@ -1586,6 +1620,27 @@ static bool layer_plane_unproject(const struct layer_plane *pl, double sx, doubl
 	return true;
 }
 
+/* A buffer at (x, y, w, h) in output logical px, projected onto the plane,
+ * as a quad in a viewport of vw x vh buffer px. */
+static bool layer_quad_from_plane(struct layer_quad *q, const struct layer_plane *pl,
+		double x, double y, double w, double h, float scale, int vw, int vh) {
+	const double corners[4][2] = { { x, y }, { x + w, y }, { x, y + h }, { x + w, y + h } };
+	double xs[4], ys[4];
+	for (int i = 0; i < 4; i++) {
+		double sx, sy, cw;
+		if (!layer_plane_project(pl, corners[i][0], corners[i][1], &sx, &sy, &cw)) return false;
+		xs[i] = sx * scale;
+		ys[i] = sy * scale;
+		/* Buffer px, top-down, to NDC, scaled by w for perspective. */
+		q->clip[i * 4 + 0] = (GLfloat)((2.0 * xs[i] / vw - 1.0) * cw);
+		q->clip[i * 4 + 1] = (GLfloat)((2.0 * ys[i] / vh - 1.0) * cw);
+		q->clip[i * 4 + 2] = 0.f;
+		q->clip[i * 4 + 3] = (GLfloat)cw;
+	}
+	layer_quad_finish_box(q, xs, ys);
+	return true;
+}
+
 static GLuint layer_transform_get_program(bool external) {
 	int v = external ? 1 : 0;
 	if (layer_transform_program[v] || layer_transform_failed[v]) return layer_transform_program[v];
@@ -1653,22 +1708,9 @@ static void draw_transformed_buffer(const struct layer_plane *pl, struct wlr_tex
 	float u0 = has_src ? (float)(src->x / tw) : 0.f, v0 = has_src ? (float)(src->y / th) : 0.f;
 	float u1 = has_src ? (float)((src->x + src->width) / tw) : 1.f;
 	float v1 = has_src ? (float)((src->y + src->height) / th) : 1.f;
-	const double corners[4][2] = { { dx, dy }, { dx + dw, dy }, { dx, dy + dh }, { dx + dw, dy + dh } };
-	const float uvs[4][2] = { { u0, v0 }, { u1, v0 }, { u0, v1 }, { u1, v1 } };
-	GLfloat clip[16], uv[8];
-	for (int i = 0; i < 4; i++) {
-		double sx, sy, w;
-		if (!layer_plane_project(pl, corners[i][0], corners[i][1], &sx, &sy, &w)) return;
-		/* Buffer px, top-down, to NDC, then scale by w for perspective. */
-		double nx = 2.0 * sx * scale / viewport[2] - 1.0;
-		double ny = 2.0 * sy * scale / viewport[3] - 1.0;
-		clip[i * 4 + 0] = (GLfloat)(nx * w);
-		clip[i * 4 + 1] = (GLfloat)(ny * w);
-		clip[i * 4 + 2] = 0.f;
-		clip[i * 4 + 3] = (GLfloat)w;
-		uv[i * 2 + 0] = uvs[i][0];
-		uv[i * 2 + 1] = uvs[i][1];
-	}
+	struct layer_quad quad;
+	if (!layer_quad_from_plane(&quad, pl, dx, dy, dw, dh, scale, viewport[2], viewport[3])) return;
+	const GLfloat uv[8] = { u0, v0, u1, v0, u0, v1, u1, v1 };
 
 	GLint old_program = 0, old_buffer = 0, old_active = 0, old_texture = 0;
 	GLint blend_src_rgb = 0, blend_dst_rgb = 0, blend_src_alpha = 0, blend_dst_alpha = 0;
@@ -1695,7 +1737,7 @@ static void draw_transformed_buffer(const struct layer_plane *pl, struct wlr_tex
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
-	glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, 0, clip);
+	glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, 0, quad.clip);
 	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 0, uv);
 	glEnableVertexAttribArray(0);
 	glEnableVertexAttribArray(1);
@@ -1733,34 +1775,42 @@ static bool layer_plane_for(struct shady_server *server, struct shady_layer_surf
 	return true;
 }
 
-bool shady_render_layer_transform_pick(struct shady_server *server, double lx, double ly,
+int shady_render_layer_pick(struct shady_server *server, double lx, double ly,
 		struct wlr_surface **surface, double *sx, double *sy) {
 	struct shady_desktop_state *desktop = shady_desktop_state(server);
-	if (!desktop || !server->config.spatial_mode || desktop->session_locked) return false;
-	/* Topmost first: overlay down to background, newest first. */
+	if (!desktop || !server->config.spatial_mode || desktop->session_locked) return -1;
+	/* The reverse of the drawing order: overlay down to background, and
+	 * newest first within a layer (the list's head). */
 	for (int z = ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY; z >= ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND; z--) {
 		struct shady_layer_surface *layer;
 		wl_list_for_each(layer, &desktop->layer_surfaces, link) {
 			struct wlr_layer_surface_v1 *ls = layer->layer_surface;
-			if ((int)ls->current.layer != z || !ls->output) continue;
-			struct layer_transform *t = layer_transform_for(ls->namespace);
-			struct layer_plane pl;
-			if (!t || !layer_plane_for(server, layer, t, ls->output, &pl)) continue;
-			struct wlr_box out_box;
-			wlr_output_layout_get_box(server->output_layout, ls->output, &out_box);
-			double x, y;
-			if (!layer_plane_unproject(&pl, lx - out_box.x, ly - out_box.y, &x, &y)) continue;
+			if ((int)ls->current.layer != z || !ls->surface->mapped || !ls->output) continue;
 			int nx = 0, ny = 0;
 			wlr_scene_node_coords(&layer->scene_layer->tree->node, &nx, &ny);
-			struct wlr_surface *hit = wlr_layer_surface_v1_surface_at(ls,
-				x - (nx - out_box.x), y - (ny - out_box.y), sx, sy);
+			double x = lx - nx, y = ly - ny;
+			struct layer_transform *t = layer_transform_for(ls->namespace);
+			if (t) {
+				struct layer_plane pl;
+				struct wlr_box out_box;
+				wlr_output_layout_get_box(server->output_layout, ls->output, &out_box);
+				double px, py;
+				if (!layer_plane_for(server, layer, t, ls->output, &pl) ||
+						!layer_plane_unproject(&pl, lx - out_box.x, ly - out_box.y, &px, &py))
+					continue;
+				x = px - (nx - out_box.x);
+				y = py - (ny - out_box.y);
+			}
+			/* Subsurfaces only: popups are hit-tested by the caller, as
+			 * they are drawn above every layer and never transformed. */
+			struct wlr_surface *hit = wlr_surface_surface_at(ls->surface, x, y, sx, sy);
 			if (hit) {
 				*surface = hit;
-				return true;
+				return 1;
 			}
 		}
 	}
-	return false;
+	return 0;
 }
 
 bool shady_render_layer_is_transformed(struct shady_server *server, struct wlr_surface *surface) {
@@ -1804,11 +1854,21 @@ static void render_scene_overlay_buffer(struct wlr_scene_buffer *buffer,
 		return;
 	}
 
+	float seconds = (float)(ctx->now.tv_sec % 3600) + (float)ctx->now.tv_nsec * 1e-9f;
+	GLint viewport[4];
 	if (ctx->plane) {
-		if (plugin_make_current())
+		if (plugin_make_current()) {
+			glGetIntegerv(GL_VIEWPORT, viewport);
+			struct layer_quad quad;
+			if (ctx->effect && viewport[2] > 0 && viewport[3] > 0 &&
+					layer_quad_from_plane(&quad, ctx->plane, (double)sx - ctx->ox,
+						(double)sy - ctx->oy, width, height, ctx->scale, viewport[2], viewport[3]))
+				draw_layer_backdrop(ctx->effect, texture, &buffer->src_box, &quad,
+					width, height, ctx->scale, seconds);
 			draw_transformed_buffer(ctx->plane, texture, &buffer->src_box,
 				(double)sx - ctx->ox, (double)sy - ctx->oy, width, height,
 				ctx->scale, buffer->opacity);
+		}
 		wlr_scene_surface_send_frame_done(scene_surface, &ctx->now);
 		return;
 	}
@@ -1828,9 +1888,13 @@ static void render_scene_overlay_buffer(struct wlr_scene_buffer *buffer,
 		.filter_mode = buffer->filter_mode,
 	};
 	if (ctx->effect && plugin_make_current()) {
-		float seconds = (float)(ctx->now.tv_sec % 3600) + (float)ctx->now.tv_nsec * 1e-9f;
-		draw_layer_backdrop(ctx->effect, texture, &buffer->src_box, &options.dst_box,
-			ctx->scale, seconds);
+		glGetIntegerv(GL_VIEWPORT, viewport);
+		if (viewport[2] > 0 && viewport[3] > 0) {
+			struct layer_quad quad;
+			layer_quad_from_rect(&quad, &options.dst_box, viewport[2], viewport[3]);
+			draw_layer_backdrop(ctx->effect, texture, &buffer->src_box, &quad,
+				width, height, ctx->scale, seconds);
+		}
 	}
 	wlr_render_pass_add_texture(ctx->pass, &options);
 	wlr_scene_surface_send_frame_done(scene_surface, &ctx->now);
@@ -1977,8 +2041,7 @@ static void render_spatial_overlays(struct shady_server *server,
 		struct layer_plane plane;
 		ctx.plane = transform && layer_plane_for(server, layer, transform, output, &plane)
 			? &plane : NULL;
-		/* Backdrop effects work on the untransformed rectangle only. */
-		ctx.effect = ctx.plane ? NULL : layer_effect_for(layer->layer_surface->namespace);
+		ctx.effect = layer_effect_for(layer->layer_surface->namespace);
 		wlr_scene_node_for_each_buffer(&layer->scene_layer->tree->node,
 			render_scene_overlay_buffer, &ctx);
 		ctx.effect = NULL;

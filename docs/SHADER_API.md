@@ -258,12 +258,12 @@ Available without declaring them:
 | Name | |
 |---|---|
 | `vec4 scene(vec2 pixel)` | the output under the surface at a buffer pixel (clamped to the captured area) |
-| `vec2 local()` | 0..1 across the surface buffer, y down |
+| `vec2 local()` | 0..1 across the surface buffer, y down (following the surface when it is placed in 3D) |
 | `float mask()` | the surface's alpha here |
 | `u_time` | seconds; a shader that uses it is redrawn every frame |
 | `u_size` | the surface in logical px |
 | `u_scale` | output scale |
-| `u_region`, `u_capture` | the surface and the captured area in buffer px |
+| `u_region`, `u_capture` | the surface's bounding box on screen and the captured area, in buffer px |
 
 The built-in frosted glass is the same kind of shader with `u_blur`,
 `u_saturation` and `u_tint`. Pixel coordinates are the output buffer's,

@@ -29,6 +29,7 @@
 #include "module/module.h"
 #include "modules/desktop/ime.h"
 #include "modules/desktop/state.h"
+#include <wlr/types/wlr_layer_shell_v1.h>
 #include "render/render.h"
 
 void reset_cursor_mode(struct shady_server *server) {
@@ -156,16 +157,27 @@ static struct shady_toplevel *desktop_toplevel_at(struct shady_server *server,
 static bool overlay_surface_at(struct shady_server *server,
 		double lx, double ly, struct wlr_surface **surface, double *sx, double *sy) {
 	if (!server->overlay_tree) return false;
-	/* Layer surfaces placed in 3D take input where they are drawn, not at
-	 * their untransformed scene position. */
-	if (shady_render_layer_transform_pick(server, lx, ly, surface, sx, sy)) return true;
+	struct wlr_surface *scene_hit = NULL;
 	struct wlr_scene_node *node = wlr_scene_node_at(&server->overlay_tree->node,
 		lx, ly, sx, sy);
-	if (!node || node->type != WLR_SCENE_NODE_BUFFER) return false;
-	struct wlr_scene_buffer *buffer = wlr_scene_buffer_from_node(node);
-	struct wlr_scene_surface *scene_surface = wlr_scene_surface_try_from_buffer(buffer);
-	if (!scene_surface || shady_render_layer_is_transformed(server, scene_surface->surface)) return false;
-	*surface = scene_surface->surface;
+	if (node && node->type == WLR_SCENE_NODE_BUFFER) {
+		struct wlr_scene_surface *scene_surface =
+			wlr_scene_surface_try_from_buffer(wlr_scene_buffer_from_node(node));
+		if (scene_surface) scene_hit = scene_surface->surface;
+	}
+	/* Popups and other non-layer overlay content are drawn above every
+	 * layer surface, so they win outright. */
+	if (scene_hit && !wlr_layer_surface_v1_try_from_wlr_surface(
+			wlr_surface_get_root_surface(scene_hit))) {
+		*surface = scene_hit;
+		return true;
+	}
+	/* The spatial renderer may draw layer surfaces in 3D: hit-test them all
+	 * in stacking order where they are drawn. */
+	int picked = shady_render_layer_pick(server, lx, ly, surface, sx, sy);
+	if (picked >= 0) return picked == 1;
+	if (!scene_hit) return false;
+	*surface = scene_hit;
 	return true;
 }
 
