@@ -118,8 +118,6 @@ if os.getenv("SHADY_NEON_CLOSE_STYLE") == "burn" then
         (root .. "/build/libshady-plugin-close-burn.so"))
 end
 
-shady.plugins.load("black-hole")
-
 shady.bind("quit", "Super+Shift+Escape")
 shady.bind("cycle_windows", "Super+Tab")
 shady.bind("close_window", "Super+q")
