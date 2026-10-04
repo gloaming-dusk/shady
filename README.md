@@ -17,6 +17,8 @@ The project is intentionally experimental. The imported TinyWL example is CC0; s
 - [Headless / automation API](docs/HEADLESS_API.md)
 - [C plugin API](docs/C_PLUGIN_API.md)
 - [Shader API](docs/SHADER_API.md)
+- [IPC API](docs/IPC_API.md)
+- [Shell design](docs/SHELL_DESIGN.md)
 
 ## Website
 
@@ -54,6 +56,7 @@ production output in `website/dist/`.
 - Orbit camera with 3D ray-picking
 - Animated crumple-style window closing
 - **Lua 5.4 scripting** for bootstrap configuration, key bindings, runtime events and automation
+- **IPC socket** with JSON lines and the `shadyctl` CLI for shells, bars and scripts: query windows and workspaces, send commands, press plugin shortcuts and subscribe to events
 - Headless UI automation plus ASan/UBSan daily-driver and spatial regression suites
 - Window recovery tools and automatic respawn when a cube falls out of the world
 

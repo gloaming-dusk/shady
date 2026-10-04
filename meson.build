@@ -72,6 +72,8 @@ shady_sources = [
   'src/output_management.c',
   'src/session_lock.c',
   'src/shell_protocol.c',
+  'src/ipc/ipc.c',
+  'src/ipc/json.c',
   shady_shell_server_header,
   shady_shell_protocol_code,
   'src/modules/desktop/module.c',
@@ -293,6 +295,16 @@ executable('shady',
   include_directories: include_directories('src', 'include'),
   dependencies: shady_deps,
   install: true)
+
+executable('shadyctl',
+  ['src/ctl/shadyctl.c', 'src/ipc/json.c'],
+  c_args: ['-D_POSIX_C_SOURCE=200809L'],
+  install: true)
+
+ipc_json_test = executable('ipc-json-test',
+  ['tests/ipc-json.c', 'src/ipc/json.c'],
+  install: false)
+test('ipc-json', ipc_json_test)
 
 install_headers(
   'include/shady/module.h',

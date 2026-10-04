@@ -35,12 +35,14 @@ nix develop -c ninja -C "$BUILD_DIR" \
   libshady-plugin-counter.so \
   libshady-plugin-black-hole.so \
   libshady-plugin-frozen-window.so \
+  shadyctl \
+  ipc-json-test \
   obj-loader-test
 
 export SHADY_FPS_REPRESENTATION_PLUGIN="$ROOT/$BUILD_DIR/libshady-plugin-fps-cube.so"
 
 nix develop -c meson test -C "$BUILD_DIR" \
-  math3d physics-collision motion-plugin obj-loader --print-errorlogs
+  math3d physics-collision motion-plugin obj-loader ipc-json --print-errorlogs
 
 SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
   nix develop -c bash ./tests/headless-spatial-daily.sh
@@ -68,6 +70,9 @@ SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
 
 SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
   nix develop -c bash ./tests/headless-frozen-window.sh
+
+SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
+  nix develop -c bash ./tests/headless-ipc.sh
 
 SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
   nix develop -c bash ./tests/headless-fps-toggle.sh

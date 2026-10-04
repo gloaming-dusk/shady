@@ -4,6 +4,7 @@ Shady exposes these extension surfaces:
 
 - [Lua API](LUA_API.md) — configuration, runtime scripting, events, window/workspace control.
 - [Headless / Automation API](HEADLESS_API.md) — deterministic keyboard, pointer, timer, screenshot, and CI helpers.
+- [IPC API](IPC_API.md) — Unix socket with JSON lines and the `shadyctl` CLI: query state, send commands and subscribe to events from shells, bars and scripts.
 - [C Plugin API](C_PLUGIN_API.md) — native modules, events, window/output access, hot reload, render hooks.
 - [Plugin manager](PLUGIN_MANAGER.md) — loading plugins by name from Lua, search paths, shipped plugins, and runtime state.
 - [Shader API](SHADER_API.md) — standalone shader files, fullscreen passes, and per-window shader replacement.
@@ -12,6 +13,8 @@ Shady exposes these extension surfaces:
 ## Which API should I use?
 
 Use Lua when you are configuring Shady, writing window rules, reacting to compositor events, or scripting behavior without rebuilding a shared library.
+
+Use the IPC API from programs that run outside the compositor: shells, bars, status scripts and anything that wants to react to window or workspace changes in another language.
 
 Use the headless automation API for regression tests. It is part of the Lua runtime but is documented separately because its semantics are test-oriented.
 

@@ -39,6 +39,7 @@
 #include "render/render.h"
 #include "module/module.h"
 #include "config_lua.h"
+#include "ipc/ipc.h"
 
 static void default_config_path(char *buf, size_t size) {
 	const char *xdg = getenv("XDG_CONFIG_HOME");
@@ -348,6 +349,9 @@ int main(int argc, char *argv[]) {
 		return 1;
 	}
 
+	/* Optional: scripts and shells lose IPC, the session keeps running. */
+	shady_ipc_init(&server, socket);
+
 	if (native_mode) {
 		printf("Shady native session is running on WAYLAND_DISPLAY=%s\n", socket);
 	} else {
@@ -377,6 +381,7 @@ int main(int argc, char *argv[]) {
 	shady_modules_start_all(&server);
 	wl_display_run(server.wl_display);
 	shady_modules_stop_all(&server);
+	shady_ipc_finish(&server);
 
 	wl_display_destroy_clients(server.wl_display);
 

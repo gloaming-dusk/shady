@@ -173,6 +173,8 @@ struct shady_server {
 	void *motion_owner;
 	/* Spatial builds only; created and destroyed with the spatial module. */
 	struct shady_environment *environment;
+	/* Compositor IPC socket (src/ipc); NULL when unavailable. */
+	struct shady_ipc *ipc;
 
 };
 
