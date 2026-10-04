@@ -322,10 +322,12 @@ shady.modules({
 
 `shady.config(key, value)` is an alias for `shady.set(key, value)`. `shady.module(name, enabled)` changes one module, while `shady.modules(table)` changes several. These are runtime selections within whatever modules were compiled into the binary.
 
-Native plugins are also loaded from the bootstrap phase:
+Native plugins are loaded from the bootstrap phase through the plugin manager. It resolves a name to `libshady-plugin-<name>.so` on the plugin search path. Shipped plugins (`window-motion`, `obj-loader`) load after `config.lua` unless you disable them. See [docs/PLUGIN_MANAGER.md](docs/PLUGIN_MANAGER.md).
 
 ```lua
-shady.plugin("/absolute/path/to/my-plugin.so")
+shady.plugins.load("water-windows")                 -- by name
+shady.plugins.load("/absolute/path/to/my-plugin.so")  -- or by path
+shady.plugins.disable("obj-loader")                 -- keep a shipped plugin out
 ```
 
 Because plugin loading happens before capability resolution, external plugins participate in the same dependency graph as built-in modules.
@@ -617,15 +619,16 @@ const struct shady_module *shady_plugin_entry_v1(
 
 The host API is object-oriented around opaque `shady_host`, `shady_window`, `shady_output`, `shady_seat`, and `shady_module_handle` values. It exposes object enumeration and queries, focused/visible/maximized/fullscreen window state and actions, named workspace enumeration/switching/window movement, module/window state access for module-owned data, logging, capability checks, config mutation, render scheduling, compositor termination, and event subscriptions for the same event stream used by Lua. Native plugins can also set/query a per-window animated water surface (`window_set_water_effect()` / `window_water_effect()`) and its fragment-surface style (`window_set_water_surface()` / `window_water_surface()`). Per-window borders can be overridden with `window_set_border()`, inspected with `window_border()`, and returned to global config with `window_reset_border()`. The renderer combines mesh waves and UV refraction with deformed-normal Fresnel, specular highlights, cyan tinting, and moving caustics, while handling shader time and demand-driven continuous frames only while the effect is active. Native `.key` hooks can use the stable `SHADY_KEY_*` and `SHADY_MODIFIER_*` constants from `shady/module.h`, so plugins do not need wlroots unstable input headers. `subscribe_event_handle()` returns a `shady_subscription_id` that can be removed with `unsubscribe_event()`. The older boolean `subscribe_event()` remains available as a convenience wrapper.
 
-Plugins never need the private layout of Shady's server/window/output structs. Plugins are loaded from bootstrap Lua with `shady.plugin(path)` and then participate in normal capability resolution, initialization, hooks, events, and reverse-order teardown. `examples/plugins/hello.c` exercises the V1 host/seat/output/module/event APIs. `examples/plugins/counter.c` is a V2 stateful plugin showing module and per-window migration. `examples/plugins/focus_depth.c` demonstrates tick-driven Z animation, `examples/plugins/spatial_overview.c` demonstrates a fully native `Super+O` 3D overview that saves per-window positions, spreads visible windows into a depth grid, lets arrow keys move the selected window, uses Enter to focus/exit, and Escape to cancel/restore, and `examples/plugins/water_windows.c` demonstrates shader-backed liquid window surfaces toggled with `Super+W`, including geometry waves, multi-scale slope-aware refraction, Fresnel edge light, dual-lobe moving specular highlights, cyan water tint, animated caustics, crest/trough shading, and thin-water transmission. `examples/plugins/border_accent.c` demonstrates the border API by toggling a focused window between the configured border and a 7px magenta override with `Super+B`.
+Plugins never need the private layout of Shady's server/window/output structs. Plugins are loaded from bootstrap Lua with `shady.plugins.load(name_or_path)` (or the older `shady.plugin(path)`) and then participate in normal capability resolution, initialization, hooks, events, and reverse-order teardown. `examples/plugins/hello.c` exercises the V1 host/seat/output/module/event APIs. `examples/plugins/counter.c` is a V2 stateful plugin showing module and per-window migration. `examples/plugins/focus_depth.c` demonstrates tick-driven Z animation, `examples/plugins/spatial_overview.c` demonstrates a fully native `Super+O` 3D overview that saves per-window positions, spreads visible windows into a depth grid, lets arrow keys move the selected window, uses Enter to focus/exit, and Escape to cancel/restore, and `examples/plugins/water_windows.c` demonstrates shader-backed liquid window surfaces toggled with `Super+W`, including geometry waves, multi-scale slope-aware refraction, Fresnel edge light, dual-lobe moving specular highlights, cyan water tint, animated caustics, crest/trough shading, and thin-water transmission. `examples/plugins/border_accent.c` demonstrates the border API by toggling a focused window between the configured border and a 7px magenta override with `Super+B`.
 
 ### Hot reload and state migration
 
-Runtime Lua can hot-unload or reload external plugins by module name:
+Runtime Lua can list, hot-unload or reload external plugins:
 
 ```lua
-shady.unload_plugin("hello-plugin")
-shady.reload_plugin("hello-plugin")
+for _, p in ipairs(shady.plugins.list()) do shady.log(p.name .. " " .. p.state) end
+shady.plugins.unload("hello-plugin")
+shady.plugins.reload("hello-plugin")
 ```
 
 Plain hot-**unload** remains intentionally limited to stateless plugins because removing a stateful module leaves nowhere to preserve live state. Hot-**reload** supports stateful plugins through `SHADY_PLUGIN_ABI_V2`.

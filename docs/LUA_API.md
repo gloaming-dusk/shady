@@ -199,15 +199,31 @@ shady.off(id)
 
 ## Plugin lifecycle
 
-### `shady.reload_plugin(name) -> boolean`
+Native plugins are managed through `shady.plugins`. See
+[Plugin manager](PLUGIN_MANAGER.md) for name resolution, search paths, shipped
+plugins and states.
 
-Hot-reload a native plugin by module/plugin name.
+In `config.lua` (bootstrap):
 
-### `shady.unload_plugin(name) -> boolean`
+- `shady.plugins.load(name_or_path)`: load a plugin. Raises on failure.
+- `shady.plugins.path(dir)`: add a search directory.
+- `shady.plugins.enable(name)` / `shady.plugins.disable(name)`: a disabled
+  shipped plugin is never loaded.
+- `shady.plugins.list()`
+- `shady.plugin(path)`: older name for `shady.plugins.load`.
 
-Unload a native plugin when its dependency contract allows it.
+At runtime:
 
-Plugin loading itself is available from configuration via `shady.plugin(path)`.
+- `shady.plugins.list() -> Plugin[]`: entries with `name`, `spec`, `path`,
+  `builtin`, and `state` (`active`, `inactive`, `unloaded`, `disabled`, `failed`).
+- `shady.plugins.reload(name) -> boolean`: hot-reload, with state migration
+  for ABI v2.
+- `shady.plugins.unload(name) -> boolean`: unload when the dependency
+  contract allows it.
+- `shady.reload_plugin(name)` / `shady.unload_plugin(name)`: older names for
+  the two calls above.
+
+`name` may be either the name used to load the plugin or its module name.
 
 ## Spatial API
 

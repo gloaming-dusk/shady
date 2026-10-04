@@ -37,5 +37,7 @@ shady.modules({
 shady.plugin(os.getenv("SHADY_FPS_REPRESENTATION_PLUGIN") or
     (root .. "/build/libshady-plugin-fps-cube.so"))
 
--- External native plugins are loaded before dependency resolution:
--- shady.plugin("/absolute/path/to/my-plugin.so")
+-- External native plugins are loaded before dependency resolution, by name
+-- (libshady-plugin-<name>.so on the plugin search path) or by path:
+-- shady.plugins.load("water-windows")
+-- shady.plugins.load("/absolute/path/to/my-plugin.so")

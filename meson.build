@@ -56,6 +56,8 @@ shady_sources = [
   'src/event/event.c',
   'src/module/builtin.c',
   'src/plugin/plugin.c',
+  'src/plugin/manager.c',
+  'src/plugin/manager_lua.c',
   'src/plugin/host_api.c',
   'src/plugin/motion.c',
   'src/plugin/representation.c',

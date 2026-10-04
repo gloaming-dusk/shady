@@ -95,6 +95,7 @@ static void cleanup_server_after_setup(struct shady_server *server,
 	shady_modules_release_states(server);
 	shady_events_finish(server);
 	shady_modules_close_plugins(server);
+	shady_plugin_manager_finish(server);
 }
 
 int main(int argc, char *argv[]) {
@@ -164,6 +165,7 @@ int main(int argc, char *argv[]) {
 	if (!shady_register_builtin_modules(&server)) {
 		shady_events_finish(&server);
 		shady_modules_close_plugins(&server);
+		shady_plugin_manager_finish(&server);
 		return 1;
 	}
 	char config_buf[4096];
@@ -180,8 +182,6 @@ int main(int argc, char *argv[]) {
 	if (safe_mode) {
 		server.config.spatial_mode = false;
 		shady_modules_set_enabled(&server.modules, "spatial", false);
-		shady_modules_set_enabled(&server.modules, "window-motion", false);
-		shady_modules_set_enabled(&server.modules, "obj-loader", false);
 		shady_modules_set_enabled(&server.modules, "physics", false);
 		shady_modules_set_enabled(&server.modules, "fps", false);
 		shady_modules_set_enabled(&server.modules, "close-animation", false);
@@ -196,6 +196,14 @@ int main(int argc, char *argv[]) {
 		server.config.fps_mode = false;
 		server.config.sky = false;
 		server.config.environment = false;
+		shady_plugin_manager_disable_defaults(&server);
+	}
+	/* Shipped plugins load after config.lua so a disabled one never runs. */
+	if (!shady_plugin_manager_load_defaults(&server)) {
+		shady_events_finish(&server);
+		shady_modules_close_plugins(&server);
+		shady_plugin_manager_finish(&server);
+		return 1;
 	}
 	server.wl_display = wl_display_create();
 	if (!server.wl_display) {
@@ -403,6 +411,7 @@ int main(int argc, char *argv[]) {
 	shady_modules_release_states(&server);
 	shady_events_finish(&server);
 	shady_modules_close_plugins(&server);
+	shady_plugin_manager_finish(&server);
 	shady_titlebar_global_fini();
 	return 0;
 }

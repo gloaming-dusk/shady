@@ -10,7 +10,8 @@
 #include <wlr/util/log.h>
 
 #include "module/module.h"
-#include "plugin/plugin.h"
+#include "plugin/manager.h"
+#include "plugin/manager_lua.h"
 #include "shady.h"
 
 static struct shady_server *config_server;
@@ -49,21 +50,30 @@ static int l_bind(lua_State *L) {
 	return 0;
 }
 
-static int l_module(lua_State *L) {
-	const char *name = luaL_checkstring(L, 1);
-	bool enabled = lua_toboolean(L, 2);
-	if (!shady_modules_set_enabled(&config_server->modules, name, enabled)) {
-		return luaL_error(L, "unknown module: %s", name);
-	}
+/* Default plugins are not loaded yet while config.lua runs, so a module name
+ * the module manager does not know may still be a pending default plugin. */
+static bool set_module_enabled(const char *name, bool enabled) {
+	if (!shady_modules_set_enabled(&config_server->modules, name, enabled) &&
+			!shady_plugin_manager_set_enabled(config_server, name, enabled))
+		return false;
 	if (strcmp(name, "spatial") == 0) {
 		config_server->config.spatial_mode = enabled;
+	}
+	return true;
+}
+
+static int l_module(lua_State *L) {
+	const char *name = luaL_checkstring(L, 1);
+	if (!set_module_enabled(name, lua_toboolean(L, 2))) {
+		return luaL_error(L, "unknown module: %s", name);
 	}
 	return 0;
 }
 
 static int l_has_module(lua_State *L) {
 	const char *name = luaL_checkstring(L, 1);
-	lua_pushboolean(L, shady_modules_has_registered(&config_server->modules, name));
+	lua_pushboolean(L, shady_modules_has_registered(&config_server->modules, name) ||
+		shady_plugin_manager_knows(config_server, name));
 	return 1;
 }
 
@@ -72,21 +82,18 @@ static int l_modules(lua_State *L) {
 	lua_pushnil(L);
 	while (lua_next(L, 1) != 0) {
 		const char *name = luaL_checkstring(L, -2);
-		bool enabled = lua_toboolean(L, -1);
-		if (!shady_modules_set_enabled(&config_server->modules, name, enabled)) {
+		if (!set_module_enabled(name, lua_toboolean(L, -1))) {
 			return luaL_error(L, "unknown module: %s", name);
-		}
-		if (strcmp(name, "spatial") == 0) {
-			config_server->config.spatial_mode = enabled;
 		}
 		lua_pop(L, 1);
 	}
 	return 0;
 }
 
+/* Kept for existing configs; same as shady.plugins.load(). */
 static int l_plugin(lua_State *L) {
 	const char *path = luaL_checkstring(L, 1);
-	if (!shady_plugin_load(config_server, path)) {
+	if (!shady_plugin_manager_load(config_server, path)) {
 		return luaL_error(L, "failed to load plugin: %s", path);
 	}
 	return 0;
@@ -107,6 +114,7 @@ static void install_config_api(lua_State *L) {
 	lua_pushcfunction(L, l_has_module); lua_setfield(L, -2, "has_module");
 	lua_pushcfunction(L, l_plugin); lua_setfield(L, -2, "plugin");
 	lua_pushcfunction(L, l_log); lua_setfield(L, -2, "log");
+	shady_plugin_manager_lua_install(L, config_server, SHADY_PLUGIN_LUA_BOOTSTRAP);
 	lua_setglobal(L, "shady");
 }
 

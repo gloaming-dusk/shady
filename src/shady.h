@@ -10,6 +10,7 @@
 
 #include "experimental/state.h"
 #include "module/module.h"
+#include "plugin/manager.h"
 #include "event/event.h"
 #include <shady/plugin.h>
 #include <shady/motion.h>
@@ -166,6 +167,7 @@ struct shady_server {
 
 	struct shady_config config;
 	struct shady_module_manager modules;
+	struct shady_plugin_manager plugins;
 	struct shady_event_bus events;
 	const struct shady_motion_driver *motion_driver;
 	void *motion_owner;

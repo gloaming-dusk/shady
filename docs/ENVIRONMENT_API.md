@@ -180,16 +180,17 @@ loaders/
    `meson_options.txt`) and a `shared_module('shady-plugin-<format>-loader', …)`
    installed to `libdir/shady/plugins`. Also add it to `link_depends` of the
    `shady` executable and pass `-DSHADY_HAS_<FORMAT>_LOADER`.
-3. In `src/module/builtin.c`, call
-   `register_shipped_plugin(server, "libshady-plugin-<format>-loader.so")`
-   under that define, and disable the module in safe mode (`src/main.c`).
+3. In `src/module/builtin.c`, add
+   `shady_plugin_manager_add_default(server, "<format>-loader")` under that
+   define. The plugin manager loads it after `config.lua` and keeps it out in
+   safe mode. See [Plugin manager](PLUGIN_MANAGER.md).
 4. Add a contract test like `tests/obj-loader.c`. It dlopens the plugin
    against a fake host table and checks the scenes it returns.
 
 Third-party loaders don't need any of this. They load like any other plugin:
 
 ```lua
-shady.plugin("/path/to/libmy-gltf-loader.so")
+shady.plugins.load("my-gltf-loader")      -- libshady-plugin-my-gltf-loader.so on the search path
 shady.set("environment_path", "/path/to/scene.glb")
 ```
 
@@ -197,9 +198,8 @@ shady.set("environment_path", "/path/to/scene.glb")
 
 `loaders/obj/obj_loader.c` builds `libshady-plugin-obj-loader.so` (module
 `obj-loader`, provides `environment-loader.obj`). With
-`-Dobj_loader=enabled`, the default, startup loads it before the bootstrap
-config. The build-tree executable finds it next to itself; installed builds
-look in `libdir/shady/plugins`.
+`-Dobj_loader=enabled`, the default, the plugin manager loads it after
+`config.lua`. Use `shady.plugins.disable("obj-loader")` to keep it out.
 
 Supported OBJ input:
 

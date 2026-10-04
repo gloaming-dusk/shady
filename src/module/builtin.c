@@ -1,10 +1,7 @@
 #include "module.h"
 
 #include "../shady.h"
-#include "../plugin/plugin.h"
-#include <stdio.h>
-#include <string.h>
-#include <unistd.h>
+#include "../plugin/manager.h"
 
 #if SHADY_HAS_SPATIAL
 const struct shady_module *shady_spatial_module(void);
@@ -27,26 +24,6 @@ const struct shady_module *shady_lua_module(void);
 const struct shady_module *shady_desktop_protocols_module(void);
 const struct shady_module *shady_workspace_module(void);
 
-#if SHADY_HAS_WINDOW_MOTION || SHADY_HAS_OBJ_LOADER
-/* Load a plugin shipped with Shady. The build-tree executable finds it beside
- * itself; installed executables use the configured plugin directory. */
-static bool register_shipped_plugin(struct shady_server *server, const char *file) {
-	char path[4096];
-	ssize_t n = readlink("/proc/self/exe", path, sizeof(path) - 1);
-	if (n > 0 && (size_t)n < sizeof(path) - 1) {
-		path[n] = '\0';
-		char *slash = strrchr(path, '/');
-		if (slash && (size_t)(slash - path) + 1 + strlen(file) < sizeof(path)) {
-			strcpy(slash + 1, file);
-			if (access(path, R_OK) == 0) return shady_plugin_load(server, path);
-		}
-	}
-	char installed[4096];
-	snprintf(installed, sizeof(installed), "%s/%s", SHADY_PLUGIN_DIR, file);
-	return shady_plugin_load(server, installed);
-}
-#endif
-
 bool shady_register_builtin_modules(struct shady_server *server) {
 #if SHADY_HAS_LUA
 	shady_modules_register(&server->modules, shady_lua_module());
@@ -56,11 +33,13 @@ bool shady_register_builtin_modules(struct shady_server *server) {
 #if SHADY_HAS_SPATIAL
 	shady_modules_register(&server->modules, shady_spatial_module());
 #endif
+	/* Plugins shipped with Shady. The plugin manager loads them after
+	 * config.lua unless the config disabled them; see src/plugin/manager.c. */
 #if SHADY_HAS_WINDOW_MOTION
-	if (!register_shipped_plugin(server, "libshady-plugin-window-motion.so")) return false;
+	if (!shady_plugin_manager_add_default(server, "window-motion")) return false;
 #endif
 #if SHADY_HAS_OBJ_LOADER
-	if (!register_shipped_plugin(server, "libshady-plugin-obj-loader.so")) return false;
+	if (!shady_plugin_manager_add_default(server, "obj-loader")) return false;
 #endif
 #if SHADY_HAS_PHYSICS
 	shady_modules_register(&server->modules, shady_physics_module());

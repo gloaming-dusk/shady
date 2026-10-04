@@ -1,10 +1,11 @@
 # Shady API Documentation
 
-Shady exposes five extension surfaces:
+Shady exposes these extension surfaces:
 
 - [Lua API](LUA_API.md) — configuration, runtime scripting, events, window/workspace control.
 - [Headless / Automation API](HEADLESS_API.md) — deterministic keyboard, pointer, timer, screenshot, and CI helpers.
 - [C Plugin API](C_PLUGIN_API.md) — native modules, events, window/output access, hot reload, render hooks.
+- [Plugin manager](PLUGIN_MANAGER.md) — loading plugins by name from Lua, search paths, shipped plugins, and runtime state.
 - [Shader API](SHADER_API.md) — standalone shader files, fullscreen passes, and per-window shader replacement.
 - [Environment API](ENVIRONMENT_API.md) — static 3D environments and pluggable asset loaders (OBJ today, glTF and others as plugins).
 

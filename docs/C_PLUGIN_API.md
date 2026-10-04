@@ -8,7 +8,10 @@ Public plugin headers:
 #include <shady/module.h>
 ```
 
-Plugins are shared libraries loaded at runtime.
+Plugins are shared libraries loaded at runtime. Name the built file
+`libshady-plugin-<name>.so` so users can load it by name with
+`shady.plugins.load("<name>")` from any directory on the plugin search path
+(see [Plugin manager](PLUGIN_MANAGER.md)).
 
 ## ABI entry points
 

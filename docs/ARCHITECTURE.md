@@ -9,6 +9,10 @@ use published visual data rather than interpreting a plugin's state layout.
 
 The implementation is split by responsibility:
 
+- `src/plugin/manager.c`: the user-facing layer. It resolves names through
+  search paths, keeps a record per requested plugin, and loads shipped default
+  plugins after `config.lua`. `manager_lua.c` exposes it as `shady.plugins` to
+  both Lua states. See [Plugin manager](PLUGIN_MANAGER.md).
 - `src/plugin/plugin.c`: shared-object loading, contract checks, snapshots,
   migration, reload rollback, and deferred lifecycle actions.
 - `src/plugin/host_api.c`: opaque-object access and the backwards-compatible
@@ -79,11 +83,12 @@ publish visual data. Commands validate window handles and reject non-finite
 numbers. Detach clears the published state, and loader cleanup removes the
 driver before `dlclose`.
 
-With `-Dwindow_motion=enabled`, startup registers the shipped plugin before
-bootstrap configuration, preserving `shady.module("window-motion", ...)` and
-capability dependency resolution. The build-tree executable looks for its
-plugin beside the executable; installed executables use the configured
-`libdir/shady/plugins`. Ninja builds the plugin when building `shady`.
+With `-Dwindow_motion=enabled`, the plugin manager loads the shipped plugin
+after `config.lua`, unless the config disabled it. In that case it is never
+loaded. `shady.module("window-motion", ...)` keeps working, and capability
+resolution is unchanged. The plugin is found through the manager's search path:
+the executable's directory in the build tree, and `libdir/shady/plugins` once
+installed. Ninja builds the plugin when building `shady`.
 `-Dwindow_motion=disabled` omits the shipped plugin. The small core adapters
 remain available and behave neutrally without a driver, so a separately loaded
 plugin can still provide motion through the public feature API.
@@ -114,9 +119,9 @@ plugin's loaders and clears a scene that plugin owns. The visual mesh is never
 used as collision.
 
 The OBJ parser lives in `loaders/obj/obj_loader.c` and uses only public headers.
-With `-Dobj_loader=enabled`, startup registers the shipped
-`libshady-plugin-obj-loader.so` before the bootstrap config, the same way as
-window motion. Further formats (glTF, ...) go in `loaders/<format>/`. See
+With `-Dobj_loader=enabled`, the plugin manager loads the shipped
+`libshady-plugin-obj-loader.so` as a default plugin, the same way as window
+motion. Further formats (glTF, ...) go in `loaders/<format>/`. See
 [Environment API](ENVIRONMENT_API.md).
 
 ## Initialization and validation
