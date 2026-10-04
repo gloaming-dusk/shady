@@ -207,6 +207,7 @@ Event names currently include:
 - `window.resized`
 - `window.destroyed`
 - `window.state_changed`
+- `window.title_changed` (title or app_id)
 - `output.added`
 - `output.removed`
 - `module.started`

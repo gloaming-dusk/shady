@@ -495,8 +495,17 @@ static void xdg_toplevel_set_title(struct wl_listener *listener, void *data) {
 	(void)data;
 	struct shady_toplevel *toplevel = wl_container_of(listener, toplevel, set_title);
 	shady_titlebar_refresh(toplevel);
+	if (toplevel->mapped)
+		shady_event_emit_window(toplevel->server, SHADY_EVENT_WINDOW_TITLE_CHANGED, toplevel);
 	if (toplevel->server->renderer)
 		shady_render_schedule_all_outputs(toplevel->server);
+}
+
+static void xdg_toplevel_set_app_id(struct wl_listener *listener, void *data) {
+	(void)data;
+	struct shady_toplevel *toplevel = wl_container_of(listener, toplevel, set_app_id);
+	if (toplevel->mapped)
+		shady_event_emit_window(toplevel->server, SHADY_EVENT_WINDOW_TITLE_CHANGED, toplevel);
 }
 
 static void xdg_toplevel_destroy(struct wl_listener *listener, void *data) {
@@ -530,6 +539,7 @@ static void xdg_toplevel_destroy(struct wl_listener *listener, void *data) {
 	wl_list_remove(&toplevel->unmap.link);
 	wl_list_remove(&toplevel->commit.link);
 	wl_list_remove(&toplevel->set_title.link);
+	wl_list_remove(&toplevel->set_app_id.link);
 	wl_list_remove(&toplevel->destroy.link);
 	wl_list_remove(&toplevel->request_move.link);
 	wl_list_remove(&toplevel->request_resize.link);
@@ -613,6 +623,8 @@ void server_new_xdg_toplevel(struct wl_listener *listener, void *data) {
 	wl_signal_add(&xdg_toplevel->base->surface->events.commit, &toplevel->commit);
 	toplevel->set_title.notify = xdg_toplevel_set_title;
 	wl_signal_add(&xdg_toplevel->events.set_title, &toplevel->set_title);
+	toplevel->set_app_id.notify = xdg_toplevel_set_app_id;
+	wl_signal_add(&xdg_toplevel->events.set_app_id, &toplevel->set_app_id);
 
 	toplevel->destroy.notify = xdg_toplevel_destroy;
 	wl_signal_add(&xdg_toplevel->events.destroy, &toplevel->destroy);

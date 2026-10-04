@@ -214,6 +214,8 @@ fills), `SHADY_SHELL_SURFACE`, `SHADY_SHELL_TEXT`, `SHADY_SHELL_TEXT_DIM` and
 
 The protocol source lives in `protocols/shady-shell-v1.xml`. Version 1 remains the small workspace/focused-window surface; version 2 adds stable shell window IDs, mapped-window snapshots/updates, and activate/close requests used by the taskbar. Version 3 adds window state updates plus maximize, fullscreen, and move-to-workspace actions used by the task context menu. Version 4 adds shell session actions for cycling windows and terminating the compositor, used by Quick Settings. Launcher state, notifications, network/audio backends, and other shell policy remain outside the compositor core.
 
+Other bars and shells (waybar, Quickshell, eww, ...) see the same state through standard protocols: `wlr-foreign-toplevel-management-unstable-v1` for task lists (titles, app ids, activated/maximized/fullscreen state, and activate/close/maximize/fullscreen requests), `ext-foreign-toplevel-list-v1` for the read-only window list, and `ext-workspace-v1` for workspaces and switching. Shady has no minimized state, so minimize requests are ignored, and workspaces are created by Shady itself, so clients can activate them but not create, assign or remove them.
+
 Safe mode renders the wlroots scene graph directly and uses normal scene-graph
 pointer hit testing. It is the compatibility baseline for work toward a daily-driver compositor.
 
@@ -399,7 +401,7 @@ end)
 shady.off(token)
 ```
 
-Current event names are `window.created`, `window.mapped`, `window.unmapped`, `window.focused`, `window.resized`, `window.state_changed`, `window.destroyed`, `output.added`, `output.removed`, `workspace.changed`, `module.started`, and `module.stopped`. Window lifecycle ordering is `created -> mapped -> focused` and shutdown normally follows `unmapped -> destroyed`.
+Current event names are `window.created`, `window.mapped`, `window.unmapped`, `window.focused`, `window.resized`, `window.state_changed`, `window.title_changed` (title or app_id), `window.destroyed`, `output.added`, `output.removed`, `workspace.changed`, `module.started`, and `module.stopped`. Window lifecycle ordering is `created -> mapped -> focused` and shutdown normally follows `unmapped -> destroyed`.
 
 Window callbacks receive `Window` userdata rather than plain tables. Properties include `title`, `app_id`, `mapped`, `x`, `y`, `width`, `height`, `visible`, `workspace`, `maximized`, `fullscreen`, and spatial `z`. Methods include `window:focus()`, `window:close()`, `window:maximize([enabled])`, `window:set_fullscreen([enabled])`, and `window:move_to_workspace(name)`. Handles validate liveness before dereferencing so stale Lua references degrade to `nil`/`false` instead of touching freed compositor state.
 

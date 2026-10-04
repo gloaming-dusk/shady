@@ -13,6 +13,7 @@ const char *shady_event_name(enum shady_event_type type) {
 	case SHADY_EVENT_WINDOW_FOCUSED: return "window.focused";
 	case SHADY_EVENT_WINDOW_RESIZED: return "window.resized";
 	case SHADY_EVENT_WINDOW_STATE_CHANGED: return "window.state_changed";
+	case SHADY_EVENT_WINDOW_TITLE_CHANGED: return "window.title_changed";
 	case SHADY_EVENT_WINDOW_DESTROYED: return "window.destroyed";
 	case SHADY_EVENT_OUTPUT_ADDED: return "output.added";
 	case SHADY_EVENT_OUTPUT_REMOVED: return "output.removed";

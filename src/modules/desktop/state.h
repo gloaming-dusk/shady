@@ -28,12 +28,14 @@ struct wlr_scene_tree;
 
 struct shady_server;
 struct shady_shell_protocol_state;
+struct shady_standard_protocols;
 struct shady_ime_state;
 
 struct shady_desktop_state {
 	struct shady_server *server;
 	struct wlr_layer_shell_v1 *layer_shell;
 	struct shady_shell_protocol_state *shell_protocol;
+	struct shady_standard_protocols *standard_protocols;
 	struct wl_listener new_layer_surface;
 	struct wl_list layer_surfaces;
 	struct wl_listener output_layout_change;

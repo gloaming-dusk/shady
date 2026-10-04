@@ -22,6 +22,7 @@
 
 #include "../../shady.h"
 #include "../../shell_protocol.h"
+#include "../../standard_protocols.h"
 #include "ime.h"
 #include "state.h"
 
@@ -132,6 +133,7 @@ static bool desktop_protocols_init(struct shady_server *server) {
 	state->output_layout_change.notify = output_layout_change;
 	wl_signal_add(&server->output_layout->events.change, &state->output_layout_change);
 	if (!shady_shell_protocol_init(server)) goto fail;
+	if (!shady_standard_protocols_init(server)) goto fail;
 
 	state->relative_pointer_manager =
 		wlr_relative_pointer_manager_v1_create(server->wl_display);
@@ -209,6 +211,7 @@ fail:
 static void desktop_protocols_destroy(struct shady_server *server) {
 	struct shady_desktop_state *state = shady_desktop_state(server);
 	shady_ime_finish(server);
+	shady_standard_protocols_finish(server);
 	shady_shell_protocol_finish(server);
 	if (state->cursor_shape_request.link.prev)
 		wl_list_remove(&state->cursor_shape_request.link);

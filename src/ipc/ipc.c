@@ -194,6 +194,7 @@ static void on_event(shady_host host, const struct shady_event *event, void *use
 	case SHADY_EVENT_WINDOW_FOCUSED:
 	case SHADY_EVENT_WINDOW_RESIZED:
 	case SHADY_EVENT_WINDOW_STATE_CHANGED:
+	case SHADY_EVENT_WINDOW_TITLE_CHANGED:
 	case SHADY_EVENT_WINDOW_DESTROYED:
 		window = (struct shady_toplevel *)event->object.window;
 		break;

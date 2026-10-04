@@ -1,5 +1,6 @@
 #define _POSIX_C_SOURCE 200809L
 #include <fcntl.h>
+#include <poll.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -321,7 +322,27 @@ int main(void) {
 	xdg_toplevel_set_max_size(p.toplevel, WIDTH, HEIGHT);
 	wl_surface_commit(p.surface);
 
-	while (wl_display_dispatch(p.display) != -1) {}
+	/* SHADY_AUTOMATION_PROBE_RETITLE="title" renames the window after
+	 * SHADY_AUTOMATION_PROBE_RETITLE_MS (default 1000) milliseconds. */
+	const char *retitle = getenv("SHADY_AUTOMATION_PROBE_RETITLE");
+	const char *retitle_ms = getenv("SHADY_AUTOMATION_PROBE_RETITLE_MS");
+	int timeout = retitle && *retitle ? (retitle_ms ? atoi(retitle_ms) : 1000) : -1;
+	int fd = wl_display_get_fd(p.display);
+	for (;;) {
+		while (wl_display_prepare_read(p.display) != 0) wl_display_dispatch_pending(p.display);
+		wl_display_flush(p.display);
+		struct pollfd pfd = { .fd = fd, .events = POLLIN };
+		int ready = poll(&pfd, 1, timeout);
+		if (ready <= 0) {
+			wl_display_cancel_read(p.display);
+			if (ready < 0) break;
+			xdg_toplevel_set_title(p.toplevel, retitle);
+			timeout = -1;
+			continue;
+		}
+		if (wl_display_read_events(p.display) < 0 || wl_display_dispatch_pending(p.display) < 0)
+			break;
+	}
 	for (size_t i = 0; i < p.buffer_count; i++) wl_buffer_destroy(p.buffers[i]);
 	return 0;
 }

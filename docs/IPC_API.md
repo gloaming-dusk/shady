@@ -112,7 +112,7 @@ lines with an `event` field, interleaved with responses:
 
 Event names are the ones `shady.on` uses: `window.created`,
 `window.mapped`, `window.unmapped`, `window.focused`, `window.resized`,
-`window.state_changed`, `window.destroyed`, `output.added`,
+`window.state_changed`, `window.title_changed`, `window.destroyed`, `output.added`,
 `output.removed`, `workspace.changed`, `module.started`, `module.stopped`.
 `window.unmapped` and `window.destroyed` carry only the window `id`.
 

@@ -258,6 +258,7 @@ static void protocol_event(shady_host host,
         case SHADY_EVENT_WINDOW_FOCUSED:
         case SHADY_EVENT_WINDOW_RESIZED:
         case SHADY_EVENT_WINDOW_STATE_CHANGED:
+        case SHADY_EVENT_WINDOW_TITLE_CHANGED:
             send_focused(client->resource, state);
             send_window(client->resource, state,
                 (struct shady_toplevel *)event->object.window);
@@ -304,6 +305,8 @@ bool shady_shell_protocol_init(struct shady_server *server) {
         !shady_event_subscribe_owned(server, SHADY_EVENT_WINDOW_RESIZED,
             protocol_event, state, state) ||
         !shady_event_subscribe_owned(server, SHADY_EVENT_WINDOW_STATE_CHANGED,
+            protocol_event, state, state) ||
+        !shady_event_subscribe_owned(server, SHADY_EVENT_WINDOW_TITLE_CHANGED,
             protocol_event, state, state) ||
         !shady_event_subscribe_owned(server, SHADY_EVENT_WINDOW_UNMAPPED,
             protocol_event, state, state) ||

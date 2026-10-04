@@ -18,6 +18,7 @@ enum shady_event_type {
 	/* Append-only: preserve numeric values for already-built plugins. */
 	SHADY_EVENT_WINDOW_STATE_CHANGED,
 	SHADY_EVENT_WORKSPACE_CHANGED,
+	SHADY_EVENT_WINDOW_TITLE_CHANGED, /* title or app_id */
 	SHADY_EVENT_COUNT,
 };
 

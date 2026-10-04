@@ -5,6 +5,9 @@ wlroots = dependency('wlroots-0.20', version: ['>=0.20.2', '<0.21'])
 wlr_protocols = dependency('wlr-protocols')
 wayland_scanner = find_program('wayland-scanner')
 wlr_protocols_dir = wlr_protocols.get_variable(pkgconfig: 'pkgdatadir')
+wayland_protocols_server = dependency('wayland-protocols')
+wayland_protocols_server_dir = wayland_protocols_server.get_variable(pkgconfig: 'pkgdatadir')
+subdir('protocols/wayland-protocols')
 layer_shell_xml = join_paths(wlr_protocols_dir, 'unstable/wlr-layer-shell-unstable-v1.xml')
 layer_shell_protocol_header = custom_target(
   'wlr-layer-shell-unstable-v1-protocol.h',
@@ -72,6 +75,8 @@ shady_sources = [
   'src/output_management.c',
   'src/session_lock.c',
   'src/shell_protocol.c',
+  'src/standard_protocols.c',
+  ext_workspace_enum_header,
   'src/ipc/ipc.c',
   'src/ipc/json.c',
   shady_shell_server_header,
@@ -263,6 +268,30 @@ if shell_enabled
     dependencies: [cairo],
     install: false)
 
+  # Client bindings for the standard window and workspace protocols, used
+  # by protocol-probe (tests/headless-standard-protocols.sh).
+  standard_protocol_xmls = {
+    'wlr-foreign-toplevel-management-unstable-v1':
+      join_paths(wlr_protocols_dir, 'unstable/wlr-foreign-toplevel-management-unstable-v1.xml'),
+    'ext-foreign-toplevel-list-v1':
+      join_paths(wayland_protocols_dir, 'staging/ext-foreign-toplevel-list/ext-foreign-toplevel-list-v1.xml'),
+    'ext-workspace-v1':
+      join_paths(wayland_protocols_dir, 'staging/ext-workspace/ext-workspace-v1.xml'),
+  }
+  standard_protocol_client_sources = []
+  foreach name, xml : standard_protocol_xmls
+    standard_protocol_client_sources += custom_target(name + '-client-protocol.h',
+      input: xml, output: name + '-client-protocol.h',
+      command: [wayland_scanner, 'client-header', '@INPUT@', '@OUTPUT@'])
+    standard_protocol_client_sources += custom_target(name + '-client-protocol.c',
+      input: xml, output: name + '-client-protocol.c',
+      command: [wayland_scanner, 'private-code', '@INPUT@', '@OUTPUT@'])
+  endforeach
+  executable('protocol-probe',
+    ['tests/protocol-probe.c'] + standard_protocol_client_sources,
+    dependencies: [wayland_client],
+    install: false)
+
   executable('headless-automation-probe',
     [
       xdg_shell_client_header,
@@ -326,7 +355,7 @@ executable('shady',
     '-DSHADY_HAS_CLOSE_ANIMATION=@0@'.format(close_animation_enabled ? 1 : 0),
     '-DSHADY_HAS_SCENE_EFFECTS=@0@'.format(scene_effects_enabled ? 1 : 0),
   ],
-  include_directories: include_directories('src', 'include'),
+  include_directories: include_directories('src', 'include', 'protocols'),
   dependencies: shady_deps,
   install: true)
 

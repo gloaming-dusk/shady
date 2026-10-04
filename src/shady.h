@@ -225,6 +225,7 @@ struct shady_toplevel {
 	struct wl_listener unmap;
 	struct wl_listener commit;
 	struct wl_listener set_title;
+	struct wl_listener set_app_id;
 	struct wl_listener destroy;
 	struct wl_listener request_move;
 	struct wl_listener request_resize;
