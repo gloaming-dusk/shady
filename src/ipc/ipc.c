@@ -27,11 +27,16 @@
 #include "../plugin/manager.h"
 #include "../plugin/plugin.h"
 #include "json.h"
+#include "values.h"
 
 /* A request line longer than this is refused and the client dropped. */
 #define IPC_LINE_MAX (64 * 1024)
 /* A subscriber that stops reading is dropped once this much output queues. */
 #define IPC_OUT_MAX (4 * 1024 * 1024)
+/* Subscription bit for published values, after the compositor events. */
+#define IPC_VALUE_EVENT SHADY_EVENT_COUNT
+#define IPC_VALUE_EVENT_NAME "value.changed"
+#define IPC_ALL_EVENTS ((1u << (IPC_VALUE_EVENT + 1)) - 1)
 
 struct shady_ipc {
 	struct shady_server *server;
@@ -247,7 +252,40 @@ static void on_event(shady_host host, const struct shady_event *event, void *use
 static int event_type_from_name(const char *name) {
 	for (int type = 0; type < SHADY_EVENT_COUNT; type++)
 		if (!strcmp(shady_event_name(type), name)) return type;
+	if (!strcmp(name, IPC_VALUE_EVENT_NAME)) return IPC_VALUE_EVENT;
 	return -1;
+}
+
+static const char *event_name(int type) {
+	return type == IPC_VALUE_EVENT ? IPC_VALUE_EVENT_NAME : shady_event_name(type);
+}
+
+static void write_value_event(struct json_buf *line, const char *key, const char *value) {
+	json_puts(line, "{\"event\":\"" IPC_VALUE_EVENT_NAME "\",\"key\":");
+	json_string(line, key);
+	json_puts(line, ",\"value\":");
+	if (value) json_string(line, value);
+	else json_puts(line, "null");
+	json_puts(line, "}");
+}
+
+void shady_ipc_value_changed(struct shady_server *server, const char *key, const char *value) {
+	struct shady_ipc *ipc = server ? server->ipc : NULL;
+	if (!ipc) return;
+	struct json_buf line = {0};
+	write_value_event(&line, key, value);
+	struct ipc_client *client;
+	wl_list_for_each(client, &ipc->clients, link)
+		if (client->subscriptions & (1u << IPC_VALUE_EVENT)) send_line(client, &line);
+	json_buf_free(&line);
+}
+
+static void replay_value(const char *key, const char *value, void *data) {
+	struct ipc_client *client = data;
+	struct json_buf line = {0};
+	write_value_event(&line, key, value);
+	send_line(client, &line);
+	json_buf_free(&line);
 }
 
 /* ---- commands --------------------------------------------------------- */
@@ -258,6 +296,7 @@ struct request {
 	const struct json_object *args;
 	struct json_buf *data; /* the response's "data" value */
 	const char *error;
+	bool replay_values; /* send current values after the response */
 };
 
 static bool error(struct request *r, const char *message) {
@@ -454,7 +493,7 @@ static bool cmd_subscribe(struct request *r) {
 	const struct json_value *events = json_get(r->args, "events");
 	uint32_t mask = 0;
 	if (!events) {
-		mask = (1u << SHADY_EVENT_COUNT) - 1;
+		mask = IPC_ALL_EVENTS;
 	} else if (events->type != JSON_ARRAY) {
 		return error(r, "events must be an array of event names");
 	} else {
@@ -464,16 +503,45 @@ static bool cmd_subscribe(struct request *r) {
 			mask |= 1u << type;
 		}
 	}
+	/* New value subscribers first get every current value as an event. */
+	r->replay_values = (mask & (1u << IPC_VALUE_EVENT)) &&
+		!(r->client->subscriptions & (1u << IPC_VALUE_EVENT));
 	r->client->subscriptions |= mask;
 	json_puts(r->data, "[");
 	bool first = true;
-	for (int type = 0; type < SHADY_EVENT_COUNT; type++) {
+	for (int type = 0; type <= IPC_VALUE_EVENT; type++) {
 		if (!(r->client->subscriptions & (1u << type))) continue;
 		if (!first) json_puts(r->data, ",");
 		first = false;
-		json_string(r->data, shady_event_name(type));
+		json_string(r->data, event_name(type));
 	}
 	json_puts(r->data, "]");
+	return true;
+}
+
+static void write_value_field(const char *key, const char *value, void *data) {
+	struct request *r = data;
+	if (r->data->len > 1) json_puts(r->data, ",");
+	json_string(r->data, key);
+	json_puts(r->data, ":");
+	json_string(r->data, value);
+}
+
+/* values: every published value, as {key: value}. */
+static bool cmd_values(struct request *r) {
+	json_puts(r->data, "{");
+	shady_values_for_each(write_value_field, r);
+	json_puts(r->data, "}");
+	return true;
+}
+
+/* value {key}: one published value, or null. */
+static bool cmd_value(struct request *r) {
+	const char *key = request_string(r, "key");
+	if (!key) return false;
+	const char *value = shady_values_get(key);
+	if (value) json_string(r->data, value);
+	else json_puts(r->data, "null");
 	return true;
 }
 
@@ -492,6 +560,8 @@ static const struct {
 	{ "workspaces", cmd_workspaces },
 	{ "outputs", cmd_outputs },
 	{ "plugins", cmd_plugins },
+	{ "values", cmd_values },
+	{ "value", cmd_value },
 	{ "window.focus", cmd_window_focus },
 	{ "window.close", cmd_window_close },
 	{ "window.maximize", cmd_window_maximize },
@@ -559,6 +629,7 @@ static void handle_line(struct ipc_client *client, char *line) {
 	}
 	json_puts(&response, "}");
 	send_line(client, &response);
+	if (ok && r.replay_values) shady_values_for_each(replay_value, client);
 	json_buf_free(&response);
 	json_buf_free(&data);
 }

@@ -18,6 +18,7 @@
 
 #include "../module/module.h"
 #include "../event/event.h"
+#include "../ipc/values.h"
 #include "../render/render.h"
 #if SHADY_HAS_SPATIAL
 #include "../render/math3d.h"
@@ -552,6 +553,16 @@ static bool host_shader_draw_fullscreen_scene(shady_host host, shady_shader_prog
 		shady_plugin_owner_from_address(__builtin_return_address(0)), program);
 }
 
+static bool host_publish_value(shady_host host, const char *key, const char *value) {
+	void *owner = shady_plugin_owner_from_address(__builtin_return_address(0));
+	return owner && shady_values_set(HOST(host), owner, key, value);
+}
+
+static const char *host_published_value(shady_host host, const char *key) {
+	(void)host;
+	return shady_values_get(key);
+}
+
 static shady_render_hook_id host_render_hook_add(shady_host host, uint32_t stage,
 		shady_render_callback callback, void *user_data) {
 	return shady_render_plugin_hook_add(HOST(host), shady_plugin_owner_from_address(__builtin_return_address(0)),
@@ -749,5 +760,7 @@ const struct shady_plugin_api_v1 shady_plugin_api = {
 	.window_shader_source = host_window_shader_source,
 	.window_set_shader_params = host_window_set_shader_params,
 	.shader_draw_fullscreen_scene = host_shader_draw_fullscreen_scene,
+	.publish_value = host_publish_value,
+	.published_value = host_published_value,
 };
 

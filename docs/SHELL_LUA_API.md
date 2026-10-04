@@ -269,6 +269,19 @@ is animated: the shell composites it every frame from the last drawing,
 without running any view, so an animated bar costs GPU time but almost no
 CPU. Shader files are watched with the config, and saving one reloads it.
 
+## Compositor values
+
+`shell.compositor_value(key[, fallback])` returns a value the compositor
+published, from its Lua (`shady.publish`) or a compositor plugin
+(`publish_value`), and views that read it repaint when it changes. The
+shell follows them over the IPC socket (``, set for programs
+the compositor starts) and reconnects if the compositor restarts it. This
+is how a bar follows a rice's state, such as the current hour or palette:
+
+```lua
+local accent = shell.compositor_value("afterglow.accent", shell.theme.accent)
+```
+
 ## Native plugins
 
 | Function | |

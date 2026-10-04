@@ -241,6 +241,14 @@ struct shady_plugin_api_v1 {
 	 * per call, so call it only while the effect is visible. Check with
 	 * SHADY_API_HAS. */
 	bool (*shader_draw_fullscreen_scene)(shady_host host, shady_shader_program program);
+	/* Published values: named strings shared with programs outside the
+	 * compositor (IPC `values`, `value.changed`; shell.compositor_value in
+	 * shady-shell), e.g. a rice's current hour or palette. Keys are 1-128
+	 * characters of [A-Za-z0-9._-], values at most 4096 bytes; NULL removes
+	 * the key. Values a plugin set are removed when it unloads. Check with
+	 * SHADY_API_HAS. */
+	bool (*publish_value)(shady_host host, const char *key, const char *value);
+	const char *(*published_value)(shady_host host, const char *key);
 };
 
 typedef const struct shady_module *(*shady_plugin_entry_v1_fn)(

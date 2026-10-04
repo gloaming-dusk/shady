@@ -15,6 +15,7 @@
 #include <wlr/util/log.h>
 #include "../../shady.h"
 #include "../../render/render.h"
+#include "../../ipc/values.h"
 #include "../../event/event.h"
 #include "../../plugin/plugin.h"
 #include "../../plugin/manager.h"
@@ -315,6 +316,29 @@ static int l_shady_layer_transform(lua_State *L) {
 	desc.pivot_center = !strcmp(pivot, "center");
 	lua_pop(L, 1);
 	lua_pushboolean(L, shady_render_set_layer_transform(lua_server, name_space, &desc));
+	return 1;
+}
+
+/* shady.publish(key, value|nil): share a value with IPC clients and
+ * shady-shell (shell.compositor_value). Numbers and booleans are published
+ * as text. Returns false for an invalid key or a value over 4096 bytes. */
+static int l_shady_publish(lua_State *L) {
+	static char lua_owner; /* values set from Lua share this owner */
+	const char *key = luaL_checkstring(L, 1);
+	const char *value = NULL;
+	if (!lua_isnoneornil(L, 2)) {
+		if (lua_type(L, 2) == LUA_TBOOLEAN) value = lua_toboolean(L, 2) ? "true" : "false";
+		else value = luaL_checkstring(L, 2);
+	}
+	lua_pushboolean(L, shady_values_set(lua_server, &lua_owner, key, value));
+	return 1;
+}
+
+/* shady.value(key): a published value, or nil. */
+static int l_shady_value(lua_State *L) {
+	const char *value = shady_values_get(luaL_checkstring(L, 1));
+	if (value) lua_pushstring(L, value);
+	else lua_pushnil(L);
 	return 1;
 }
 
@@ -677,6 +701,8 @@ static void install_api(lua_State *L){
 	lua_pushcfunction(L,l_shady_toggle_launcher);lua_setfield(L,-2,"toggle_launcher");
 	lua_pushcfunction(L,l_shady_layer_effect);lua_setfield(L,-2,"layer_effect");
 	lua_pushcfunction(L,l_shady_layer_transform);lua_setfield(L,-2,"layer_transform");
+	lua_pushcfunction(L,l_shady_publish);lua_setfield(L,-2,"publish");
+	lua_pushcfunction(L,l_shady_value);lua_setfield(L,-2,"value");
 	lua_pushcfunction(L,l_shady_windows);lua_setfield(L,-2,"windows");
 	lua_pushcfunction(L,l_shady_focused_window);lua_setfield(L,-2,"focused_window");
 	lua_pushcfunction(L,l_shady_outputs);lua_setfield(L,-2,"outputs");

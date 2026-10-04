@@ -39,6 +39,7 @@ nix develop -c ninja -C "$BUILD_DIR" \
   ipc-json-test \
   shady-shell \
   protocol-probe \
+  libshady-plugin-publish-probe.so \
   obj-loader-test
 
 export SHADY_FPS_REPRESENTATION_PLUGIN="$ROOT/$BUILD_DIR/libshady-plugin-fps-cube.so"
@@ -84,6 +85,9 @@ SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
 
 SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
   nix develop -c bash ./tests/headless-layer-transform.sh
+
+SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
+  nix develop -c bash ./tests/headless-published-values.sh
 
 SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
   nix develop -c bash ./tests/headless-fps-toggle.sh

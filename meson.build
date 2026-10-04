@@ -79,6 +79,7 @@ shady_sources = [
   ext_workspace_enum_header,
   'src/ipc/ipc.c',
   'src/ipc/json.c',
+  'src/ipc/values.c',
   shady_shell_server_header,
   shady_shell_protocol_code,
   'src/modules/desktop/module.c',
@@ -243,6 +244,8 @@ if shell_enabled
       'src/shell/ui.c',
       'src/shell/script.c',
       'src/shell/plugins.c',
+      'src/shell/compositor.c',
+      'src/ipc/json.c',
     ],
     include_directories: include_directories('.', 'include'),
     c_args: [
@@ -384,6 +387,11 @@ shared_module('shady-plugin-hello',
   'examples/plugins/hello.c',
   include_directories: include_directories('include'),
   build_by_default: false,
+  install: false)
+
+shared_module('shady-plugin-publish-probe',
+  'tests/publish-plugin.c',
+  include_directories: include_directories('include'),
   install: false)
 
 shared_module('shady-plugin-counter',

@@ -99,6 +99,16 @@ The effect is masked by the surface's own alpha, so rounded or shaped
 panels get glass only where they draw. It needs spatial mode and returns
 false elsewhere, or when the shader fails to compile.
 
+### `shady.publish(key, value | nil) -> boolean` / `shady.value(key) -> string | nil`
+
+Publish a named string for programs outside the compositor: IPC clients
+(`values`, `value.changed` in [IPC_API.md](IPC_API.md)) and `shady-shell`
+(`shell.compositor_value(key)`). Rices use it so the bar follows their
+state, e.g. `shady.publish("rice.mode", "night")`. Keys are 1-128 characters
+of `[A-Za-z0-9._-]`, values at most 4096 bytes; numbers and booleans are
+published as text and `nil` removes the key. `shady.value` reads any
+published value, including those from plugins.
+
 ### `shady.layer_transform(namespace, options | nil) -> boolean`
 
 Place layer-shell surfaces with this namespace in 3D: tilt a bar back, turn

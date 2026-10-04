@@ -40,6 +40,7 @@
 #include "module/module.h"
 #include "config_lua.h"
 #include "ipc/ipc.h"
+#include "ipc/values.h"
 
 static void default_config_path(char *buf, size_t size) {
 	const char *xdg = getenv("XDG_CONFIG_HOME");
@@ -402,6 +403,7 @@ int main(int argc, char *argv[]) {
 	wl_list_remove(&server.new_output.link);
 
 	shady_modules_destroy_all(&server);
+	shady_values_finish();
 
 	wl_event_source_remove(sigint);
 	wl_event_source_remove(sigterm);

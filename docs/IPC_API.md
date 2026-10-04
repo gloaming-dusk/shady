@@ -71,6 +71,8 @@ answered with an error and the connection stays open.
 | `workspaces` | `{"current": "main", "list": ["main", "two"]}` |
 | `outputs` | array of outputs |
 | `plugins` | array of `{"name", "spec", "state", "builtin"}`, as `shady.plugins.list()` |
+| `values` | every published value, as `{"key": "value", ...}` |
+| `value` | `{"key": ...}` -> that value, or `null` |
 
 ## Commands
 
@@ -115,6 +117,23 @@ Event names are the ones `shady.on` uses: `window.created`,
 `window.state_changed`, `window.title_changed`, `window.destroyed`, `output.added`,
 `output.removed`, `workspace.changed`, `module.started`, `module.stopped`.
 `window.unmapped` and `window.destroyed` carry only the window `id`.
+
+### Published values
+
+Plugins (`publish_value`) and the compositor's Lua (`shady.publish`) can
+publish small named strings, such as a rice's current hour or palette. Read
+them with `values` and `value`, and follow them with the `value.changed`
+event:
+
+```json
+{"event": "value.changed", "key": "afterglow.hour", "value": "blue-hour"}
+{"event": "value.changed", "key": "afterglow.hour", "value": null}
+```
+
+`null` means the value was removed, for example because the plugin that
+published it unloaded. Subscribing to `value.changed` first replays every
+current value as an event, so a client needs no separate snapshot.
+`value.changed` is included when `subscribe` is sent without `events`.
 
 A subscriber that stops reading is disconnected once 4 MiB of output is
 queued for it.

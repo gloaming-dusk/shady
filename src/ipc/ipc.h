@@ -18,5 +18,7 @@ struct shady_server;
 
 bool shady_ipc_init(struct shady_server *server, const char *wayland_socket);
 void shady_ipc_finish(struct shady_server *server);
+/* Tell subscribers a published value changed (value NULL: removed). */
+void shady_ipc_value_changed(struct shady_server *server, const char *key, const char *value);
 
 #endif

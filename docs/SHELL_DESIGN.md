@@ -115,7 +115,9 @@ with `shell.popup{}` and opened with `shell.open(name, args)`.
 ## Phases
 
 1. **Compositor IPC** — done. Unix socket with JSON lines: queries,
-   commands and event subscriptions, plus the `shadyctl` CLI. Useful on its
+   commands and event subscriptions, plus the `shadyctl` CLI. Published
+   values (`publish_value`, `shady.publish`, `value.changed`) carry rice state
+   such as the current hour to the shell (`shell.compositor_value`). Useful on its
    own to scripts and other bars. See [IPC_API.md](IPC_API.md).
 2. **Shell core and render** — done. One bar per output that follows
    hotplug and scale changes, integer HiDPI scaling, a poll loop with
@@ -162,8 +164,6 @@ with `shell.popup{}` and opened with `shell.open(name, args)`.
 
 ## Open questions
 
-- Where IPC values published by plugins live: a new append-only plugin API
-  entry (`ipc_publish(key, json)`) is the current plan.
 - Whether the shell embeds the same Lua version and sandbox as the
   compositor, or a separate `shell.lua` loaded from
   `~/.config/shady/shell.lua`.

@@ -19,6 +19,7 @@
 #include <unistd.h>
 
 #include "shady-shell-v1-client-protocol.h"
+#include "compositor.h"
 #include "plugins.h"
 #include "render.h"
 #include "shell.h"
@@ -1082,6 +1083,16 @@ static int l_value(lua_State *L) {
     return 1;
 }
 
+/* shell.compositor_value(key[, fallback]): a value the compositor
+ * published (shady.publish in its Lua, publish_value in its plugins). */
+static int l_compositor_value(lua_State *L) {
+    const char *value = shell_compositor_value(luaL_checkstring(L, 1));
+    if (value) lua_pushstring(L, value);
+    else if (lua_isnoneornil(L, 2)) lua_pushnil(L);
+    else lua_pushvalue(L, 2);
+    return 1;
+}
+
 /* shell.action(name[, argument]): run a plugin action. */
 static int l_action(lua_State *L) {
     no_view(L, "shell.action");
@@ -1226,6 +1237,7 @@ static const luaL_Reg api[] = {
     { "shader", l_shader },
     { "plugin", l_plugin },
     { "value", l_value },
+    { "compositor_value", l_compositor_value },
     { "action", l_action },
     { "mix", l_mix },
     { "alpha", l_alpha },

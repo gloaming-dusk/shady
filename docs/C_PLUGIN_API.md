@@ -196,6 +196,18 @@ It is append-only (`SHADY_API_HAS(api, shader_draw_fullscreen_scene)`), works on
 inside a render hook, and costs one full-output copy per call. See
 [SHADER_API.md](SHADER_API.md#post-processing-the-scene).
 
+#### Published values
+
+`publish_value(host, key, value)` shares a string with programs outside the
+compositor: IPC clients see it through `values` and the `value.changed`
+event, and `shady-shell` configs read it with `shell.compositor_value(key)`.
+Use it for state a bar or panel should follow, such as a rice's current hour
+or palette colours. Keys are 1-128 characters of `[A-Za-z0-9._-]`; prefix
+them with the plugin's name. Values are at most 4096 bytes, and `NULL`
+removes the key. The values a plugin published are removed when it unloads.
+`published_value(host, key)` reads any published value. Both are
+append-only (`SHADY_API_HAS(api, published_value)`).
+
 #### Camera-aware hooks
 
 The render context also describes the spatial camera, so a hook can build a
