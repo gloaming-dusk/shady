@@ -214,6 +214,82 @@ static int l_shady_camera(lua_State *L){
 }
 static void lua_quit_idle(void *data){wl_display_terminate(data);}
 static int l_shady_quit(lua_State *L){(void)L;if(lua_server->wl_display){struct wl_event_loop*loop=wl_display_get_event_loop(lua_server->wl_display);if(!loop||!wl_event_loop_add_idle(loop,lua_quit_idle,lua_server->wl_display))wl_display_terminate(lua_server->wl_display);}return 0;}
+/* "#RGB", "#RRGGBB" or "#RRGGBBAA" -> premultiplied RGBA. */
+static bool layer_effect_color(const char *text, float out[4]) {
+	if (!text || text[0] != '#') return false;
+	size_t len = strlen(text + 1);
+	unsigned v[4] = {0, 0, 0, 255};
+	if (len == 6 || len == 8) {
+		for (size_t i = 0; i < len / 2; i++)
+			if (sscanf(text + 1 + 2 * i, "%2x", &v[i]) != 1) return false;
+	} else if (len == 3) {
+		for (size_t i = 0; i < 3; i++) {
+			if (sscanf(text + 1 + i, "%1x", &v[i]) != 1) return false;
+			v[i] *= 17;
+		}
+	} else {
+		return false;
+	}
+	float a = (float)v[3] / 255.f;
+	for (int i = 0; i < 3; i++) out[i] = (float)v[i] / 255.f * a;
+	out[3] = a;
+	return true;
+}
+
+/* shady.layer_effect(namespace, {blur=, saturation=, tint=, shader=, uniforms=})
+ * gives layer surfaces with that namespace a backdrop effect; nil removes it.
+ * Spatial mode only. Returns true when the effect is in place. */
+static int l_shady_layer_effect(lua_State *L) {
+	const char *name_space = luaL_checkstring(L, 1);
+	if (lua_isnoneornil(L, 2)) {
+		lua_pushboolean(L, shady_render_set_layer_effect(lua_server, name_space, NULL));
+		return 1;
+	}
+	luaL_checktype(L, 2, LUA_TTABLE);
+	struct shady_layer_effect_desc desc = { .blur = 12.f, .saturation = 1.f };
+	lua_getfield(L, 2, "blur");
+	if (!lua_isnil(L, -1)) desc.blur = (float)luaL_checknumber(L, -1);
+	lua_getfield(L, 2, "saturation");
+	if (!lua_isnil(L, -1)) desc.saturation = (float)luaL_checknumber(L, -1);
+	lua_getfield(L, 2, "tint");
+	if (!lua_isnil(L, -1) && !layer_effect_color(luaL_checkstring(L, -1), desc.tint))
+		return luaL_error(L, "layer_effect tint must be #RGB, #RRGGBB or #RRGGBBAA");
+	lua_getfield(L, 2, "shader");
+	desc.shader = lua_isnil(L, -1) ? NULL : luaL_checkstring(L, -1);
+	lua_getfield(L, 2, "uniforms");
+	if (lua_istable(L, -1)) {
+		int t = lua_gettop(L);
+		lua_pushnil(L);
+		while (lua_next(L, t)) {
+			if (desc.uniform_count == SHADY_LAYER_EFFECT_UNIFORMS || lua_type(L, -2) != LUA_TSTRING)
+				return luaL_error(L, "layer_effect uniforms: at most %d named values",
+					SHADY_LAYER_EFFECT_UNIFORMS);
+			struct shady_layer_effect_uniform *u = &desc.uniforms[desc.uniform_count];
+			snprintf(u->name, sizeof(u->name), "u_%s", lua_tostring(L, -2));
+			if (lua_type(L, -1) == LUA_TNUMBER) {
+				u->size = 1;
+				u->value[0] = (float)lua_tonumber(L, -1);
+			} else if (lua_type(L, -1) == LUA_TSTRING && layer_effect_color(lua_tostring(L, -1), u->value)) {
+				u->size = 4;
+			} else if (lua_istable(L, -1) && lua_rawlen(L, -1) >= 1 && lua_rawlen(L, -1) <= 4) {
+				u->size = (int)lua_rawlen(L, -1);
+				for (int i = 0; i < u->size; i++) {
+					lua_rawgeti(L, -1, i + 1);
+					u->value[i] = (float)lua_tonumber(L, -1);
+					lua_pop(L, 1);
+				}
+			} else {
+				return luaL_error(L, "layer_effect uniform %s must be a number, colour or 1-4 numbers",
+					lua_tostring(L, -2));
+			}
+			desc.uniform_count++;
+			lua_pop(L, 1);
+		}
+	}
+	lua_pushboolean(L, shady_render_set_layer_effect(lua_server, name_space, &desc));
+	return 1;
+}
+
 static int l_shady_toggle_launcher(lua_State *L){(void)L;shady_shell_protocol_toggle_launcher(lua_server);return 0;}
 static int l_shady_spawn(lua_State *L){
 	const char *command=luaL_checkstring(L,1);
@@ -571,6 +647,7 @@ static void install_api(lua_State *L){
 	lua_pushcfunction(L,l_shady_quit);lua_setfield(L,-2,"quit");
 	lua_pushcfunction(L,l_shady_spawn);lua_setfield(L,-2,"spawn");
 	lua_pushcfunction(L,l_shady_toggle_launcher);lua_setfield(L,-2,"toggle_launcher");
+	lua_pushcfunction(L,l_shady_layer_effect);lua_setfield(L,-2,"layer_effect");
 	lua_pushcfunction(L,l_shady_windows);lua_setfield(L,-2,"windows");
 	lua_pushcfunction(L,l_shady_focused_window);lua_setfield(L,-2,"focused_window");
 	lua_pushcfunction(L,l_shady_outputs);lua_setfield(L,-2,"outputs");

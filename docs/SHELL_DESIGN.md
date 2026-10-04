@@ -1,7 +1,7 @@
 # Shell design
 
-Status: phases 1 to 5 (IPC, shell core and render, Lua UI, shader effects,
-native plugins) implemented. This document describes where `shady-shell` is
+Status: phases 1 to 6 (IPC, shell core and render, Lua UI, shader effects,
+native plugins, layer backdrop effects) implemented. This document describes where `shady-shell` is
 going and why. API references for finished pieces live in their own
 documents ([IPC API](IPC_API.md), [Shell Lua API](SHELL_LUA_API.md),
 [Shell plugin API](SHELL_PLUGIN_API.md)).
@@ -140,7 +140,15 @@ with `shell.popup{}` and opened with `shell.open(name, args)`.
    what they registered. `sysinfo` (CPU, memory, load, a history graph)
    ships as the example. Audio, tray and notification plugins can now be
    written against it.
-6. **Layer-surface effects** in the compositor.
+6. **Layer-surface effects** — backdrop effects done. `shady.layer_effect(namespace, ...)`
+   in the compositor's Lua captures the scene behind any layer-shell
+   surface with that namespace and draws it through frosted glass (blur,
+   saturation, tint) or a custom shader, masked by the surface's alpha. It
+   works for any layer client, `shady-shell` or not, in spatial mode.
+   `shell/examples/glass.lua` makes the default UI translucent for it.
+   Fixed on the way: spatial mode now draws layer surfaces in layer order.
+   Still open: placing layer surfaces in 3D (tilt, depth), which needs
+   pointer input mapped through the same transform.
 7. **Standard protocols** (`wlr-foreign-toplevel-management`,
    `ext-workspace-v1`) so third-party bars work too.
 

@@ -126,3 +126,8 @@ void shady_render_toplevel_unmap(struct shady_toplevel *toplevel) {
 void shady_render_toplevel_destroy(struct shady_toplevel *toplevel) {
 	(void)toplevel;
 }
+
+bool shady_render_set_layer_effect(struct shady_server *server, const char *name_space,
+		const struct shady_layer_effect_desc *desc) {
+	(void)server; (void)name_space; (void)desc; return false;
+}

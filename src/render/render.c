@@ -889,7 +889,10 @@ bool shady_render_init(
 	return pipeline_ready;
 }
 
+static void layer_effects_fini(void);
+
 void shady_render_fini(void) {
+	layer_effects_fini();
 	if (plugin_make_current()) {
 		for (size_t i = 0; i < SHADY_PLUGIN_SHADER_MAX; i++) {
 			if (plugin_shaders[i].used) glDeleteProgram(plugin_shaders[i].program);
@@ -1088,12 +1091,373 @@ static void ensure_depth_rbo(
 	depth_rbo_h = h;
 }
 
+/* ---- layer-shell backdrop effects ------------------------------------- */
+
+/*
+ * Before each buffer of a matching layer surface is drawn, the output
+ * region under it (plus a margin for blur taps) is copied to a texture and
+ * drawn through the effect's shader, masked by the buffer's own alpha so
+ * rounded or shaped panels get glass only where they draw. The surface is
+ * then composited on top as usual.
+ *
+ * Window coordinates here are the output buffer's pixels, top-down: the
+ * spatial pass renders with a flipped projection, so image row 0 is GL
+ * row 0 (the same convention shader_draw_fullscreen_scene relies on).
+ */
+
+#define LAYER_EFFECT_MAX 16
+
+struct layer_effect {
+	bool used;
+	char name_space[64];
+	struct shady_layer_effect_desc desc;
+	char shader_path[512];
+	/* [0] samples the mask as sampler2D, [1] as samplerExternalOES. */
+	GLuint program[2];
+	bool failed[2];
+	bool uses_time;
+};
+
+static struct layer_effect layer_effects[LAYER_EFFECT_MAX];
+static GLuint layer_capture_texture;
+static GLint layer_capture_width, layer_capture_height;
+static bool layer_effects_animating;
+
+static const char *layer_vertex_source =
+	"attribute vec2 a_pos;\n"
+	"void main() { gl_Position = vec4(a_pos, 0.0, 1.0); }\n";
+
+/* Declared for every effect shader; custom shaders use these helpers and
+ * must not redeclare the uniforms. */
+static const char *layer_prelude =
+	"#ifdef GL_FRAGMENT_PRECISION_HIGH\n"
+	"precision highp float;\n"
+	"#else\n"
+	"precision mediump float;\n"
+	"#endif\n"
+	"uniform sampler2D u_scene;\n"
+	"uniform vec4 u_capture;\n"   /* the copied rect, buffer px */
+	"uniform vec2 u_capture_texture;\n" /* size of the texture it sits in */
+	"uniform vec4 u_region;\n"    /* the layer buffer's rect, buffer px */
+	"uniform vec4 u_mask_rect;\n" /* mask uv origin and extent */
+	"uniform float u_scale;\n"
+	"uniform float u_time;\n"
+	"uniform vec2 u_size;\n"      /* the region in logical px */
+	"vec4 scene(vec2 pixel) {\n"
+	"    vec2 p = clamp(pixel, u_capture.xy + 0.5, u_capture.xy + u_capture.zw - 0.5);\n"
+	"    return texture2D(u_scene, (p - u_capture.xy) / u_capture_texture);\n"
+	"}\n"
+	"vec2 local() { return (gl_FragCoord.xy - u_region.xy) / u_region.zw; }\n";
+
+static const char *layer_mask_2d =
+	"uniform sampler2D u_mask;\n"
+	"float mask() { return texture2D(u_mask, u_mask_rect.xy + local() * u_mask_rect.zw).a; }\n";
+
+static const char *layer_mask_external =
+	"uniform samplerExternalOES u_mask;\n"
+	"float mask() { return texture2D(u_mask, u_mask_rect.xy + local() * u_mask_rect.zw).a; }\n";
+
+/* Frosted glass: a gaussian-weighted golden-angle disc of samples, then
+ * saturation and a premultiplied tint. */
+static const char *layer_builtin_source =
+	"uniform float u_blur;\n"
+	"uniform float u_saturation;\n"
+	"uniform vec4 u_tint;\n"
+	"vec4 effect() {\n"
+	"    vec2 p = gl_FragCoord.xy;\n"
+	"    float radius = u_blur * u_scale;\n"
+	"    if (radius < 0.5) return scene(p);\n"
+	"    float sigma = radius * 0.5;\n"
+	"    vec4 sum = vec4(0.0);\n"
+	"    float total = 0.0;\n"
+	"    for (int i = 0; i < 48; i++) {\n"
+	"        float fi = float(i) + 0.5;\n"
+	"        float r = sqrt(fi / 48.0) * radius;\n"
+	"        float a = fi * 2.39996323;\n"
+	"        float w = exp(-(r * r) / (2.0 * sigma * sigma));\n"
+	"        sum += scene(p + vec2(cos(a), sin(a)) * r) * w;\n"
+	"        total += w;\n"
+	"    }\n"
+	"    vec4 c = sum / total;\n"
+	"    float l = dot(c.rgb, vec3(0.2126, 0.7152, 0.0722));\n"
+	"    c.rgb = mix(vec3(l), c.rgb, u_saturation);\n"
+	"    c.rgb = c.rgb * (1.0 - u_tint.a) + u_tint.rgb;\n"
+	"    return vec4(c.rgb, 1.0);\n"
+	"}\n";
+
+static const char *layer_main =
+	"void main() {\n"
+	"    float m = clamp(mask() * 40.0, 0.0, 1.0);\n"
+	"    vec4 c = effect();\n"
+	"    gl_FragColor = vec4(c.rgb * m, m);\n"
+	"}\n";
+
+static void layer_effect_release(struct layer_effect *effect) {
+	if ((effect->program[0] || effect->program[1]) && plugin_make_current()) {
+		for (int i = 0; i < 2; i++)
+			if (effect->program[i]) glDeleteProgram(effect->program[i]);
+	}
+	effect->program[0] = effect->program[1] = 0;
+	effect->failed[0] = effect->failed[1] = false;
+}
+
+/* Compile the effect for a mask texture target; cached, failures too. */
+static GLuint layer_effect_program(struct layer_effect *effect, bool external) {
+	int v = external ? 1 : 0;
+	if (effect->program[v] || effect->failed[v]) return effect->program[v];
+	char *custom = NULL;
+	if (effect->shader_path[0]) {
+		custom = plugin_read_text_file(effect->shader_path);
+		if (!custom) {
+			wlr_log(WLR_ERROR, "layer effect %s: cannot read %s",
+				effect->name_space, effect->shader_path);
+			effect->failed[v] = true;
+			return 0;
+		}
+	}
+	const char *head = external
+		? "#extension GL_OES_EGL_image_external : require\n" : "";
+	const char *parts[] = {
+		head, layer_prelude, external ? layer_mask_external : layer_mask_2d,
+		custom ? custom : layer_builtin_source, layer_main,
+	};
+	size_t length = 1;
+	for (size_t i = 0; i < sizeof(parts) / sizeof(parts[0]); i++) length += strlen(parts[i]);
+	char *source = malloc(length);
+	if (!source) {
+		free(custom);
+		effect->failed[v] = true;
+		return 0;
+	}
+	source[0] = '\0';
+	for (size_t i = 0; i < sizeof(parts) / sizeof(parts[0]); i++) strcat(source, parts[i]);
+	free(custom);
+
+	GLuint vs = plugin_compile_shader(GL_VERTEX_SHADER, layer_vertex_source, "layer effect");
+	GLuint fs = plugin_compile_shader(GL_FRAGMENT_SHADER, source,
+		effect->shader_path[0] ? effect->shader_path : "layer effect (built-in)");
+	free(source);
+	GLuint program = vs && fs ? glCreateProgram() : 0;
+	if (program) {
+		glAttachShader(program, vs);
+		glAttachShader(program, fs);
+		glBindAttribLocation(program, 0, "a_pos");
+		glLinkProgram(program);
+		GLint ok = GL_FALSE;
+		glGetProgramiv(program, GL_LINK_STATUS, &ok);
+		if (!ok) {
+			wlr_log(WLR_ERROR, "layer effect %s: link failed", effect->name_space);
+			glDeleteProgram(program);
+			program = 0;
+		}
+	}
+	if (vs) glDeleteShader(vs);
+	if (fs) glDeleteShader(fs);
+	if (!program) {
+		effect->failed[v] = true;
+		return 0;
+	}
+	effect->program[v] = program;
+	effect->uses_time = effect->uses_time || glGetUniformLocation(program, "u_time") >= 0;
+	return program;
+}
+
+bool shady_render_set_layer_effect(struct shady_server *server, const char *name_space,
+		const struct shady_layer_effect_desc *desc) {
+	if (!name_space || !*name_space || strlen(name_space) >= sizeof(layer_effects[0].name_space))
+		return false;
+	struct layer_effect *slot = NULL, *free_slot = NULL;
+	for (size_t i = 0; i < LAYER_EFFECT_MAX; i++) {
+		if (layer_effects[i].used && !strcmp(layer_effects[i].name_space, name_space))
+			slot = &layer_effects[i];
+		else if (!layer_effects[i].used && !free_slot)
+			free_slot = &layer_effects[i];
+	}
+	if (slot) {
+		layer_effect_release(slot);
+		memset(slot, 0, sizeof(*slot));
+	}
+	if (desc) {
+		if (!slot) slot = free_slot;
+		if (!slot) return false;
+		if (desc->shader && strlen(desc->shader) >= sizeof(slot->shader_path)) return false;
+		slot->used = true;
+		snprintf(slot->name_space, sizeof(slot->name_space), "%s", name_space);
+		slot->desc = *desc;
+		slot->desc.shader = NULL;
+		if (desc->shader) snprintf(slot->shader_path, sizeof(slot->shader_path), "%s", desc->shader);
+		/* Compile now so a broken shader is reported to the caller. */
+		if (plugin_make_current() && !layer_effect_program(slot, false)) {
+			memset(slot, 0, sizeof(*slot));
+			shady_render_schedule_all_outputs(server);
+			return false;
+		}
+	}
+	shady_render_schedule_all_outputs(server);
+	return true;
+}
+
+static void layer_effects_fini(void) {
+	for (size_t i = 0; i < LAYER_EFFECT_MAX; i++) layer_effect_release(&layer_effects[i]);
+	memset(layer_effects, 0, sizeof(layer_effects));
+	if (layer_capture_texture && plugin_make_current()) glDeleteTextures(1, &layer_capture_texture);
+	layer_capture_texture = 0;
+	layer_capture_width = layer_capture_height = 0;
+}
+
+static struct layer_effect *layer_effect_for(const char *name_space) {
+	for (size_t i = 0; name_space && i < LAYER_EFFECT_MAX; i++)
+		if (layer_effects[i].used && !strcmp(layer_effects[i].name_space, name_space))
+			return &layer_effects[i];
+	return NULL;
+}
+
+/* Copy rect (buffer px, top-down) of the bound framebuffer, clamped to the
+ * viewport, into layer_capture_texture. */
+static bool layer_capture(GLint x, GLint y, GLint w, GLint h, GLint out[4]) {
+	GLint viewport[4];
+	glGetIntegerv(GL_VIEWPORT, viewport);
+	GLint x0 = x < 0 ? 0 : x, y0 = y < 0 ? 0 : y;
+	GLint x1 = x + w > viewport[2] ? viewport[2] : x + w;
+	GLint y1 = y + h > viewport[3] ? viewport[3] : y + h;
+	if (x1 <= x0 || y1 <= y0) return false;
+	w = x1 - x0;
+	h = y1 - y0;
+	if (!layer_capture_texture) glGenTextures(1, &layer_capture_texture);
+	glBindTexture(GL_TEXTURE_2D, layer_capture_texture);
+	if (w > layer_capture_width || h > layer_capture_height) {
+		layer_capture_width = w > layer_capture_width ? w : layer_capture_width;
+		layer_capture_height = h > layer_capture_height ? h : layer_capture_height;
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, layer_capture_width, layer_capture_height, 0,
+			GL_RGB, GL_UNSIGNED_BYTE, NULL);
+	}
+	glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, viewport[0] + x0, viewport[1] + y0, w, h);
+	/* The texture may be larger than the copy: describe the copy in its
+	 * own pixels, and how much of the texture it covers. */
+	out[0] = x0;
+	out[1] = y0;
+	out[2] = w;
+	out[3] = h;
+	return true;
+}
+
+static void draw_layer_backdrop(struct layer_effect *effect, struct wlr_texture *texture,
+		const struct wlr_fbox *src_box, const struct wlr_box *dst, float scale, float time) {
+	struct wlr_gles2_texture_attribs attribs;
+	wlr_gles2_texture_get_attribs(texture, &attribs);
+	bool external = attribs.target != GL_TEXTURE_2D;
+	GLuint program = layer_effect_program(effect, external);
+	if (!program) return;
+
+	GLint old_program = 0, old_buffer = 0, old_active = 0, old_tex0 = 0, old_tex1 = 0;
+	GLint old_scissor[4];
+	GLint blend_src_rgb = 0, blend_dst_rgb = 0, blend_src_alpha = 0, blend_dst_alpha = 0;
+	GLboolean blend = glIsEnabled(GL_BLEND), scissor = glIsEnabled(GL_SCISSOR_TEST);
+	GLboolean depth = glIsEnabled(GL_DEPTH_TEST);
+	glGetIntegerv(GL_CURRENT_PROGRAM, &old_program);
+	glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &old_buffer);
+	glGetIntegerv(GL_ACTIVE_TEXTURE, &old_active);
+	glGetIntegerv(GL_SCISSOR_BOX, old_scissor);
+	glGetIntegerv(GL_BLEND_SRC_RGB, &blend_src_rgb);
+	glGetIntegerv(GL_BLEND_DST_RGB, &blend_dst_rgb);
+	glGetIntegerv(GL_BLEND_SRC_ALPHA, &blend_src_alpha);
+	glGetIntegerv(GL_BLEND_DST_ALPHA, &blend_dst_alpha);
+	glActiveTexture(GL_TEXTURE0);
+	glGetIntegerv(GL_TEXTURE_BINDING_2D, &old_tex0);
+	glActiveTexture(GL_TEXTURE1);
+	glGetIntegerv(GL_TEXTURE_BINDING_2D, &old_tex1);
+
+	/* Blur taps reach past the region; capture a margin around it. */
+	GLint margin = (GLint)ceilf(effect->desc.blur * scale) + 2;
+	GLint capture[4];
+	glActiveTexture(GL_TEXTURE0);
+	if (!layer_capture(dst->x - margin, dst->y - margin, dst->width + 2 * margin,
+			dst->height + 2 * margin, capture))
+		goto restore;
+
+	glUseProgram(program);
+	glUniform1i(glGetUniformLocation(program, "u_scene"), 0);
+	/* scene() maps window pixels into the texture's normalised range. */
+	glUniform4f(glGetUniformLocation(program, "u_capture"), (float)capture[0], (float)capture[1],
+		(float)capture[2], (float)capture[3]);
+	glUniform2f(glGetUniformLocation(program, "u_capture_texture"),
+		(float)layer_capture_width, (float)layer_capture_height);
+	glUniform4f(glGetUniformLocation(program, "u_region"), (float)dst->x, (float)dst->y,
+		(float)dst->width, (float)dst->height);
+	float tex_w = (float)texture->width, tex_h = (float)texture->height;
+	bool has_src = src_box && src_box->width > 0 && src_box->height > 0 && tex_w > 0 && tex_h > 0;
+	glUniform4f(glGetUniformLocation(program, "u_mask_rect"),
+		has_src ? (float)src_box->x / tex_w : 0.f, has_src ? (float)src_box->y / tex_h : 0.f,
+		has_src ? (float)src_box->width / tex_w : 1.f, has_src ? (float)src_box->height / tex_h : 1.f);
+	glUniform1f(glGetUniformLocation(program, "u_scale"), scale);
+	glUniform1f(glGetUniformLocation(program, "u_time"), time);
+	glUniform2f(glGetUniformLocation(program, "u_size"), (float)dst->width / scale,
+		(float)dst->height / scale);
+	glUniform1f(glGetUniformLocation(program, "u_blur"), effect->desc.blur);
+	glUniform1f(glGetUniformLocation(program, "u_saturation"), effect->desc.saturation);
+	glUniform4fv(glGetUniformLocation(program, "u_tint"), 1, effect->desc.tint);
+	for (size_t i = 0; i < effect->desc.uniform_count; i++) {
+		const struct shady_layer_effect_uniform *u = &effect->desc.uniforms[i];
+		GLint loc = glGetUniformLocation(program, u->name);
+		if (loc < 0) continue;
+		if (u->size == 1) glUniform1fv(loc, 1, u->value);
+		else if (u->size == 2) glUniform2fv(loc, 1, u->value);
+		else if (u->size == 3) glUniform3fv(loc, 1, u->value);
+		else glUniform4fv(loc, 1, u->value);
+	}
+	glActiveTexture(GL_TEXTURE1);
+	glBindTexture(attribs.target, attribs.tex);
+	glUniform1i(glGetUniformLocation(program, "u_mask"), 1);
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_2D, layer_capture_texture);
+
+	if (!plugin_fullscreen_vbo) {
+		static const float verts[] = {-1.f,-1.f, 3.f,-1.f, -1.f,3.f};
+		glGenBuffers(1, &plugin_fullscreen_vbo);
+		glBindBuffer(GL_ARRAY_BUFFER, plugin_fullscreen_vbo);
+		glBufferData(GL_ARRAY_BUFFER, sizeof(verts), verts, GL_STATIC_DRAW);
+	}
+	glDisable(GL_DEPTH_TEST);
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+	glEnable(GL_SCISSOR_TEST);
+	GLint viewport[4];
+	glGetIntegerv(GL_VIEWPORT, viewport);
+	glScissor(viewport[0] + dst->x, viewport[1] + dst->y, dst->width, dst->height);
+	glBindBuffer(GL_ARRAY_BUFFER, plugin_fullscreen_vbo);
+	glEnableVertexAttribArray(0);
+	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void *)0);
+	glDrawArrays(GL_TRIANGLES, 0, 3);
+	glDisableVertexAttribArray(0);
+	if (effect->uses_time) layer_effects_animating = true;
+
+restore:
+	glActiveTexture(GL_TEXTURE1);
+	glBindTexture(GL_TEXTURE_2D, (GLuint)old_tex1);
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_2D, (GLuint)old_tex0);
+	glActiveTexture((GLenum)old_active);
+	glBindBuffer(GL_ARRAY_BUFFER, (GLuint)old_buffer);
+	glUseProgram((GLuint)old_program);
+	glScissor(old_scissor[0], old_scissor[1], old_scissor[2], old_scissor[3]);
+	if (scissor) glEnable(GL_SCISSOR_TEST); else glDisable(GL_SCISSOR_TEST);
+	glBlendFuncSeparate((GLenum)blend_src_rgb, (GLenum)blend_dst_rgb,
+		(GLenum)blend_src_alpha, (GLenum)blend_dst_alpha);
+	if (blend) glEnable(GL_BLEND); else glDisable(GL_BLEND);
+	if (depth) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
+}
+
 struct shady_overlay_render_data {
 	struct wlr_render_pass *pass;
 	struct wlr_output *output;
 	double ox, oy;
 	float scale;
 	struct timespec now;
+	struct layer_effect *effect; /* backdrop for the layer being drawn */
 };
 
 static void render_scene_overlay_buffer(struct wlr_scene_buffer *buffer,
@@ -1132,6 +1496,11 @@ static void render_scene_overlay_buffer(struct wlr_scene_buffer *buffer,
 		.transform = buffer->transform,
 		.filter_mode = buffer->filter_mode,
 	};
+	if (ctx->effect && plugin_make_current()) {
+		float seconds = (float)(ctx->now.tv_sec % 3600) + (float)ctx->now.tv_nsec * 1e-9f;
+		draw_layer_backdrop(ctx->effect, texture, &buffer->src_box, &options.dst_box,
+			ctx->scale, seconds);
+	}
 	wlr_render_pass_add_texture(ctx->pass, &options);
 	wlr_scene_surface_send_frame_done(scene_surface, &ctx->now);
 }
@@ -1261,15 +1630,22 @@ static void render_spatial_overlays(struct shady_server *server,
 	};
 	clock_gettime(CLOCK_MONOTONIC, &ctx.now);
 
-	/* Layer-shell stays in normal 2D screen space in spatial mode. */
+	/* Layer-shell stays in normal 2D screen space in spatial mode. Draw it
+	 * bottom to top: by layer (background .. overlay), and within a layer
+	 * oldest first, as the list keeps the newest surface at its head. */
 	struct shady_layer_surface *layer;
-	wl_list_for_each(layer, &shady_desktop_state(server)->layer_surfaces, link) {
+	for (uint32_t z = ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND;
+			z <= ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY; z++)
+	wl_list_for_each_reverse(layer, &shady_desktop_state(server)->layer_surfaces, link) {
+		if ((uint32_t)layer->layer_surface->current.layer != z) continue;
 		if (layer->layer_surface->output &&
 				layer->layer_surface->output != output) {
 			continue;
 		}
+		ctx.effect = layer_effect_for(layer->layer_surface->namespace);
 		wlr_scene_node_for_each_buffer(&layer->scene_layer->tree->node,
 			render_scene_overlay_buffer, &ctx);
+		ctx.effect = NULL;
 	}
 
 	/* XDG popups remain readable/interactive while their parent is spatial. */
@@ -1277,6 +1653,11 @@ static void render_spatial_overlays(struct shady_server *server,
 	wl_list_for_each(popup, &server->popups, link) {
 		wlr_scene_node_for_each_buffer(&popup->scene_tree->node,
 			render_scene_overlay_buffer, &ctx);
+	}
+	/* Animated effects (u_time) need the next frame too. */
+	if (layer_effects_animating) {
+		layer_effects_animating = false;
+		shady_render_schedule_all_outputs(server);
 	}
 }
 

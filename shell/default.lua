@@ -34,7 +34,7 @@ end
 local function panel(radius, props)
     props.radius = radius
     props.align = props.align or "stretch"
-    props.background = sheen(t.surface, 0.975, 0.045)
+    props.background = sheen(t.surface, options.panel_opacity or 0.975, 0.045)
     props.border = a(t.text, 0.08)
     table.insert(props, 1, shell.row {
         height = 1, padding = { 0, radius },
@@ -397,7 +397,8 @@ shell.bar {
         return shell.column {
             align = "stretch",
             background = shell.gradient("vertical",
-                a(mix(surface, WHITE, 0.025), 0.94), a(mix(surface, BLACK, 0.35), 0.94)),
+                a(mix(surface, WHITE, 0.025), options.bar_opacity or 0.94),
+                a(mix(surface, BLACK, 0.35), options.bar_opacity or 0.94)),
             shell.box { height = 1, background = a(WHITE, 0.045) },
             shell.row {
                 grow = 1, padding = { 0, 12, 0, 8 },

@@ -235,6 +235,41 @@ A plugin cannot attach another plugin's shader handle to its window association.
 
 If a custom per-window shader is missing or cannot be used, Shady falls back to the built-in window shader.
 
+## Layer backdrop effects
+
+`shady.layer_effect(namespace, { shader = path })` (see [LUA_API.md](LUA_API.md))
+draws a layer surface's backdrop with a custom fragment shader. Write a
+function `vec4 effect()` returning the colour behind the surface at
+`gl_FragCoord`; Shady supplies the rest of the shader, including
+`main()`, which masks the result by the surface's alpha.
+
+```glsl
+// Refraction: shift the backdrop by a ripple, then frost it a little.
+uniform float u_strength;
+vec4 effect() {
+    vec2 p = gl_FragCoord.xy;
+    vec2 ripple = vec2(sin(p.y * 0.08 + u_time), cos(p.x * 0.05)) * 6.0 * u_strength;
+    return mix(scene(p + ripple), vec4(0.9, 0.95, 1.0, 1.0), 0.08);
+}
+```
+
+Available without declaring them:
+
+| Name | |
+|---|---|
+| `vec4 scene(vec2 pixel)` | the output under the surface at a buffer pixel (clamped to the captured area) |
+| `vec2 local()` | 0..1 across the surface buffer, y down |
+| `float mask()` | the surface's alpha here |
+| `u_time` | seconds; a shader that uses it is redrawn every frame |
+| `u_size` | the surface in logical px |
+| `u_scale` | output scale |
+| `u_region`, `u_capture` | the surface and the captured area in buffer px |
+
+The built-in frosted glass is the same kind of shader with `u_blur`,
+`u_saturation` and `u_tint`. Pixel coordinates are the output buffer's,
+top-down. Taps reach at most the blur radius beyond the surface, so a
+custom shader that looks further away should set `blur` to its reach.
+
 ## Reference examples
 
 - `examples/plugins/shader_overlay.c` — fullscreen overlay shader and render hook.

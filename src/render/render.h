@@ -40,6 +40,29 @@ bool shady_render_plugin_hook_remove(struct shady_server *server, void *owner,
 	shady_render_hook_id hook);
 void shady_render_plugin_cleanup_owner(struct shady_server *server, void *owner);
 
+/* Backdrop effects for layer-shell surfaces (shady.layer_effect in Lua).
+ * Before a layer surface whose namespace matches is drawn, the scene behind
+ * it is captured and drawn through the built-in frosted-glass shader (blur,
+ * saturation, tint) or a custom fragment shader. Spatial mode only. */
+#define SHADY_LAYER_EFFECT_UNIFORMS 8
+struct shady_layer_effect_uniform {
+	char name[40]; /* with the u_ prefix */
+	int size; /* 1..4 */
+	float value[4];
+};
+struct shady_layer_effect_desc {
+	float blur; /* radius in logical px */
+	float saturation; /* 1 = unchanged */
+	float tint[4]; /* premultiplied wash over the backdrop; alpha 0 = none */
+	const char *shader; /* custom fragment shader path, or NULL */
+	struct shady_layer_effect_uniform uniforms[SHADY_LAYER_EFFECT_UNIFORMS];
+	size_t uniform_count;
+};
+/* Set the effect for a layer namespace; desc NULL removes it. Returns false
+ * when effects are unavailable (no spatial renderer) or the shader fails. */
+bool shady_render_set_layer_effect(struct shady_server *server, const char *name_space,
+	const struct shady_layer_effect_desc *desc);
+
 /* Shared with pick3d: build view/proj for the given output size. */
 void shady_render_camera_matrices(struct shady_server *server,
 	int buf_w, int buf_h, float view[16], float proj[16]);

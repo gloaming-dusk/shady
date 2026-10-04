@@ -72,6 +72,33 @@ Terminate the compositor from the event loop.
 
 Ask `shady-shell` to toggle its launcher through the shell protocol.
 
+### `shady.layer_effect(namespace, options | nil) -> boolean`
+
+Give every layer-shell surface with this namespace (a bar, a panel, a
+launcher; for `shady-shell` the namespace is the bar or popup name) a
+backdrop effect: the scene behind it is drawn through a shader before the
+surface itself, so translucent bars and panels become frosted glass. It
+applies to any layer-shell client, not only `shady-shell`. `nil` removes
+the effect.
+
+```lua
+shady.layer_effect("shady-shell", { blur = 18, saturation = 1.35, tint = "#08101a40" })
+shady.layer_effect("waybar", { blur = 12 })
+shady.layer_effect("quick", { shader = "/path/to/refract.frag", uniforms = { strength = 0.6 } })
+```
+
+| Option | Default | |
+|---|---|---|
+| `blur` | 12 | blur radius in logical px (built-in shader) |
+| `saturation` | 1 | colour saturation of the blurred backdrop |
+| `tint` | none | `#RRGGBBAA` laid over the backdrop |
+| `shader` | built-in | a custom fragment shader; see "Layer backdrop effects" in [SHADER_API.md](SHADER_API.md) |
+| `uniforms` | | values for a custom shader, as `u_<name>` |
+
+The effect is masked by the surface's own alpha, so rounded or shaped
+panels get glass only where they draw. It needs spatial mode and returns
+false elsewhere, or when the shader fails to compile.
+
 ## Runtime objects
 
 ### `shady.windows() -> Window[]`

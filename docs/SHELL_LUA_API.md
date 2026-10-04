@@ -283,3 +283,15 @@ Plugins outlive config reloads. Writing them is covered in
 [`shell/examples/sysinfo.lua`](../shell/examples/sysinfo.lua) adds a CPU
 graph to the default bar with the bundled `sysinfo` plugin, through the
 default UI's `shell.options.bar_extra` hook.
+
+## Frosted glass
+
+Shader effects in the shell cannot see what is behind a surface. The
+compositor can: in spatial mode, `shady.layer_effect(name, { blur = 18 })`
+in the compositor's `init.lua` blurs the scene behind every layer surface
+whose namespace is `name`. A bar's or popup's namespace is its `name` here
+(`"shady-shell"`, `"quick"`, `"menu"`, `"launcher"` in the default UI).
+Glass shows through translucent backgrounds, so pair it with
+[`shell/examples/glass.lua`](../shell/examples/glass.lua), which sets
+`shell.options.bar_opacity` and `panel_opacity`. See
+[LUA_API.md](LUA_API.md) for the options.
