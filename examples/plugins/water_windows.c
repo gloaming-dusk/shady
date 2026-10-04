@@ -67,10 +67,9 @@ static void apply_window(shady_window window, size_t rank) {
 	}
 
 	shady_window focused = api->focused_window(host);
-	/* Strong enough to read as liquid on real application contents. The
-	 * shader keeps the outer perimeter anchored so interaction still feels
-	 * stable even when the interior visibly refracts. */
-	float base = window == focused ? 0.120f : 0.086f;
+	/* Keep waves gentle enough for terminal text. Lighting still conveys
+	 * the liquid surface without moving glyphs by tens of pixels. */
+	float base = window == focused ? 0.035f : 0.025f;
 	float amplitude = base * s->strength;
 	float frequency = 7.4f + (float)(rank % 3) * 0.70f;
 	float speed = 1.18f + (float)(rank % 2) * 0.16f;

@@ -2,7 +2,15 @@
 #ifdef GL_OES_standard_derivatives
 #extension GL_OES_standard_derivatives : enable
 #endif
+/* Keep time, subpixel UVs and finite-difference normals at full precision.
+ * Half precision can quantize water motion into visible jumps, especially
+ * after the compositor has been running for several minutes. Both shader
+ * stages use the same precision so interpolated UVs retain that accuracy. */
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+precision highp float;
+#else
 precision mediump float;
+#endif
 
 uniform samplerExternalOES u_tex;
 uniform vec4 u_tint;
@@ -65,7 +73,7 @@ void main() {
 		cos((uv.y - uv.x * 1.3) * u_water.y * 2.15 + water_phase * 0.94)
 	);
 	vec2 slope_refraction = n.xy * vec2(-1.0, 1.0) * 0.045;
-	vec2 water_offset = ((water_offset_large * 0.68 + water_offset_small * 0.18) *
+	vec2 water_offset = ((water_offset_large * 0.68 + water_offset_small * 0.06) *
 		(u_water.x * 0.095) + slope_refraction * u_water.x * 0.75) * water_edge;
 	uv = clamp(uv + water_offset, 0.0, 1.0);
 

@@ -1,4 +1,12 @@
+/* Keep time, subpixel UVs and finite-difference normals at full precision.
+ * Half precision can quantize water motion into visible jumps, especially
+ * after the compositor has been running for several minutes. Both shader
+ * stages use the same precision so interpolated UVs retain that accuracy. */
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+precision highp float;
+#else
 precision mediump float;
+#endif
 
 attribute vec3 a_pos;
 attribute vec2 a_uv;
@@ -338,9 +346,12 @@ void main() {
 	zx += u_water.x * (water_ax * 0.68 + water_bx * 0.32) * water_edge_x;
 	zy += u_water.x * (water_ay * 0.68 + water_by * 0.32) * water_edge_y;
 	z0 += u_water.x * water_wave * water_edge;
-	vec3 tangent_x = vec3(eps, 0.0, zx - z0);
-	vec3 tangent_y = vec3(0.0, eps, zy - z0);
-	vec3 local_normal = normalize(cross(tangent_x, tangent_y));
+	/* Divide the cross product by eps squared before normalizing. Its
+	 * original flat-surface length is only 6.25e-6, whose squared length
+	 * can underflow in mediump and turn lighting/refraction into NaNs.
+	 * The equivalent slope normal keeps Z at one, including at rest. */
+	vec3 local_normal = normalize(vec3((z0 - zx) / eps,
+		(z0 - zy) / eps, 1.0));
 	v_normal = normalize(mat3(u_model) * local_normal);
 
 	gl_Position =
