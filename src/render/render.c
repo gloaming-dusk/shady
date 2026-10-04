@@ -787,7 +787,7 @@ bool shady_render_init(
 			&pipeline,
 			renderer
 		);
-	if (pipeline_ready) shady_environment_init(&pipeline);
+	if (pipeline_ready) shady_environment_gl_init();
 
 	depth_rbo = 0;
 	depth_rbo_w = 0;
@@ -828,7 +828,7 @@ void shady_render_fini(void) {
 	}
 
 	if (pipeline_ready) {
-		shady_environment_fini();
+		shady_environment_gl_fini();
 		shady_gl_pipeline_fini(
 			&pipeline
 		);
@@ -1380,7 +1380,8 @@ void shady_render_output_frame(
 		view
 	);
 
-	shady_environment_draw(server, &pipeline, view, proj);
+	shady_environment_sync(server);
+	shady_environment_draw_sky(server);
 
 	/*
 	 * Draw a world-space reference plane before windows. Because it shares
@@ -1388,7 +1389,7 @@ void shady_render_output_frame(
 	 * perspective and per-window Z separation.
 	 */
 	shady_scene_effects_draw_floor(server, &pipeline, vp);
-	shady_environment_draw_mesh(server, vp);
+	shady_environment_draw_scene(server, vp);
 
 	double ox = 0;
 	double oy = 0;

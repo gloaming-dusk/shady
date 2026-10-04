@@ -96,8 +96,10 @@ struct shady_config {
 	float window_titlebar_color[3];
 	float window_titlebar_focus_color[3];
 	float window_titlebar_text_color[3];
-	bool environment_obj;
-	char environment_obj_path[512];
+	/* Static 3D environment, loaded by the plugin registered for the
+	 * path's extension (see docs/ENVIRONMENT_API.md). */
+	bool environment;
+	char environment_path[512];
 
 	struct shady_keybind bind_quit;
 	struct shady_keybind bind_cycle_windows;
@@ -167,6 +169,8 @@ struct shady_server {
 	struct shady_event_bus events;
 	const struct shady_motion_driver *motion_driver;
 	void *motion_owner;
+	/* Spatial builds only; created and destroyed with the spatial module. */
+	struct shady_environment *environment;
 
 };
 

@@ -26,6 +26,15 @@ shady.set("window_titlebar_height", 28)
 shady.set("window_opacity", 0.92)
 ```
 
+The spatial environment is configured the same way. `environment_path` is
+dispatched to the loader plugin registered for its extension, and can be
+changed at runtime. See [Environment API](ENVIRONMENT_API.md).
+
+```lua
+shady.set("environment", true)
+shady.set("environment_path", os.getenv("HOME") .. "/rooms/test-room.obj")
+```
+
 ### `shady.bind(action, shortcut)`
 
 Register a compositor key binding.

@@ -1,11 +1,12 @@
 # Shady API Documentation
 
-Shady exposes four extension surfaces:
+Shady exposes five extension surfaces:
 
 - [Lua API](LUA_API.md) — configuration, runtime scripting, events, window/workspace control.
 - [Headless / Automation API](HEADLESS_API.md) — deterministic keyboard, pointer, timer, screenshot, and CI helpers.
 - [C Plugin API](C_PLUGIN_API.md) — native modules, events, window/output access, hot reload, render hooks.
 - [Shader API](SHADER_API.md) — standalone shader files, fullscreen passes, and per-window shader replacement.
+- [Environment API](ENVIRONMENT_API.md) — static 3D environments and pluggable asset loaders (OBJ today, glTF and others as plugins).
 
 ## Which API should I use?
 
@@ -16,6 +17,8 @@ Use the headless automation API for regression tests. It is part of the Lua runt
 Use the C plugin API when you need native performance, module state, input hooks, render hooks, custom window effects, or hot-reloadable extensions.
 
 Use the shader API together with the C plugin API when a plugin owns custom GLSL.
+
+Use the environment API when you want to support a new 3D file format or generate an environment procedurally. Loaders are ordinary C plugins.
 
 ## Build-time availability
 

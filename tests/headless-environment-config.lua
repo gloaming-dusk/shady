@@ -1,0 +1,6 @@
+shady.set("spatial_mode", true)
+shady.set("physics_enabled", false)
+shady.set("fps_mode", false)
+shady.set("sky", false)
+shady.set("environment", true)
+shady.set("environment_path", assert(os.getenv("SHADY_ENVIRONMENT_OBJ")))

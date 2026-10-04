@@ -23,6 +23,9 @@ static void plugin_cleanup_owner_resources(struct shady_server *server, void *ow
 	shady_plugin_motion_cleanup_owner(server, owner);
 	shady_plugin_representation_cleanup_owner(server, owner);
 	shady_render_plugin_cleanup_owner(server, owner);
+#if SHADY_HAS_SPATIAL
+	shady_plugin_environment_cleanup_owner(server, owner);
+#endif
 }
 
 static bool list_contains(const char *const *items, const char *value) {

@@ -181,6 +181,7 @@ int main(int argc, char *argv[]) {
 		server.config.spatial_mode = false;
 		shady_modules_set_enabled(&server.modules, "spatial", false);
 		shady_modules_set_enabled(&server.modules, "window-motion", false);
+		shady_modules_set_enabled(&server.modules, "obj-loader", false);
 		shady_modules_set_enabled(&server.modules, "physics", false);
 		shady_modules_set_enabled(&server.modules, "fps", false);
 		shady_modules_set_enabled(&server.modules, "close-animation", false);
@@ -194,7 +195,7 @@ int main(int argc, char *argv[]) {
 		server.config.close_animation = false;
 		server.config.fps_mode = false;
 		server.config.sky = false;
-		server.config.environment_obj = false;
+		server.config.environment = false;
 	}
 	server.wl_display = wl_display_create();
 	if (!server.wl_display) {

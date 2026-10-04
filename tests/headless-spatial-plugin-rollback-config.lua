@@ -9,7 +9,7 @@ shady.set("window_sides", false)
 shady.set("shadows", false)
 shady.set("floor", false)
 shady.set("sky", false)
-shady.set("environment_obj", false)
+shady.set("environment", false)
 shady.set("close_animation", false)
 
 shady.modules({

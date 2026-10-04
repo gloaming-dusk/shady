@@ -40,7 +40,7 @@ shady.set("floor_fade_start", 1.2)
 shady.set("floor_fade_end", 5.5)
 
 shady.set("sky", false)
-shady.set("environment_obj", false)
+shady.set("environment", false)
 
 shady.modules({
     ["window-motion"] = true,

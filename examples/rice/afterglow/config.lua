@@ -19,7 +19,7 @@ shady.set("floor", false)
 shady.set("close_animation", true)
 shady.set("fps_mode", true)
 shady.set("sky", false)
-shady.set("environment_obj", false)
+shady.set("environment", false)
 
 -- Fallback gradient (the plugin keeps it on palette as the hour changes).
 shady.set("background_top", "#0E0F33")

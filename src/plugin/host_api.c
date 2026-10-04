@@ -634,6 +634,10 @@ const void *shady_plugin_query_api(shady_host host, const char *name, uint32_t v
         return &shady_motion_api;
     if (name && !strcmp(name, SHADY_REPRESENTATION_API) && version == SHADY_REPRESENTATION_API_VERSION)
         return &shady_representation_api;
+#if SHADY_HAS_SPATIAL
+    if (name && !strcmp(name, SHADY_ENVIRONMENT_API) && version == SHADY_ENVIRONMENT_API_VERSION)
+        return &shady_environment_api;
+#endif
     return NULL;
 }
 

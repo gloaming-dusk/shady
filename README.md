@@ -48,7 +48,7 @@ production output in `website/dist/`.
 - **Window Constellation** plugin (`Super+C`) makes the focused window a 3D orbital anchor, animates the remaining windows through depth, and spring-restores the exact original layout when disabled
 - **Window Portal** plugin (`Super+P`) samples another live Wayland window through a host-managed auxiliary shader texture, creating a refractive circular portal without exposing raw GL handles to plugins
 - Window gravity, bounce, friction, wobble and collision response
-- OBJ environment loading with authored `collision_*` geometry and SAT collision
+- Pluggable 3D environments: the core is format-neutral and asset loaders are plugins (OBJ ships; glTF etc. can be added), with authored `collision_*` geometry and SAT collision
 - Built-in floor, cyan grid, projected shadows, lit 3D window shells and sky/environment support
 - Orbit camera with 3D ray-picking
 - Animated crumple-style window closing
@@ -452,9 +452,14 @@ end)
 
 ## 3D environments
 
-Shady can load OBJ geometry as both visual environment geometry and authored collision geometry.
+Shady can load a static environment as both visual geometry and authored collision geometry. The core does not parse model files. `environment_path` goes to the loader plugin registered for its extension. The bundled OBJ loader (`loaders/obj/`) loads automatically, and other formats such as glTF can be added as plugins. See [docs/ENVIRONMENT_API.md](docs/ENVIRONMENT_API.md).
 
-Collision groups/objects use a `collision_` prefix:
+```lua
+shady.set("environment", true)
+shady.set("environment_path", "/path/to/test-room.obj")
+```
+
+The OBJ loader treats groups/objects with a `collision_` prefix as collision geometry:
 
 ```obj
 g collision_room
@@ -499,7 +504,6 @@ Use `shady --legacy-config /path/to/config` to load one. `-c` now selects the bo
 
 ```text
 src/
-  assets/             OBJ and mesh loading
   modules/
     lua/              embedded Lua runtime and Shady scripting API
     physics/          cube gravity and world collision
@@ -507,12 +511,13 @@ src/
     window_motion/    neutral core adapters for plugin-driven motion
     close_animation/  close state machine
     scene_effects/    floor and shadow effects
-    environment/      visual environment loading
+    environment/      format-neutral environment scene, loader registry, sky
   plugin/             loading, host APIs, representation and motion drivers
   render/             GLES2 pipeline, math, picking and debug rendering
   shell/              standalone layer-shell desktop UI client
   world/              shared world and collider representation
 examples/plugins/     native feature plugins, including window-motion
+loaders/              environment asset loader plugins (obj/; gltf/ etc. later)
 assets/               development OBJ environments
 shaders/              editable GLSL
 ```

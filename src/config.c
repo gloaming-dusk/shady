@@ -46,8 +46,8 @@ void shady_config_defaults(struct shady_config *c) {
 		.window_titlebar_color = { 0.035f, 0.075f, 0.10f },
 		.window_titlebar_focus_color = { 0.055f, 0.16f, 0.22f },
 		.window_titlebar_text_color = { 0.90f, 0.96f, 1.0f },
-		.environment_obj = false,
-		.environment_obj_path = "",
+		.environment = false,
+		.environment_path = "",
 		.bind_quit = { XKB_KEY_Escape, 0 },
 		.bind_cycle_windows = { XKB_KEY_Tab, WLR_MODIFIER_ALT },
 		.bind_close_window = { XKB_KEY_F11, WLR_MODIFIER_ALT },
@@ -168,7 +168,8 @@ bool shady_config_set(struct shady_config *c,const char *key,const char *value){
 	if(!strcmp(key,"window_titlebar_color"))return parse_color(value,c->window_titlebar_color);
 	if(!strcmp(key,"window_titlebar_focus_color"))return parse_color(value,c->window_titlebar_focus_color);
 	if(!strcmp(key,"window_titlebar_text_color"))return parse_color(value,c->window_titlebar_text_color);
-	if(!strcmp(key,"environment_obj_path")){snprintf(c->environment_obj_path,sizeof(c->environment_obj_path),"%s",value);return true;}
+	/* environment_obj* are the pre-loader-plugin spellings, kept as aliases. */
+	if(!strcmp(key,"environment_path")||!strcmp(key,"environment_obj_path")){snprintf(c->environment_path,sizeof(c->environment_path),"%s",value);return true;}
 #define BIND_SET(name,field) if(!strcmp(key,"bind." name))return parse_keybind(value,&c->field);
 	BIND_SET("quit",bind_quit) BIND_SET("cycle_windows",bind_cycle_windows)
 	BIND_SET("close_window",bind_close_window) BIND_SET("fps_toggle",bind_fps_toggle)
@@ -184,7 +185,7 @@ bool shady_config_set(struct shady_config *c,const char *key,const char *value){
 	BOOL_SET("spatial_mode",spatial_mode) BOOL_SET("physics_enabled",physics_enabled) BOOL_SET("window_gravity",window_gravity)
 	BOOL_SET("window_wobble",window_wobble) BOOL_SET("window_sides",window_sides)
 	BOOL_SET("shadows",shadows) BOOL_SET("floor",floor) BOOL_SET("close_animation",close_animation)
-	BOOL_SET("fps_mode",fps_mode) BOOL_SET("sky",sky) BOOL_SET("environment_obj",environment_obj)
+	BOOL_SET("fps_mode",fps_mode) BOOL_SET("sky",sky) BOOL_SET("environment",environment) BOOL_SET("environment_obj",environment)
 	BOOL_SET("window_titlebar",window_titlebar)
 #undef BOOL_SET
 	return false;
@@ -207,7 +208,7 @@ bool shady_config_load(struct shady_config *c, const char *path) {
 		*eq='\0'; char *key=trim(p), *value=trim(eq+1);
 		char *comment=strpbrk(value,"#;");
 		if (!strcmp(key,"sky_path")) { if (comment) *comment='\0'; value=trim(value); snprintf(c->sky_path,sizeof(c->sky_path),"%s",value); continue; }
-		if (!strcmp(key,"environment_obj_path")) { if (comment) *comment='\0'; value=trim(value); snprintf(c->environment_obj_path,sizeof(c->environment_obj_path),"%s",value); continue; }
+		if (!strcmp(key,"environment_path") || !strcmp(key,"environment_obj_path")) { if (comment) *comment='\0'; value=trim(value); snprintf(c->environment_path,sizeof(c->environment_path),"%s",value); continue; }
 		if (comment) { *comment='\0'; value=trim(value); }
 #define BIND(name, field) if (!strcmp(key, "bind." name)) { \
 			if (!parse_keybind(value, &c->field)) wlr_log(WLR_ERROR, "config:%u: invalid keybind '%s'", lineno, value); \
@@ -243,7 +244,8 @@ bool shady_config_load(struct shady_config *c, const char *path) {
 		KEY("close_animation",close_animation)
 		KEY("fps_mode",fps_mode)
 		KEY("sky",sky)
-		KEY("environment_obj",environment_obj)
+		KEY("environment",environment)
+		KEY("environment_obj",environment)
 #undef KEY
 		wlr_log(WLR_ERROR,"config:%u: unknown key '%s'",lineno,key);
 	}

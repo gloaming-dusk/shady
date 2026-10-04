@@ -629,4 +629,9 @@ complete public-API driver with V2 state migration.
 and ownership rules with the older umbrella representation API. Large geometry
 caches are allocated on demand, rather than embedded in every core window.
 
+`shady.environment` version 1 is declared in `shady/environment.h`. Plugins
+register asset loaders per file extension or submit a procedural scene; the
+host owns the copy, rendering, and world collision. See
+[Environment API](ENVIRONMENT_API.md) and `loaders/obj/obj_loader.c`.
+
 See [Architecture](ARCHITECTURE.md) for implementation boundaries and tests.

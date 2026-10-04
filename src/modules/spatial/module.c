@@ -63,16 +63,20 @@ static struct shady_toplevel *focused_toplevel(struct shady_server *server) {
 
 static bool spatial_init(struct shady_server *server) {
 	shady_spatial_state(server)->runtime.world = shady_world_default();
-	if (!shady_environment_load_colliders(server)) {
-		wlr_log(WLR_ERROR, "spatial: failed to load environment collision groups");
-	}
+	/* The environment starts empty; loader plugins fill it once they
+	 * register, and the first frame syncs it with the config. */
+	if (!shady_environment_create(server)) return false;
 	shady_camera_reset(&shady_spatial_state(server)->runtime.camera);
-	return shady_render_init(server->renderer);
+	if (!shady_render_init(server->renderer)) {
+		shady_environment_destroy(server);
+		return false;
+	}
+	return true;
 }
 
 static void spatial_destroy(struct shady_server *server) {
-	(void)server;
 	shady_render_fini();
+	shady_environment_destroy(server);
 }
 
 static void spatial_toplevel_unmap(struct shady_toplevel *toplevel) {

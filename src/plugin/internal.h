@@ -7,4 +7,9 @@ bool shady_plugin_window_valid(shady_host host, shady_window window);
 const void *shady_plugin_query_api(shady_host host, const char *name, uint32_t version);
 void shady_plugin_motion_cleanup_owner(struct shady_server *server, void *owner);
 extern const struct shady_motion_api_v1 shady_motion_api;
+#if SHADY_HAS_SPATIAL
+#include <shady/environment.h>
+void shady_plugin_environment_cleanup_owner(struct shady_server *server, void *owner);
+extern const struct shady_environment_api_v1 shady_environment_api;
+#endif
 #endif

@@ -17,6 +17,8 @@ The implementation is split by responsibility:
   transforms, and representation queries.
 - `src/plugin/motion.c`: motion-driver ownership, command validation, and visual
   publication. It contains no spring or drag simulation.
+- `src/plugin/environment.c`: resolves the calling plugin for the
+  `shady.environment` table and forwards to the core environment service.
 
 `shady_toplevel` holds an opaque representation pointer. The representation
 subsystem allocates descriptors when a plugin sets a shape or attaches a
@@ -57,6 +59,7 @@ operations; it does not mean an optional driver is active.
 | --- | --- | --- |
 | `shady.window-motion` | 1 | Driver attachment, impulses, reset/damping, and visual data |
 | `shady.window-representation` | 1 | Static shape overrides and dynamic model/mesh/collision providers |
+| `shady.environment` | 1 | Asset-loader registry and procedural static scenes |
 
 The old representation functions remain available in the umbrella table. Both
 routes use the same implementation and ownership checks.
@@ -90,6 +93,32 @@ detaches the old driver, initializes the new driver, and restores each window's
 state and published visual data. Stateful hot unload still follows the loader's
 existing restrictions.
 
+## Environment and asset loaders
+
+The core has no model-format parsers. `src/modules/environment/` is a
+format-neutral service, created and destroyed with the spatial module:
+
+- `environment.c`: lifetime, config reconciliation (`environment`,
+  `environment_path`), scene ownership, and plugin cleanup.
+- `loaders.c`: the extension-to-loader registry. Descriptors and callbacks must
+  belong to the registering shared object.
+- `scene.c`: validation, the deep copy (de-indexed for GLES2), and rebuilding
+  the spatial world as the default floor plus the scene's collision.
+- `draw.c` and `sky.c`: GL upload/draw of the scene mesh, and the PPM sky.
+
+Rendering calls `shady_environment_sync()` once per frame. A changed path, or a
+newly registered or removed loader, triggers a load through the matching loader.
+The loader returns borrowed arrays. The host copies them, then calls the
+loader's `release()`. Loader cleanup runs before `dlclose`. It removes the
+plugin's loaders and clears a scene that plugin owns. The visual mesh is never
+used as collision.
+
+The OBJ parser lives in `loaders/obj/obj_loader.c` and uses only public headers.
+With `-Dobj_loader=enabled`, startup registers the shipped
+`libshady-plugin-obj-loader.so` before the bootstrap config, the same way as
+window motion. Further formats (glTF, ...) go in `loaders/<format>/`. See
+[Environment API](ENVIRONMENT_API.md).
+
 ## Initialization and validation
 
 A module whose `init` returns false must undo its partial initialization itself.
@@ -102,7 +131,10 @@ object and checks state migration, ABI rejection, damping, drag, reset, and
 wobble-disabled behavior. `tests/headless-motion.sh` checks the real host's
 ownership and numeric validation and reloads the driver with a live animated
 window. `tests/headless-representation-lifetime.sh` exercises cube, indexed mesh,
-and animated compound geometry through reload and window destruction. The
+and animated compound geometry through reload and window destruction.
+`meson test obj-loader` checks the OBJ loader plugin against a fake host, and
+`tests/headless-environment.sh` drives the real host through loader reload,
+unhandled extensions, and unload. The
 spatial suite runs these alongside existing rendering regressions.
 
 Physics, FPS controls, close-animation orchestration, and scene effects remain

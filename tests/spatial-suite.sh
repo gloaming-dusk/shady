@@ -30,12 +30,14 @@ nix develop -c ninja -C "$BUILD_DIR" \
   libshady-plugin-spatial-overview.so \
   libshady-plugin-water-windows.so \
   libshady-plugin-close-slide-fade.so \
-  libshady-plugin-afterglow.so
+  libshady-plugin-afterglow.so \
+  libshady-plugin-obj-loader.so \
+  obj-loader-test
 
 export SHADY_FPS_REPRESENTATION_PLUGIN="$ROOT/$BUILD_DIR/libshady-plugin-fps-cube.so"
 
 nix develop -c meson test -C "$BUILD_DIR" \
-  math3d physics-collision motion-plugin --print-errorlogs
+  math3d physics-collision motion-plugin obj-loader --print-errorlogs
 
 SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
   nix develop -c bash ./tests/headless-spatial-daily.sh
@@ -51,6 +53,9 @@ SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
 
 SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
   nix develop -c bash ./tests/headless-representation-lifetime.sh
+
+SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
+  nix develop -c bash ./tests/headless-environment.sh
 
 SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
   nix develop -c bash ./tests/headless-fps-toggle.sh

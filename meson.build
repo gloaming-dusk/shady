@@ -86,9 +86,12 @@ if spatial_enabled
     'src/render/pick3d.c',
     'src/experimental/runtime.c',
     'src/modules/environment/environment.c',
+    'src/modules/environment/loaders.c',
+    'src/modules/environment/scene.c',
+    'src/modules/environment/draw.c',
+    'src/modules/environment/sky.c',
     'src/modules/spatial/module.c',
-    'src/assets/mesh.c',
-    'src/assets/obj.c',
+    'src/plugin/environment.c',
   ]
 else
   shady_sources += 'src/render/desktop.c'
@@ -104,6 +107,7 @@ endif
 physics_enabled = spatial_enabled and get_option('physics').enabled()
 fps_enabled = spatial_enabled and get_option('fps').enabled()
 window_motion_enabled = spatial_enabled and get_option('window_motion').enabled()
+obj_loader_enabled = spatial_enabled and get_option('obj_loader').enabled()
 close_animation_enabled = spatial_enabled and get_option('close_animation').enabled()
 scene_effects_enabled = spatial_enabled and get_option('scene_effects').enabled()
 
@@ -256,9 +260,20 @@ if window_motion_enabled
     install_dir: join_paths(get_option('libdir'), 'shady', 'plugins'))
 endif
 
+# Environment asset loaders live outside the core; see docs/ENVIRONMENT_API.md.
+obj_loader_plugin = []
+if obj_loader_enabled
+  obj_loader_plugin = shared_module('shady-plugin-obj-loader',
+    'loaders/obj/obj_loader.c',
+    include_directories: include_directories('include'),
+    dependencies: [cc.find_library('m', required: true)],
+    install: true,
+    install_dir: join_paths(get_option('libdir'), 'shady', 'plugins'))
+endif
+
 executable('shady',
   shady_sources,
-  link_depends: motion_plugin,
+  link_depends: [motion_plugin, obj_loader_plugin],
   c_args: [
     '-DWLR_USE_UNSTABLE',
     '-D_POSIX_C_SOURCE=200809L',
@@ -269,6 +284,7 @@ executable('shady',
     '-DSHADY_HAS_PHYSICS=@0@'.format(physics_enabled ? 1 : 0),
     '-DSHADY_HAS_FPS=@0@'.format(fps_enabled ? 1 : 0),
     '-DSHADY_HAS_WINDOW_MOTION=@0@'.format(window_motion_enabled ? 1 : 0),
+    '-DSHADY_HAS_OBJ_LOADER=@0@'.format(obj_loader_enabled ? 1 : 0),
     '-DSHADY_HAS_CLOSE_ANIMATION=@0@'.format(close_animation_enabled ? 1 : 0),
     '-DSHADY_HAS_SCENE_EFFECTS=@0@'.format(scene_effects_enabled ? 1 : 0),
   ],
@@ -283,6 +299,7 @@ install_headers(
   'include/shady/types.h',
   'include/shady/representation.h',
   'include/shady/event.h',
+  'include/shady/environment.h',
   subdir: 'shady')
 
 shared_module('shady-plugin-hello',
@@ -530,3 +547,16 @@ shared_module('shady-plugin-motion-contract',
   include_directories: include_directories('include'),
   build_by_default: false,
   install: false)
+
+if obj_loader_enabled
+  obj_loader_test = executable('obj-loader-test',
+    'tests/obj-loader.c',
+    include_directories: include_directories('include'),
+    dependencies: [dl, cc.find_library('m', required: true)],
+    install: false)
+  test('obj-loader', obj_loader_test,
+    args: [obj_loader_plugin.full_path(),
+      join_paths(meson.project_source_root(), 'assets', 'test-room.obj'),
+      meson.current_build_dir()],
+    depends: [obj_loader_plugin])
+endif
