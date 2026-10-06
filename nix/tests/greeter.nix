@@ -9,6 +9,7 @@ self:
 
     programs.shady.enable = true;
     programs.shady.greeter.enable = true;
+    programs.shady.softwareCursor = true;
 
     users.users.alice = {
       isNormalUser = true;

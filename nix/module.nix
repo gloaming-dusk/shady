@@ -35,6 +35,8 @@ in
 
     greeter.enable = lib.mkEnableOption "the Shady greeter, a login card over the Afterglow sky";
 
+    softwareCursor = lib.mkEnableOption "software cursors for virtual GPUs with unreliable cursor planes";
+
     greeter.hint = lib.mkOption {
       type = lib.types.str;
       default = "";
@@ -44,8 +46,14 @@ in
   };
 
   config = lib.mkMerge [ (lib.mkIf cfg.enable {
-    environment.systemPackages = [ cfg.package ] ++ cfg.extraPackages;
+    environment.systemPackages = [ cfg.package pkgs.adwaita-icon-theme ] ++ cfg.extraPackages;
     environment.sessionVariables.SHADY_RICE = cfg.rice;
+    environment.sessionVariables = {
+      SHADY_SOFTWARE_CURSORS = if cfg.softwareCursor then "1" else "0";
+      XCURSOR_THEME = lib.mkDefault "Adwaita";
+      XCURSOR_SIZE = lib.mkDefault "24";
+      XCURSOR_PATH = [ "${pkgs.adwaita-icon-theme}/share/icons" ];
+    };
 
     services.displayManager.sessionPackages = [ cfg.package ];
 
@@ -73,6 +81,11 @@ in
         # greetd does not pass its own environment on to the greeter.
         command = lib.concatStringsSep " " ([
           "env"
+          "SHADY_SOFTWARE_CURSORS=${if cfg.softwareCursor then "1" else "0"}"
+          "XCURSOR_THEME=${lib.escapeShellArg config.environment.sessionVariables.XCURSOR_THEME}"
+          "XCURSOR_SIZE=${lib.escapeShellArg config.environment.sessionVariables.XCURSOR_SIZE}"
+          "XCURSOR_PATH=${lib.escapeShellArg config.environment.sessionVariables.XCURSOR_PATH}"
+          "WLR_RENDERER_ALLOW_SOFTWARE=${lib.escapeShellArg (config.environment.sessionVariables.WLR_RENDERER_ALLOW_SOFTWARE or "0")}"
           "SHADY_GREETER_SESSIONS=${config.services.displayManager.sessionData.desktops}/share/wayland-sessions"
           "SHADY_GREETER_STATE=/var/lib/shady-greeter/last"
         ] ++ lib.optional (cfg.greeter.hint != "")

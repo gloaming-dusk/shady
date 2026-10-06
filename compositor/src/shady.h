@@ -351,6 +351,7 @@ void seat_request_set_primary_selection(struct wl_listener *listener, void *data
 void server_cursor_motion(struct wl_listener *listener, void *data);
 void server_cursor_motion_absolute(struct wl_listener *listener, void *data);
 void server_cursor_button(struct wl_listener *listener, void *data);
+bool shady_input_pointer_on_overlay(struct shady_server *server);
 void server_cursor_axis(struct wl_listener *listener, void *data);
 void server_cursor_frame(struct wl_listener *listener, void *data);
 bool shady_input_automation_key(struct shady_server *server, xkb_keysym_t sym,

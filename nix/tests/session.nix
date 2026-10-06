@@ -11,6 +11,8 @@ self:
     fonts.fontconfig.enable = lib.mkOverride 500 false;
 
     programs.shady.enable = true;
+    programs.shady.softwareCursor = true;
+    environment.systemPackages = [ pkgs.firefox ];
 
     users.users.alice = {
       isNormalUser = true;
@@ -96,6 +98,24 @@ self:
             "su - alice -c 'XDG_RUNTIME_DIR=/run/user/1000 shadyctl windows' | grep -q foot",
             timeout=30,
         )
+
+    with subtest("Firefox opens a native Wayland window"):
+        machine.succeed(
+            f"su - alice -c 'XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY={display} "
+            "MOZ_ENABLE_WAYLAND=1 firefox --no-remote --new-instance about:blank "
+            ">/tmp/firefox-session.log 2>&1 &'"
+        )
+        machine.wait_until_succeeds(
+            "su - alice -c 'XDG_RUNTIME_DIR=/run/user/1000 shadyctl windows' | grep -qi 'Mozilla Firefox'",
+            timeout=90,
+        )
+        import json
+        windows = json.loads(as_alice("shadyctl windows"))
+        browser = next(w for w in windows if w["app_id"] in ["firefox", "org.mozilla.firefox"])
+        workspaces = json.loads(as_alice("shadyctl workspaces"))
+        current = workspaces["current"]
+        assert browser["workspace"] == current, browser
+        assert browser["focused"], browser
 
     machine.sleep(3)
     machine.screenshot("shady-session")

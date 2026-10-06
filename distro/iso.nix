@@ -26,6 +26,9 @@ in
 
   programs.shady.enable = true;
   programs.shady.greeter.enable = true;
+  # Composite the cursor with the desktop so virtual GPU cursor-plane
+  # orientation/hotspot quirks cannot separate the pointer from its image.
+  programs.shady.softwareCursor = true;
 
   # The install guide uses nixos-install --flake.
   nix.settings.experimental-features = [ "nix-command" "flakes" ];

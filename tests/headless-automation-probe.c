@@ -35,6 +35,9 @@ struct probe {
 	bool drag_seen;
 	bool scroll_seen;
 	bool pointer_down;
+	bool pointer_test;
+	double pointer_x, pointer_y;
+	struct wl_surface *cursor_surface;
 	uint32_t base_color;
 	bool pattern;
 	const char *app_id;
@@ -175,9 +178,44 @@ static const struct wl_keyboard_listener keyboard_listener = {
 	.repeat_info = keyboard_repeat,
 };
 
+static void set_test_cursor(struct probe *p, struct wl_pointer *pointer, uint32_t serial) {
+	if (!p->cursor_surface) {
+		char name[] = "/tmp/shady-cursor-probe-XXXXXX";
+		int fd = mkstemp(name);
+		if (fd < 0) return;
+		unlink(name);
+		const int width = 12, height = 18, size = width * height * 4;
+		if (ftruncate(fd, size) != 0) { close(fd); return; }
+		uint32_t *pixels = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+		if (pixels == MAP_FAILED) { close(fd); return; }
+		for (int y = 0; y < height; y++)
+			for (int x = 0; x < width; x++)
+				pixels[y * width + x] = y < 6 ? 0xffff0000u : 0xff0000ffu;
+		struct wl_shm_pool *pool = wl_shm_create_pool(p->shm, fd, size);
+		struct wl_buffer *buffer = wl_shm_pool_create_buffer(pool, 0,
+			width, height, width * 4, WL_SHM_FORMAT_ARGB8888);
+		wl_shm_pool_destroy(pool);
+		munmap(pixels, size);
+		close(fd);
+		p->buffers[p->buffer_count++] = buffer;
+		p->cursor_surface = wl_compositor_create_surface(p->compositor);
+		/* Assign the cursor role before committing its first buffer. */
+		wl_pointer_set_cursor(pointer, serial, p->cursor_surface, 2, 3);
+		wl_surface_attach(p->cursor_surface, buffer, 0, 0);
+		wl_surface_damage_buffer(p->cursor_surface, 0, 0, width, height);
+		wl_surface_commit(p->cursor_surface);
+	} else {
+		wl_pointer_set_cursor(pointer, serial, p->cursor_surface, 2, 3);
+	}
+}
+
 static void pointer_enter(void *data, struct wl_pointer *pointer, uint32_t serial,
 		struct wl_surface *surface, wl_fixed_t sx, wl_fixed_t sy) {
-	(void)data; (void)pointer; (void)serial; (void)surface; (void)sx; (void)sy;
+	(void)surface;
+	struct probe *p = data;
+	p->pointer_x = wl_fixed_to_double(sx);
+	p->pointer_y = wl_fixed_to_double(sy);
+	if (p->pointer_test) set_test_cursor(p, pointer, serial);
 }
 static void pointer_leave(void *data, struct wl_pointer *pointer, uint32_t serial,
 		struct wl_surface *surface) {
@@ -185,8 +223,10 @@ static void pointer_leave(void *data, struct wl_pointer *pointer, uint32_t seria
 }
 static void pointer_motion(void *data, struct wl_pointer *pointer,
 		uint32_t time, wl_fixed_t sx, wl_fixed_t sy) {
-	(void)pointer; (void)time; (void)sx; (void)sy;
+	(void)pointer; (void)time;
 	struct probe *p = data;
+	p->pointer_x = wl_fixed_to_double(sx);
+	p->pointer_y = wl_fixed_to_double(sy);
 	if (p->pointer_down) {
 		status_once(p, &p->drag_seen, "DRAG=PASS");
 		draw(p);
@@ -197,6 +237,13 @@ static void pointer_button(void *data, struct wl_pointer *pointer,
 	(void)pointer; (void)serial; (void)time; (void)button;
 	struct probe *p = data;
 	p->pointer_down = state == WL_POINTER_BUTTON_STATE_PRESSED;
+	if (p->pointer_test && p->pointer_down && p->status_path) {
+		FILE *f = fopen(p->status_path, "a");
+		if (f) {
+			fprintf(f, "BUTTON=%u %.3f %.3f\n", button, p->pointer_x, p->pointer_y);
+			fclose(f);
+		}
+	}
 	if (p->pointer_down) {
 		status_once(p, &p->click_seen, "CLICK=PASS");
 		draw(p);
@@ -301,6 +348,7 @@ int main(void) {
 		.app_id = app_id && *app_id ? app_id : "shady-automation-probe",
 		.base_color = color && *color ? (uint32_t)strtoul(color, NULL, 0) : 0xff20242au,
 		.pattern = getenv("SHADY_AUTOMATION_PROBE_PATTERN") != NULL,
+		.pointer_test = getenv("SHADY_AUTOMATION_POINTER_TEST") != NULL,
 	};
 	p.display = wl_display_connect(NULL);
 	if (!p.display) return 1;

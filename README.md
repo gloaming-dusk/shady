@@ -96,7 +96,7 @@ The F7–F9 bindings are implemented in `tools/test-shady.lua`, not hard-coded c
 
 | Input | Action |
 |---|---|
-| Right-button drag | Orbit camera |
+| Alt + right-button drag | Orbit camera |
 | Alt + middle-button drag | Pan camera |
 | Alt + scroll | Zoom |
 | Alt + Shift + scroll | Move focused window along Z |

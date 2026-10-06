@@ -138,7 +138,10 @@ void apps_spawn(const char *command) {
     pid_t pid = fork();
     if (pid == 0) {
         setsid();
-        execl("/bin/sh", "sh", "-lc", command, (char *)NULL);
+        /* Keep the running Wayland session's environment. A login shell
+         * re-runs profile scripts and can replace PATH and display settings. */
+        execl("/bin/sh", "sh", "-c", command, (char *)NULL);
+        perror("shady-shell: could not execute application shell");
         _exit(127);
     }
 }

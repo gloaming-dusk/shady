@@ -5,8 +5,10 @@ shady.log("Afterglow: the sun is low")
 local workspaces = { "shore", "studio", "harbor" }
 local terminal = os.getenv("TERMINAL") or "foot"
 
-shady.rule({ app_id = "firefox", workspace = "shore", maximized = true })
-shady.rule({ app_id = "org.mozilla.firefox", workspace = "shore", maximized = true })
+-- Open the browser where it was launched. Forcing it onto shore hides its
+-- first window while the session is on main (or another workspace).
+shady.rule({ app_id = "firefox", maximized = true })
+shady.rule({ app_id = "org.mozilla.firefox", maximized = true })
 shady.rule({ app_id = "discord", workspace = "harbor" })
 shady.rule({ app_id = "vesktop", workspace = "harbor" })
 

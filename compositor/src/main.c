@@ -306,6 +306,7 @@ int main(int argc, char *argv[]) {
 	server.cursor = wlr_cursor_create();
 	wlr_cursor_attach_output_layout(server.cursor, server.output_layout);
 	server.cursor_mgr = wlr_xcursor_manager_create(NULL, 24);
+	wlr_cursor_set_xcursor(server.cursor, server.cursor_mgr, "default");
 
 	server.cursor_mode = SHADY_CURSOR_PASSTHROUGH;
 	server.cursor_motion.notify = server_cursor_motion;

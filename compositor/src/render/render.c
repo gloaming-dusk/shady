@@ -2973,6 +2973,9 @@ void shady_render_output_frame(
 		profile_submit_start = profile_overlay_end;
 	}
 
+	/* Custom spatial rendering bypasses wlr_scene_output_commit(), which
+	 * normally draws cursors when the backend has no hardware cursor plane. */
+	wlr_output_add_software_cursors_to_render_pass(wlr_output, pass, NULL);
 	if (!wlr_render_pass_submit(pass)) {
 		wlr_log(
 			WLR_ERROR,

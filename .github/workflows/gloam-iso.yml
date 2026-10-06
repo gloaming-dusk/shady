@@ -74,6 +74,12 @@ jobs:
 
           Writing it to a USB stick and installing: https://gloaming-dusk.github.io/get-started/
           EOF
+          if [ -f "distro/releases/$version.md" ]; then
+            cat "distro/releases/$version.md" > release-notes.md
+            printf '\n' >> release-notes.md
+            cat notes.md >> release-notes.md
+            mv release-notes.md notes.md
+          fi
           gh release create "$GITHUB_REF_NAME" out/* --title "Gloam $version" --notes-file notes.md
 
       - name: Keep the ISO (manual runs)

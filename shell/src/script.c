@@ -829,7 +829,7 @@ static int l_apps(lua_State *L) {
     return 1;
 }
 
-/* shell.spawn(command) / shell.launch(app): run through `sh -lc`. */
+/* shell.spawn(command) / shell.launch(app): run through `sh -c`. */
 static int l_spawn(lua_State *L) {
     const char *command = NULL;
     if (lua_istable(L, 1)) {

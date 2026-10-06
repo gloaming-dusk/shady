@@ -12,6 +12,8 @@ export SHADY_ROOT SHADY_RICE
 export XDG_SESSION_TYPE=wayland
 export XDG_CURRENT_DESKTOP=shady
 export XDG_SESSION_DESKTOP=shady
+# Shady provides a native Wayland session without Xwayland.
+export MOZ_ENABLE_WAYLAND=1
 
 config_dir="${XDG_CONFIG_HOME:-$HOME/.config}/shady"
 rice_dir="$SHADY_ROOT/rices/$SHADY_RICE"

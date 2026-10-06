@@ -110,6 +110,10 @@ static void process_cursor_resize(struct shady_server *server) {
 
 static struct shady_toplevel *desktop_titlebar_at(struct shady_server *server,
 		double lx, double ly) {
+	/* Spatial titlebars are picked by the spatial module where they are
+	 * rendered, rather than at their unprojected scene-graph coordinates. */
+	if (server->config.spatial_mode && !shady_desktop_state(server)->session_locked)
+		return NULL;
 	struct wlr_scene_node *node = wlr_scene_node_at(&server->scene->tree.node,
 		lx, ly, NULL, NULL);
 	if (!node || node->type != WLR_SCENE_NODE_BUFFER) return NULL;
@@ -180,6 +184,13 @@ static bool overlay_surface_at(struct shady_server *server,
 	if (!scene_hit) return false;
 	*surface = scene_hit;
 	return true;
+}
+
+bool shady_input_pointer_on_overlay(struct shady_server *server) {
+	struct wlr_surface *surface = NULL;
+	double sx = 0, sy = 0;
+	return overlay_surface_at(server, server->cursor->x, server->cursor->y,
+		&surface, &sx, &sy);
 }
 
 static struct shady_toplevel *toplevel_at_cursor(struct shady_server *server,
@@ -582,6 +593,8 @@ void server_cursor_button(struct wl_listener *listener, void *data) {
 		}
 	}
 
+	if (event->state == WL_POINTER_BUTTON_STATE_PRESSED)
+		process_cursor_motion(server, event->time_msec);
 	wlr_seat_pointer_notify_button(server->seat,
 			event->time_msec, event->button, event->state);
 	if (event->state == WL_POINTER_BUTTON_STATE_RELEASED) {
@@ -671,6 +684,7 @@ void shady_input_automation_pointer_button(struct shady_server *server,
 				return;
 			}
 		}
+		if (pressed) process_cursor_motion(server, event.time_msec);
 		wlr_seat_pointer_notify_button(server->seat,
 			event.time_msec, event.button, event.state);
 		if (!pressed) {

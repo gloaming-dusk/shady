@@ -96,7 +96,9 @@ static bool spatial_pick_surface(struct shady_server *server,
 		double *sx, double *sy, struct shady_toplevel **toplevel) {
 	if (shady_desktop_state(server)->session_locked) return false;
 	*toplevel = shady_toplevel_at_3d(server, lx, ly, surface, sx, sy);
-	return *surface != NULL;
+	/* A spatial miss is authoritative: falling back to the flat scene graph
+	 * makes invisible, unprojected window rectangles receive pointer events. */
+	return true;
 }
 
 static bool spatial_pointer_motion(struct shady_server *server,
@@ -139,7 +141,8 @@ static bool spatial_pointer_button(struct shady_server *server,
 			return true;
 		}
 		if (event->state == WL_POINTER_BUTTON_STATE_PRESSED &&
-				!shady_spatial_state(server)->runtime.camera.first_person) {
+				!shady_spatial_state(server)->runtime.camera.first_person &&
+				!shady_input_pointer_on_overlay(server)) {
 			struct shady_toplevel *titlebar = shady_titlebar_at_3d(server,
 				server->cursor->x, server->cursor->y);
 			if (titlebar) {
@@ -151,16 +154,19 @@ static bool spatial_pointer_button(struct shady_server *server,
 		}
 	}
 	if (shady_spatial_state(server)->runtime.camera.first_person) return false;
-	if (event->button == BTN_RIGHT ||
-			(event->button == BTN_MIDDLE && (modifiers & WLR_MODIFIER_ALT))) {
-		if (event->state == WL_POINTER_BUTTON_STATE_PRESSED) {
-			server->cursor_mode = event->button == BTN_RIGHT
-				? SHADY_CURSOR_CAMERA_ORBIT : SHADY_CURSOR_CAMERA_PAN;
-			wlr_seat_pointer_clear_focus(server->seat);
-		} else if (server->cursor_mode == SHADY_CURSOR_CAMERA_ORBIT ||
-				server->cursor_mode == SHADY_CURSOR_CAMERA_PAN) {
-			reset_cursor_mode(server);
-		}
+	if (event->state == WL_POINTER_BUTTON_STATE_RELEASED &&
+			((event->button == BTN_RIGHT && server->cursor_mode == SHADY_CURSOR_CAMERA_ORBIT) ||
+			(event->button == BTN_MIDDLE && server->cursor_mode == SHADY_CURSOR_CAMERA_PAN))) {
+		reset_cursor_mode(server);
+		return true;
+	}
+	/* Ordinary right clicks belong to clients and shell context menus. */
+	if (event->state == WL_POINTER_BUTTON_STATE_PRESSED &&
+			(event->button == BTN_RIGHT || event->button == BTN_MIDDLE) &&
+			(modifiers & WLR_MODIFIER_ALT)) {
+		server->cursor_mode = event->button == BTN_RIGHT
+			? SHADY_CURSOR_CAMERA_ORBIT : SHADY_CURSOR_CAMERA_PAN;
+		wlr_seat_pointer_clear_focus(server->seat);
 		return true;
 	}
 	return false;

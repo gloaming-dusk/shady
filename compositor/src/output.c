@@ -137,6 +137,12 @@ void server_new_output(struct wl_listener *listener, void *data) {
 	}
 
 	struct wlr_output_state state;
+	const char *software_cursors = getenv("SHADY_SOFTWARE_CURSORS");
+	if (software_cursors && strcmp(software_cursors, "1") == 0) {
+		wlr_output_lock_software_cursors(wlr_output, true);
+		wlr_log(WLR_INFO, "output %s: using software cursors",
+			wlr_output->name ? wlr_output->name : "<unnamed>");
+	}
 	wlr_output_state_init(&state);
 	wlr_output_state_set_enabled(&state, true);
 
