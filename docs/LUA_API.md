@@ -44,7 +44,12 @@ shady.bind("quit", "Super+Shift+Escape")
 shady.bind("cycle_windows", "Super+Tab")
 ```
 
-Available action names are compositor-defined.
+Available action names are compositor-defined. `"none"` removes a binding, including a
+built-in default such as `quit` on Escape:
+
+```lua
+shady.bind("quit", "none")
+```
 
 ### `shady.rule(table)`
 

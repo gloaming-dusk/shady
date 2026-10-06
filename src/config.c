@@ -113,6 +113,11 @@ static bool parse_bool(const char *s, bool *out) {
 
 
 static bool parse_keybind(const char *s, struct shady_keybind *out) {
+	/* "none" unbinds: no key produces XKB_KEY_NoSymbol. */
+	if (!strcasecmp(s, "none")) {
+		*out = (struct shady_keybind){ .sym = XKB_KEY_NoSymbol, .modifiers = 0 };
+		return true;
+	}
 	char buf[128];
 	if (strlen(s) >= sizeof(buf)) return false;
 	strcpy(buf, s);
