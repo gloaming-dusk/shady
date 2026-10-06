@@ -1,6 +1,6 @@
 local count, state = 0, nil
 for _, p in ipairs(shady.plugins.list()) do
-    if p.name == "obj-loader" then count, state = count + 1, p.state end
+    if p.name == "window-motion" then count, state = count + 1, p.state end
 end
 if count == 1 and state == "active" then
     shady.log("plugin-manager-override: PASS")

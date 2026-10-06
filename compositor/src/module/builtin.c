@@ -38,9 +38,6 @@ bool shady_register_builtin_modules(struct shady_server *server) {
 #if SHADY_HAS_WINDOW_MOTION
 	if (!shady_plugin_manager_add_default(server, "window-motion")) return false;
 #endif
-#if SHADY_HAS_OBJ_LOADER
-	if (!shady_plugin_manager_add_default(server, "obj-loader")) return false;
-#endif
 #if SHADY_HAS_PHYSICS
 	shady_modules_register(&server->modules, shady_physics_module());
 #endif

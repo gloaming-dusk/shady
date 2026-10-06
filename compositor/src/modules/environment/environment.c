@@ -1,11 +1,13 @@
 #include "internal.h"
 
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include <wlr/util/log.h>
 
+#include "../../plugin/manager.h"
 #include "../../render/render.h"
 #include "../../shady.h"
 
@@ -152,4 +154,23 @@ void shady_environment_cleanup_owner(struct shady_server *server, void *owner) {
 	/* Defer the retry to the next frame: the owner's code is about to be
 	 * unmapped, and another loader may want the configured path. */
 	if (changed) env->dirty = true;
+}
+
+void shady_environment_request_loader(struct shady_server *server) {
+	const char *path = configured_path(server);
+	const char *slash = strrchr(path, '/');
+	const char *dot = strrchr(slash ? slash + 1 : path, '.');
+	if (!dot || !dot[1]) return;
+	static const char suffix[] = "-loader";
+	char name[48];
+	size_t length = strlen(dot + 1);
+	if (length + sizeof(suffix) > sizeof(name)) return;
+	for (size_t i = 0; i < length; i++) {
+		unsigned char c = (unsigned char)dot[1 + i];
+		if (!isalnum(c)) return;
+		name[i] = (char)tolower(c);
+	}
+	memcpy(name + length, suffix, sizeof(suffix));
+	if (!shady_plugin_manager_load(server, name))
+		wlr_log(WLR_ERROR, "environment: no '%s' plugin to load %s", name, path);
 }

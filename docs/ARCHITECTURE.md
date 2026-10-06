@@ -119,10 +119,10 @@ plugin's loaders and clears a scene that plugin owns. The visual mesh is never
 used as collision.
 
 The OBJ parser lives in `plugins/loaders/obj/obj_loader.c` and uses only public headers.
-With `-Dobj_loader=enabled`, the plugin manager loads the shipped
-`libshady-plugin-obj-loader.so` as a default plugin, the same way as window
-motion. Further formats (glTF, ...) go in `loaders/<format>/`. See
-[Environment API](ENVIRONMENT_API.md).
+It is not a default plugin: when an environment is configured, Shady loads the
+plugin named after the file's extension (`obj-loader` for `.obj`) right after
+`config.lua`, and nothing otherwise. Further formats (glTF, ...) go in
+`plugins/loaders/<format>/`. See [Environment API](ENVIRONMENT_API.md).
 
 ## Initialization and validation
 

@@ -166,40 +166,42 @@ Rules:
 
 ## Adding a loader to the tree
 
-Loaders that ship with Shady live under `loaders/<format>/`:
-
-```text
-loaders/
-  obj/obj_loader.c        Wavefront OBJ (shipped, auto-loaded)
-  gltf/gltf_loader.c      ← a future loader goes here
-```
-
-1. Add the source under `loaders/<format>/`. It may include only public
-   headers from `include/shady/`.
-2. In `meson.build`, add a feature option (see `obj_loader` in
-   `meson_options.txt`) and a `shared_module('shady-plugin-<format>-loader', …)`
-   installed to `libdir/shady/plugins`. Also add it to `link_depends` of the
-   `shady` executable and pass `-DSHADY_HAS_<FORMAT>_LOADER`.
-3. In `compositor/src/module/builtin.c`, add
-   `shady_plugin_manager_add_default(server, "<format>-loader")` under that
-   define. The plugin manager loads it after `config.lua` and keeps it out in
-   safe mode. See [Plugin manager](PLUGIN_MANAGER.md).
-4. Add a contract test like `tests/obj-loader.c`. It dlopens the plugin
-   against a fake host table and checks the scenes it returns.
-
-Third-party loaders don't need any of this. They load like any other plugin:
+Loaders are ordinary plugins, and the compositor knows none of them by name.
+When `environment` is on and `environment_path` is set, Shady loads the
+plugin named after the path's extension right after `config.lua`:
+`scene.obj` loads `obj-loader` (`libshady-plugin-obj-loader.so` on the plugin
+search path), `scene.gltf` would load `gltf-loader`. Without a configured
+environment no loader is loaded at all. A config may also load a loader
+itself, under any name, before setting the path:
 
 ```lua
 shady.plugins.load("my-gltf-loader")      -- libshady-plugin-my-gltf-loader.so on the search path
 shady.set("environment_path", "/path/to/scene.glb")
 ```
 
+Loaders that ship with Shady live under `plugins/loaders/<format>/`:
+
+```text
+plugins/loaders/
+  obj/obj_loader.c        Wavefront OBJ
+  gltf/gltf_loader.c      ← a future loader goes here
+```
+
+1. Add the source under `plugins/loaders/<format>/`. It may include only
+   public headers from `include/shady/`.
+2. In `meson.build`, add a feature option (see `obj_loader` in
+   `meson_options.txt`) and a `shared_module('shady-plugin-<format>-loader', …)`
+   installed to `libdir/shady/plugins`. Naming it `<extension>-loader` is
+   what lets Shady find it for a configured environment.
+3. Add a contract test like `tests/obj-loader.c`. It dlopens the plugin
+   against a fake host table and checks the scenes it returns.
+
 ## Bundled OBJ loader
 
 `plugins/loaders/obj/obj_loader.c` builds `libshady-plugin-obj-loader.so` (module
-`obj-loader`, provides `environment-loader.obj`). With
-`-Dobj_loader=enabled`, the default, the plugin manager loads it after
-`config.lua`. Use `shady.plugins.disable("obj-loader")` to keep it out.
+`obj-loader`, provides `environment-loader.obj`), built by default
+(`-Dobj_loader=enabled`). Shady loads it when an `.obj` environment is
+configured; `shady.plugins.load("obj-loader")` loads it explicitly.
 
 Supported OBJ input:
 

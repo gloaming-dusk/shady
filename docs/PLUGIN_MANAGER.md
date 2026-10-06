@@ -89,21 +89,26 @@ Unknown names raise an error.
 
 ### Shipped (default) plugins
 
-Some features ship as plugins: currently `window-motion` and `obj-loader`.
-They are loaded **after** `config.lua` finishes, unless the config disabled
-them. Because of this, `config.lua` can:
+Some features ship as default plugins: currently `window-motion`. They are
+loaded **after** `config.lua` finishes, unless the config disabled them.
+Because of this, `config.lua` can:
 
-- turn one off without loading it: `shady.plugins.disable("obj-loader")`
+- turn one off without loading it: `shady.plugins.disable("window-motion")`
 - replace it with a different build, by adding a search path that contains
   the same file name, or by calling `shady.plugins.load("/path/to/it.so")`
   first
 
 The older module calls keep working for shipped plugins that have not loaded
 yet. `shady.module("window-motion", false)`, `shady.modules({...})` and
-`shady.has_module("obj-loader")` all reach the plugin manager.
+`shady.has_module("window-motion")` all reach the plugin manager.
 
 `--safe` disables every shipped plugin. Plugins that `config.lua` loads
 explicitly are still loaded.
+
+Environment loaders are not shipped defaults. When `environment_path` is set
+(and `environment` is on), the plugin named after its extension is loaded
+right after `config.lua`: `"obj-loader"` for a `.obj` file. See
+[Environment API](ENVIRONMENT_API.md).
 
 ## Runtime API
 

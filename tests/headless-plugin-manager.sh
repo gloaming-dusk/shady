@@ -23,8 +23,8 @@ if rg -q 'AddressSanitizer|runtime error:|UndefinedBehaviorSanitizer' "$tmp/log"
     fail "sanitizer report"
 fi
 rg -q "plugin-manager-test: PASS" "$tmp/log" || fail "runtime checks did not pass"
-# Before defaults load: disabled default, pending default, loaded-but-not-started plugin.
-for state in "window-motion=disabled" "obj-loader=pending" "counter-plugin=inactive" "does-not-exist=failed"; do
+# Before defaults load: disabled default, loaded-but-not-started plugins.
+for state in "window-motion=disabled" "obj-loader=inactive" "counter-plugin=inactive" "does-not-exist=failed"; do
     rg -q "plugin-manager-test: bootstrap $state" "$tmp/log" || fail "bootstrap state $state"
 done
 # A disabled default must never be dlopen'ed.

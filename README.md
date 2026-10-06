@@ -335,12 +335,12 @@ shady.modules({
 
 `shady.config(key, value)` is an alias for `shady.set(key, value)`. `shady.module(name, enabled)` changes one module, while `shady.modules(table)` changes several. These are runtime selections within whatever modules were compiled into the binary.
 
-Native plugins are loaded from the bootstrap phase through the plugin manager. It resolves a name to `libshady-plugin-<name>.so` on the plugin search path. Shipped plugins (`window-motion`, `obj-loader`) load after `config.lua` unless you disable them. See [docs/PLUGIN_MANAGER.md](docs/PLUGIN_MANAGER.md).
+Native plugins are loaded from the bootstrap phase through the plugin manager. It resolves a name to `libshady-plugin-<name>.so` on the plugin search path. Shipped plugins (`window-motion`) load after `config.lua` unless you disable them; environment loaders such as `obj-loader` load only when an environment of their format is configured. See [docs/PLUGIN_MANAGER.md](docs/PLUGIN_MANAGER.md).
 
 ```lua
 shady.plugins.load("water-windows")                 -- by name
 shady.plugins.load("/absolute/path/to/my-plugin.so")  -- or by path
-shady.plugins.disable("obj-loader")                 -- keep a shipped plugin out
+shady.plugins.disable("window-motion")              -- keep a shipped plugin out
 ```
 
 Because plugin loading happens before capability resolution, external plugins participate in the same dependency graph as built-in modules.
@@ -467,7 +467,7 @@ end)
 
 ## 3D environments
 
-Shady can load a static environment as both visual geometry and authored collision geometry. The core does not parse model files. `environment_path` goes to the loader plugin registered for its extension. The bundled OBJ loader (`plugins/loaders/obj/`) loads automatically, and other formats such as glTF can be added as plugins. See [docs/ENVIRONMENT_API.md](docs/ENVIRONMENT_API.md).
+Shady can load a static environment as both visual geometry and authored collision geometry. The core does not parse model files. `environment_path` goes to the loader plugin registered for its extension. Shady loads the plugin named after the extension (`obj-loader` from `plugins/loaders/obj/` for `.obj`), so other formats such as glTF can be added as plugins. See [docs/ENVIRONMENT_API.md](docs/ENVIRONMENT_API.md).
 
 ```lua
 shady.set("environment", true)

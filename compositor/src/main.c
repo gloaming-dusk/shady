@@ -41,6 +41,9 @@
 #include "config_lua.h"
 #include "ipc/ipc.h"
 #include "ipc/values.h"
+#if SHADY_HAS_SPATIAL
+#include "modules/environment/environment.h"
+#endif
 
 static void default_config_path(char *buf, size_t size) {
 	const char *xdg = getenv("XDG_CONFIG_HOME");
@@ -200,6 +203,10 @@ int main(int argc, char *argv[]) {
 		server.config.environment = false;
 		shady_plugin_manager_disable_defaults(&server);
 	}
+#if SHADY_HAS_SPATIAL
+	/* Environment loaders are plugins too, loaded only for a configured scene. */
+	shady_environment_request_loader(&server);
+#endif
 	/* Shipped plugins load after config.lua so a disabled one never runs. */
 	if (!shady_plugin_manager_load_defaults(&server)) {
 		shady_events_finish(&server);

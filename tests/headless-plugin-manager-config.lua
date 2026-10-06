@@ -12,7 +12,12 @@ shady.plugins.path(assert(os.getenv("SHADY_TEST_PLUGIN_DIR")))
 -- new API or the legacy module toggle.
 assert(shady.has_module("window-motion"))
 shady.plugins.disable("window-motion")
-shady.modules({ ["obj-loader"] = true })
+shady.modules({ ["window-motion"] = false })
+
+-- Environment loaders are not defaults: a config loads one by name, or Shady
+-- loads it for a configured environment (headless-environment.sh).
+assert(not pcall(shady.plugins.disable, "obj-loader"), "obj-loader is not a default plugin")
+assert(shady.plugins.load("obj-loader"))
 
 -- Load by name through the search path; repeats are no-ops.
 assert(shady.plugins.load("counter"))

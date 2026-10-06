@@ -24,6 +24,12 @@ void shady_environment_destroy(struct shady_server *server);
  * nothing changed; called once per spatial frame and after registry changes. */
 void shady_environment_sync(struct shady_server *server);
 
+/* Loaders are ordinary plugins found by name: the configured environment's
+ * extension picks "<ext>-loader" (".obj" -> "obj-loader"). Called once after
+ * config.lua, before plugins start; does nothing without an environment, and
+ * reuses a loader the config already loaded. */
+void shady_environment_request_loader(struct shady_server *server);
+
 /* Loader registry. owner is the plugin's load base. */
 shady_environment_loader_id shady_environment_register_loader(
 	struct shady_server *server, void *owner,

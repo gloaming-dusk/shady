@@ -360,7 +360,7 @@ endif
 
 executable('shady',
   shady_sources,
-  link_depends: [motion_plugin, obj_loader_plugin],
+  link_depends: [motion_plugin],
   c_args: [
     '-DWLR_USE_UNSTABLE',
     '-D_POSIX_C_SOURCE=200809L',
@@ -371,7 +371,6 @@ executable('shady',
     '-DSHADY_HAS_PHYSICS=@0@'.format(physics_enabled ? 1 : 0),
     '-DSHADY_HAS_FPS=@0@'.format(fps_enabled ? 1 : 0),
     '-DSHADY_HAS_WINDOW_MOTION=@0@'.format(window_motion_enabled ? 1 : 0),
-    '-DSHADY_HAS_OBJ_LOADER=@0@'.format(obj_loader_enabled ? 1 : 0),
     '-DSHADY_HAS_CLOSE_ANIMATION=@0@'.format(close_animation_enabled ? 1 : 0),
     '-DSHADY_HAS_SCENE_EFFECTS=@0@'.format(scene_effects_enabled ? 1 : 0),
   ],
