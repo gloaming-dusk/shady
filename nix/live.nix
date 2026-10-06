@@ -3,9 +3,6 @@
 self:
 { config, lib, pkgs, modulesPath, ... }:
 
-let
-  sessions = "${config.services.displayManager.sessionData.desktops}/share/wayland-sessions";
-in
 {
   imports = [
     "${modulesPath}/installer/cd-dvd/installation-cd-minimal.nix"
@@ -17,20 +14,16 @@ in
   isoImage.squashfsCompression = "zstd -Xcompression-level 6";
 
   programs.shady.enable = true;
+  programs.shady.greeter.enable = true;
 
-  # Log the live user straight in; after logging out, tuigreet offers the
-  # Shady and Shady (Safe Mode) sessions.
-  services.greetd = {
-    enable = true;
-    settings = {
-      initial_session = {
-        user = "nixos";
-        command = "shady-session";
-      };
-      default_session.command =
-        "${pkgs.tuigreet}/bin/tuigreet --time --remember-session --sessions ${sessions} --cmd shady-session";
-    };
+  # Log the live user straight in; after logging out, the Shady greeter
+  # offers Shady and Shady (Safe Mode). The nixos user has no password:
+  # press Enter.
+  services.greetd.settings.initial_session = {
+    user = "nixos";
+    command = "shady-session";
   };
+  security.pam.services.greetd.allowNullPassword = true;
 
   # Let wlroots fall back to llvmpipe so the ISO also runs in VMs.
   environment.sessionVariables.WLR_RENDERER_ALLOW_SOFTWARE = "1";
