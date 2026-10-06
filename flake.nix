@@ -22,6 +22,10 @@
         default = shady;
       };
 
+      checks = nixpkgs.lib.genAttrs [ "x86_64-linux" ] (system: {
+        session = nixpkgs.legacyPackages.${system}.testers.runNixOSTest (import ./nix/tests/session.nix self);
+      });
+
       devShells = forAllSystems (pkgs: {
         default = pkgs.mkShell {
           strictDeps = true;
