@@ -7,6 +7,7 @@
 #include <time.h>
 #include <wayland-server-core.h>
 #include <wlr/backend/libinput.h>
+#include <wlr/backend/session.h>
 #include <wlr/types/wlr_cursor.h>
 #include <wlr/types/wlr_relative_pointer_v1.h>
 #include <wlr/types/wlr_pointer_constraints_v1.h>
@@ -266,6 +267,24 @@ static bool handle_keybinding(struct shady_server *server,
 	return false;
 }
 
+/* Ctrl+Alt+Fn: the keymap turns it into XF86Switch_VT_n. Handled before
+ * anything else so a stuck client, module or lock never traps the seat. */
+static bool handle_vt_switch(struct shady_server *server,
+		struct wlr_keyboard *keyboard, uint32_t keycode) {
+	if (!server->session) return false;
+	const xkb_keysym_t *syms;
+	int nsyms = xkb_state_key_get_syms(keyboard->xkb_state, keycode, &syms);
+	for (int i = 0; i < nsyms; i++) {
+		if (syms[i] >= XKB_KEY_XF86Switch_VT_1 &&
+				syms[i] <= XKB_KEY_XF86Switch_VT_12) {
+			wlr_session_change_vt(server->session,
+				syms[i] - XKB_KEY_XF86Switch_VT_1 + 1);
+			return true;
+		}
+	}
+	return false;
+}
+
 static void keyboard_handle_key(
 		struct wl_listener *listener, void *data) {
 	struct shady_keyboard *keyboard =
@@ -278,6 +297,9 @@ static void keyboard_handle_key(
 	}
 
 	uint32_t keycode = event->keycode + 8;
+	if (event->state == WL_KEYBOARD_KEY_STATE_PRESSED &&
+			handle_vt_switch(server, keyboard->wlr_keyboard, keycode))
+		return;
 	const xkb_keysym_t *syms;
 	struct xkb_state *binding_state = keyboard->binding_state
 		? keyboard->binding_state : keyboard->wlr_keyboard->xkb_state;

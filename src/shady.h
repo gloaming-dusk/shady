@@ -17,6 +17,7 @@
 
 struct wlr_allocator;
 struct wlr_backend;
+struct wlr_session;
 struct wlr_cursor;
 struct wlr_output;
 struct wlr_output_layout;
@@ -125,6 +126,8 @@ struct shady_representation_state;
 struct shady_server {
 	struct wl_display *wl_display;
 	struct wlr_backend *backend;
+	/* NULL without a seat (nested and headless backends). */
+	struct wlr_session *session;
 	struct wlr_renderer *renderer;
 	struct wlr_allocator *allocator;
 	struct wlr_scene *scene;

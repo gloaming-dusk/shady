@@ -232,6 +232,7 @@ int main(int argc, char *argv[]) {
 		}
 		return 1;
 	}
+	server.session = session;
 	if (session) {
 		wlr_log(WLR_INFO, "session acquired: seat=%s active=%s",
 			session->seat, session->active ? "yes" : "no");
