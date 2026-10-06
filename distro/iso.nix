@@ -1,5 +1,5 @@
-# Live/installer ISO that boots straight into the Shady session.
-#   nix build .#nixosConfigurations.live.config.system.build.isoImage
+# Gloam live/installer ISO: NixOS that boots straight into the Shady session.
+#   nix build .#nixosConfigurations.gloam-live.config.system.build.isoImage
 self:
 { config, lib, pkgs, modulesPath, ... }:
 
@@ -9,8 +9,12 @@ self:
     self.nixosModules.default
   ];
 
-  image.baseName = lib.mkForce "shady-live-${config.system.nixos.label}-${pkgs.stdenv.hostPlatform.system}";
-  isoImage.appendToMenuLabel = " Shady Live";
+  # Gloam is a NixOS derivative: its name goes into os-release and the boot menu.
+  system.nixos.distroName = "Gloam";
+  system.nixos.distroId = "gloam";
+  image.baseName = lib.mkForce "gloam-live-${config.system.nixos.label}-${pkgs.stdenv.hostPlatform.system}";
+  isoImage.volumeID = lib.mkForce "gloam-live-${config.system.nixos.release}-${pkgs.stdenv.hostPlatform.uname.processor}";
+  isoImage.appendToMenuLabel = " Live";
   isoImage.squashfsCompression = "zstd -Xcompression-level 6";
 
   programs.shady.enable = true;

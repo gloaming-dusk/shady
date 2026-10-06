@@ -548,7 +548,7 @@ rices/                complete looks: Afterglow, Neon Transit; archive/
 examples/             small plugins and configs to start from
 data/                 session and greeter launchers, wayland-sessions entries
 nix/                  Nix package, NixOS module and VM tests
-distro/               the NixOS-based distribution (live ISO)
+distro/               Gloam, the NixOS-based distribution (live ISO)
 tests/                unit and headless tests
 tools/                build, run and regression scripts
 assets/               development environments, sky images, media

@@ -22,7 +22,7 @@
         default = shady;
       };
 
-      nixosConfigurations.live = nixpkgs.lib.nixosSystem {
+      nixosConfigurations.gloam-live = nixpkgs.lib.nixosSystem {
         system = "x86_64-linux";
         modules = [ (import ./distro/iso.nix self) ];
       };
