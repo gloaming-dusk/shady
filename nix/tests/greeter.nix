@@ -24,7 +24,6 @@ self:
   };
 
   testScript = ''
-    from datetime import timedelta
     import os, re, tempfile
 
     def screen():
@@ -70,12 +69,12 @@ self:
     machine.wait_until_succeeds("pgrep -u greeter -x shady-shell", timeout=60)
 
     with subtest("the login card is on screen"):
-        retry(lambda _: card_visible(), timeout=timedelta(seconds=30))
+        retry(lambda _: card_visible(), 30)
         machine.screenshot("greeter")
 
     with subtest("a wrong password keeps the greeter"):
         machine.send_chars("not the password\n")
-        retry(lambda _: error_visible(), timeout=timedelta(seconds=30))
+        retry(lambda _: error_visible(), 30)
         machine.fail("pgrep -u alice -x shady")
         machine.succeed("pgrep -u greeter -x shady")
         machine.screenshot("greeter-wrong-password")
@@ -86,7 +85,7 @@ self:
         machine.wait_until_succeeds("pgrep -u alice -x shady-shell", timeout=60)
         machine.wait_until_fails("pgrep -u greeter -x shady", timeout=30)
         assert machine.succeed("cat /var/lib/shady-greeter/last").split() == ["alice", "shady"]
-        machine.sleep(duration=timedelta(seconds=5))
+        machine.sleep(5)
         machine.screenshot("session")
   '';
 }

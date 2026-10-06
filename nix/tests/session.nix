@@ -35,7 +35,6 @@ self:
   };
 
   testScript = ''
-    from datetime import timedelta
 
     def as_alice(cmd):
         return machine.succeed(
@@ -64,7 +63,7 @@ self:
         return orange > 40
 
     def wait_for_bar():
-        retry(lambda _: bar_visible(), timeout=timedelta(seconds=30))
+        retry(lambda _: bar_visible(), 30)
 
     machine.wait_for_unit("greetd.service")
     machine.wait_until_succeeds("pgrep -u alice -x shady", timeout=60)
@@ -98,7 +97,7 @@ self:
             timeout=30,
         )
 
-    machine.sleep(duration=timedelta(seconds=3))
+    machine.sleep(3)
     machine.screenshot("shady-session")
 
     with subtest("Ctrl+Alt+F2 switches to another VT"):
@@ -109,7 +108,7 @@ self:
         machine.wait_until_succeeds("[ $(fgconsole) = 1 ]", timeout=10)
 
     with subtest("the shell bar comes back after a VT round trip"):
-        machine.sleep(duration=timedelta(seconds=3))
+        machine.sleep(3)
         session_log = machine.succeed("journalctl -b -t shady -o cat")
         print("\n".join(l for l in session_log.splitlines()
                         if "output" in l or "shady-shell" in l or "layer" in l))
