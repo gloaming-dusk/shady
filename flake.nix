@@ -22,6 +22,11 @@
         default = shady;
       };
 
+      nixosConfigurations.live = nixpkgs.lib.nixosSystem {
+        system = "x86_64-linux";
+        modules = [ (import ./nix/live.nix self) ];
+      };
+
       checks = nixpkgs.lib.genAttrs [ "x86_64-linux" ] (system: {
         session = nixpkgs.legacyPackages.${system}.testers.runNixOSTest (import ./nix/tests/session.nix self);
       });
