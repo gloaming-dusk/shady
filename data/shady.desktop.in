@@ -1,0 +1,6 @@
+[Desktop Entry]
+Name=Shady
+Comment=A 3D Wayland compositor
+Exec=@bindir@/shady-session
+Type=Application
+DesktopNames=shady

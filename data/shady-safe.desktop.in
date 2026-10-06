@@ -1,0 +1,6 @@
+[Desktop Entry]
+Name=Shady (Safe Mode)
+Comment=Shady on the conventional scene-graph renderer
+Exec=@bindir@/shady-session --safe
+Type=Application
+DesktopNames=shady

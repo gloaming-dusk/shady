@@ -7,3 +7,4 @@ option('close_animation', type: 'feature', value: 'enabled', description: 'Build
 option('scene_effects', type: 'feature', value: 'enabled', description: 'Build floor, shadows and window shell effects')
 option('shell', type: 'feature', value: 'enabled', description: 'Build the standalone shady-shell layer-shell client')
 option('obj_loader', type: 'feature', value: 'enabled', description: 'Build and auto-load the Wavefront OBJ environment loader plugin')
+option('installed_data', type: 'boolean', value: false, description: 'Read shaders and shell data from the install prefix instead of the source tree')

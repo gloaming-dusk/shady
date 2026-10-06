@@ -1,0 +1,46 @@
+#!/bin/sh
+# Start shady as a login session.
+#
+# Your own ~/.config/shady/{config,init,shell}.lua win when present; anything
+# missing comes from the rice named by SHADY_RICE (default: afterglow).
+# Extra arguments go to shady, e.g. `shady-session --safe`.
+
+: "${SHADY_ROOT:=@datadir@}"
+: "${SHADY_RICE:=afterglow}"
+export SHADY_ROOT SHADY_RICE
+
+export XDG_SESSION_TYPE=wayland
+export XDG_CURRENT_DESKTOP=shady
+export XDG_SESSION_DESKTOP=shady
+
+config_dir="${XDG_CONFIG_HOME:-$HOME/.config}/shady"
+rice_dir="$SHADY_ROOT/examples/rice/$SHADY_RICE"
+if [ ! -d "$rice_dir" ]; then
+    echo "shady-session: unknown rice '$SHADY_RICE' ($rice_dir)" >&2
+    rice_dir=
+fi
+
+if [ ! -f "$config_dir/config.lua" ] && [ -n "$rice_dir" ]; then
+    set -- -c "$rice_dir/config.lua" "$@"
+fi
+if [ -z "${SHADY_LUA_INIT:-}" ] && [ ! -f "$config_dir/init.lua" ] && \
+   [ -n "$rice_dir" ] && [ -f "$rice_dir/init.lua" ]; then
+    export SHADY_LUA_INIT="$rice_dir/init.lua"
+fi
+if [ -z "${SHADY_SHELL_CONFIG:-}" ] && [ ! -f "$config_dir/shell.lua" ] && \
+   [ -n "$rice_dir" ] && [ -f "$rice_dir/shell.lua" ]; then
+    export SHADY_SHELL_CONFIG="$rice_dir/shell.lua"
+fi
+if [ -n "$rice_dir" ] && [ -f "$rice_dir/theme.sh" ]; then
+    . "$rice_dir/theme.sh"
+fi
+
+# Portals and other D-Bus activated services need to find this session.
+if [ -z "${SHADY_STARTUP:-}" ]; then
+    SHADY_STARTUP="@bindir@/shady-shell"
+    if command -v dbus-update-activation-environment >/dev/null 2>&1; then
+        SHADY_STARTUP="dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_TYPE; $SHADY_STARTUP"
+    fi
+fi
+
+exec "@bindir@/shady" -s "$SHADY_STARTUP" "$@"

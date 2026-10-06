@@ -50,7 +50,16 @@ egl = dependency('egl', required: spatial_enabled)
 glesv2 = dependency('glesv2', required: spatial_enabled)
 lua = cc.find_library('lua', required: true)
 dl = cc.find_library('dl', required: false)
-shader_dir = join_paths(meson.project_source_root(), 'shaders')
+# Shaders, shell data and plugin assets live under one root that mirrors the
+# source tree, so plugins resolve them through SHADY_ROOT either way.
+shady_data_install_dir = join_paths(get_option('datadir'), 'shady')
+plugin_install_dir = join_paths(get_option('libdir'), 'shady', 'plugins')
+if get_option('installed_data')
+  shady_data_root = join_paths(get_option('prefix'), shady_data_install_dir)
+else
+  shady_data_root = meson.project_source_root()
+endif
+shader_dir = join_paths(shady_data_root, 'shaders')
 
 shady_sources = [
   layer_shell_protocol_header,
@@ -250,7 +259,7 @@ if shell_enabled
     include_directories: include_directories('.', 'include'),
     c_args: [
       '-DSHELL_HAS_GL=@0@'.format(shell_gl_deps_found ? 1 : 0),
-      '-DSHADY_SHELL_DATA_DIR="@0@"'.format(join_paths(meson.project_source_root(), 'shell')),
+      '-DSHADY_SHELL_DATA_DIR="@0@"'.format(join_paths(shady_data_root, 'shell')),
       '-DSHADY_SHELL_PLUGIN_DIR="@0@"'.format(meson.current_build_dir()),
       '-DSHADY_SHELL_PLUGIN_INSTALL_DIR="@0@"'.format(join_paths(get_option('prefix'), get_option('libdir'), 'shady', 'shell-plugins')),
     ],
@@ -416,125 +425,144 @@ shared_module('shady-plugin-fps-cube',
   'examples/plugins/fps_cube.c',
   include_directories: include_directories('include'),
   build_by_default: true,
-  install: false)
+  install: true,
+  install_dir: plugin_install_dir)
 
 shared_module('shady-plugin-fps-squash',
   'examples/plugins/fps_squash.c',
   include_directories: include_directories('include'),
   build_by_default: true,
-  install: false)
+  install: true,
+  install_dir: plugin_install_dir)
 
 shared_module('shady-plugin-fps-jelly',
   'examples/plugins/fps_jelly.c',
   include_directories: include_directories('include'),
   build_by_default: true,
-  install: false)
+  install: true,
+  install_dir: plugin_install_dir)
 
 shared_module('shady-plugin-fps-folded-paper',
   'examples/plugins/fps_folded_paper.c',
   include_directories: include_directories('include'),
   build_by_default: true,
-  install: false)
+  install: true,
+  install_dir: plugin_install_dir)
 
 shared_module('shady-plugin-fps-origami',
   'examples/plugins/fps_origami.c',
   include_directories: include_directories('include'),
   build_by_default: true,
-  install: false)
+  install: true,
+  install_dir: plugin_install_dir)
 
 shared_module('shady-plugin-magnetic-windows',
   'examples/plugins/magnetic_windows.c',
   include_directories: include_directories('include'),
   dependencies: [dependency('xkbcommon')],
   build_by_default: true,
-  install: false)
+  install: true,
+  install_dir: plugin_install_dir)
 
 shared_module('shady-plugin-astral-loom',
   'examples/plugins/astral_loom.c',
   include_directories: include_directories('include'),
   dependencies: [dependency('xkbcommon'), cc.find_library('m')],
   build_by_default: true,
-  install: false)
+  install: true,
+  install_dir: plugin_install_dir)
 
 shared_module('shady-plugin-afterglow',
   'examples/plugins/afterglow.c',
   include_directories: include_directories('include'),
   dependencies: [dependency('xkbcommon'), cc.find_library('m')],
   build_by_default: true,
-  install: false)
+  install: true,
+  install_dir: plugin_install_dir)
 
 shared_module('shady-plugin-window-constellation',
   'examples/plugins/window_constellation.c',
   include_directories: include_directories('include'),
   dependencies: [dependency('xkbcommon')],
   build_by_default: true,
-  install: false)
+  install: true,
+  install_dir: plugin_install_dir)
 
 shared_module('shady-plugin-window-portal',
   'examples/plugins/window_portal.c',
   include_directories: include_directories('include'),
   dependencies: [dependency('xkbcommon')],
   build_by_default: true,
-  install: false)
+  install: true,
+  install_dir: plugin_install_dir)
 
 shared_module('shady-plugin-focus-depth',
   'examples/plugins/focus_depth.c',
   include_directories: include_directories('include'),
   build_by_default: true,
-  install: false)
+  install: true,
+  install_dir: plugin_install_dir)
 
 shared_module('shady-plugin-spatial-overview',
   'examples/plugins/spatial_overview.c',
   include_directories: include_directories('include'),
   dependencies: [dependency('xkbcommon')],
   build_by_default: true,
-  install: false)
+  install: true,
+  install_dir: plugin_install_dir)
 
 shared_module('shady-plugin-water-windows',
   'examples/plugins/water_windows.c',
   include_directories: include_directories('include'),
   dependencies: [dependency('xkbcommon')],
   build_by_default: true,
-  install: false)
+  install: true,
+  install_dir: plugin_install_dir)
 
 shared_module('shady-plugin-border-accent',
   'examples/plugins/border_accent.c',
   include_directories: include_directories('include'),
   dependencies: [dependency('xkbcommon')],
   build_by_default: true,
-  install: false)
+  install: true,
+  install_dir: plugin_install_dir)
 
 shared_module('shady-plugin-close-slide-fade',
   'examples/plugins/close_slide_fade.c',
   include_directories: include_directories('include'),
   build_by_default: true,
-  install: false)
+  install: true,
+  install_dir: plugin_install_dir)
 
 shared_module('shady-plugin-close-burn',
   'examples/plugins/close_burn.c',
   include_directories: include_directories('include'),
   build_by_default: true,
-  install: false)
+  install: true,
+  install_dir: plugin_install_dir)
 
 shared_module('shady-plugin-black-hole',
   'examples/plugins/black_hole.c',
   include_directories: include_directories('include'),
   dependencies: [dependency('xkbcommon'), cc.find_library('m')],
   build_by_default: true,
-  install: false)
+  install: true,
+  install_dir: plugin_install_dir)
 
 shared_module('shady-plugin-frozen-window',
   'examples/plugins/frozen_window.c',
   include_directories: include_directories('include'),
   dependencies: [dependency('xkbcommon')],
   build_by_default: true,
-  install: false)
+  install: true,
+  install_dir: plugin_install_dir)
 
 shared_module('shady-plugin-shader-overlay',
   'examples/plugins/shader_overlay.c',
   include_directories: include_directories('include'),
   build_by_default: true,
-  install: false)
+  install: true,
+  install_dir: plugin_install_dir)
 
 module_resolver_test = executable('module-resolver-test',
   [
@@ -676,3 +704,38 @@ frozen_window_plugin_test = executable('frozen-window-plugin-test',
   install: false)
 test('frozen-window-plugin', frozen_window_plugin_test,
   args: [join_paths(meson.current_build_dir(), 'libshady-plugin-frozen-window.so')])
+
+# ---- installed data and session ------------------------------------------
+
+install_subdir('shaders', install_dir: shady_data_install_dir)
+install_subdir('shell', install_dir: shady_data_install_dir)
+install_subdir('examples/plugins/shaders',
+  install_dir: join_paths(shady_data_install_dir, 'examples', 'plugins'))
+foreach rice : ['afterglow', 'neon-transit']
+  rice_files = []
+  foreach file : ['config.lua', 'init.lua', 'shell.lua', 'theme.sh', 'README.md']
+    if import('fs').is_file(join_paths('examples', 'rice', rice, file))
+      rice_files += join_paths('examples', 'rice', rice, file)
+    endif
+  endforeach
+  install_data(rice_files,
+    install_dir: join_paths(shady_data_install_dir, 'examples', 'rice', rice))
+endforeach
+# Rice configs load plugins from $SHADY_ROOT/build, as they do in a checkout.
+install_symlink('build',
+  pointing_to: join_paths('..', '..', get_option('libdir'), 'shady', 'plugins'),
+  install_dir: shady_data_install_dir)
+
+session_conf = configuration_data()
+session_conf.set('bindir', join_paths(get_option('prefix'), get_option('bindir')))
+session_conf.set('datadir', join_paths(get_option('prefix'), shady_data_install_dir))
+configure_file(input: 'data/shady-session.in', output: 'shady-session',
+  configuration: session_conf,
+  install: true, install_dir: get_option('bindir'), install_mode: 'rwxr-xr-x')
+foreach session : ['shady', 'shady-safe']
+  configure_file(input: 'data/@0@.desktop.in'.format(session),
+    output: '@0@.desktop'.format(session),
+    configuration: session_conf,
+    install: true,
+    install_dir: join_paths(get_option('datadir'), 'wayland-sessions'))
+endforeach
