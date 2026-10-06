@@ -14,7 +14,7 @@ export XDG_CURRENT_DESKTOP=shady
 export XDG_SESSION_DESKTOP=shady
 
 config_dir="${XDG_CONFIG_HOME:-$HOME/.config}/shady"
-rice_dir="$SHADY_ROOT/examples/rice/$SHADY_RICE"
+rice_dir="$SHADY_ROOT/rices/$SHADY_RICE"
 if [ ! -d "$rice_dir" ]; then
     echo "shady-session: unknown rice '$SHADY_RICE' ($rice_dir)" >&2
     rice_dir=

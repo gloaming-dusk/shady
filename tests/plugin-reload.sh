@@ -9,7 +9,7 @@ COMPOSITOR="$BUILD_DIR/shady"
 PLUGIN="$BUILD_DIR/libshady-plugin-counter.so"
 
 if [[ ! -x "$COMPOSITOR" ]]; then
-  echo "plugin-reload: $COMPOSITOR is missing; run ./daily-driver.sh build first" >&2
+  echo "plugin-reload: $COMPOSITOR is missing; run ./tools/daily-driver.sh build first" >&2
   exit 2
 fi
 if [[ ! -f "$PLUGIN" ]]; then

@@ -4,7 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "../src/ipc/json.h"
+#include "../compositor/src/ipc/json.h"
 
 static void parse_ok(const char *text, struct json_object *out, char *storage, size_t size) {
 	snprintf(storage, size, "%s", text);

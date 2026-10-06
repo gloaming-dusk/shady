@@ -26,21 +26,23 @@ stdenv.mkDerivation {
 
   src = lib.fileset.toSource {
     root = ../.;
-    fileset = lib.fileset.unions [
-      ../meson.build
-      ../meson_options.txt
-      ../assets
-      ../data
-      ../examples
-      ../greeter
-      ../include
-      ../loaders
-      ../protocols
-      ../shaders
-      ../shell
-      ../src
-      ../tests
-    ];
+    fileset = lib.fileset.difference
+      (lib.fileset.unions [
+        ../meson.build
+        ../meson_options.txt
+        ../assets
+        ../compositor
+        ../data
+        ../examples
+        ../greeter
+        ../include
+        ../plugins
+        ../rices
+        ../shell
+        ../tests
+      ])
+      # Media and retired rices the build never reads.
+      (lib.fileset.unions [ ../assets/screenshots ../assets/test-videos ../rices/archive ]);
   };
 
   strictDeps = true;

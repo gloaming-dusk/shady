@@ -38,7 +38,7 @@ session, Escape clears the field. Restart and Shut down run
 | `greeter/config.lua` | the compositor: Afterglow's sky plugin and no shortcuts at all, so nothing on the login screen can start programs (even the default Escape-to-quit is unbound) |
 | `greeter/init.lua` | frosted glass behind the card and Afterglow's camera |
 | `greeter/shell.lua` | the login card: a `persistent` popup with exclusive keyboard focus |
-| `src/greeter/greetd.c` | the `greetd` shell plugin: speaks greetd's IPC and lists accounts and sessions |
+| `greeter/src/greetd.c` | the `greetd` shell plugin: speaks greetd's IPC and lists accounts and sessions |
 
 The card asks the plugin to authenticate; when greetd accepts the chosen
 session the plugin asks the compositor to quit over its IPC socket, and

@@ -3,8 +3,8 @@
 #include <string.h>
 #include <wlr/util/log.h>
 
-#include "../src/shady.h"
-#include "../src/module/module.h"
+#include "../compositor/src/shady.h"
+#include "../compositor/src/module/module.h"
 
 static int failures;
 

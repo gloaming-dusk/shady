@@ -11,7 +11,7 @@ export XDG_SESSION_TYPE=wayland
 export XDG_CURRENT_DESKTOP=shady-greeter
 export SHADY_LUA_INIT="$SHADY_ROOT/greeter/init.lua"
 export SHADY_SHELL_CONFIG="$SHADY_ROOT/greeter/shell.lua"
-. "$SHADY_ROOT/examples/rice/afterglow/theme.sh"
+. "$SHADY_ROOT/rices/afterglow/theme.sh"
 
 # The greeter account usually has no writable home; keep caches in the
 # runtime directory instead.

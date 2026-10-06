@@ -1,6 +1,6 @@
 -- The real Afterglow runtime layer plus shady-shell with the rice's
 -- shell.lua; tests/headless-afterglow-shell.sh asks for an hour change.
-dofile(assert(os.getenv("SHADY_ROOT")) .. "/examples/rice/afterglow/init.lua")
+dofile(assert(os.getenv("SHADY_ROOT")) .. "/rices/afterglow/init.lua")
 local status = assert(os.getenv("AFTERGLOW_STATUS"))
 local after = shady.automation.after
 local function wait_for(token, fn)

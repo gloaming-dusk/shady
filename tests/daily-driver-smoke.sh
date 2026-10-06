@@ -7,7 +7,7 @@ cd "$ROOT"
 BUILD_DIR="${SHADY_DAILY_BUILD_DIR:-build-daily-driver}"
 COMPOSITOR="$BUILD_DIR/shady"
 if [[ ! -x "$COMPOSITOR" ]]; then
-  echo "daily-driver: $COMPOSITOR is missing; run ./daily-driver.sh build first" >&2
+  echo "daily-driver: $COMPOSITOR is missing; run ./tools/daily-driver.sh build first" >&2
   exit 2
 fi
 

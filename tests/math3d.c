@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "../src/render/math3d.h"
+#include "../compositor/src/render/math3d.h"
 
 static int failures;
 

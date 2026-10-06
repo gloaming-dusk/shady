@@ -147,12 +147,12 @@ config_lua.c / lua.c ──► plugin/manager_lua.c   (one binding, both phases)
                                                  reload rollback (unchanged)
 ```
 
-- `src/plugin/manager.c` keeps a record per requested plugin: the spec, the
+- `compositor/src/plugin/manager.c` keeps a record per requested plugin: the spec, the
   resolved path, the module name, whether it ships with Shady, and any
   enable/disable decision. The runtime state (`active`, `unloaded`, and so on)
   is read from the module manager, so it is never stored twice.
-- `src/module/builtin.c` declares shipped plugins with
-  `shady_plugin_manager_add_default()`. `src/main.c` calls
+- `compositor/src/module/builtin.c` declares shipped plugins with
+  `shady_plugin_manager_add_default()`. `compositor/src/main.c` calls
   `shady_plugin_manager_load_defaults()` after `config.lua` and safe-mode
   handling, and before modules are resolved.
 - To ship a new plugin, build it as `libshady-plugin-<name>.so` into the

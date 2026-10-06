@@ -8,7 +8,7 @@ BUILD_DIR="${SHADY_DAILY_BUILD_DIR:-build-daily-driver}"
 COMPOSITOR="$BUILD_DIR/shady"
 PROBE="$BUILD_DIR/headless-session-lock-probe"
 if [[ ! -x "$COMPOSITOR" || ! -x "$PROBE" ]]; then
-  echo "session-lock-output-race: missing compositor or probe; run ./daily-driver.sh build first" >&2
+  echo "session-lock-output-race: missing compositor or probe; run ./tools/daily-driver.sh build first" >&2
   exit 2
 fi
 

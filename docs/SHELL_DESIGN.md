@@ -11,7 +11,7 @@ documents ([IPC API](IPC_API.md), [Shell Lua API](SHELL_LUA_API.md),
 
 The compositor is easy to rice: Lua configures and scripts it, native C
 plugins extend it, and GLSL shaders restyle windows and the scene. The shell
-is not. `src/shell/main.c` is one ~2000-line C file with a fixed bar
+is not. `shell/src/main.c` is one ~2000-line C file with a fixed bar
 (workspaces, tasks, clock), a fixed launcher, a context menu and a short
 Quick Settings panel. Its only customisation is seven `SHADY_SHELL_*`
 colour variables. It ignores `wl_output`, so it has no multi-monitor or
@@ -157,7 +157,7 @@ with `shell.popup{}` and opened with `shell.open(name, args)`.
    and pointer input is resolved across all layer surfaces in stacking order.
 7. **Standard protocols** — done. `wlr-foreign-toplevel-management-unstable-v1`,
    `ext-foreign-toplevel-list-v1` and `ext-workspace-v1` mirror the
-   compositor's windows and workspaces (`src/standard_protocols.c`), so
+   compositor's windows and workspaces (`compositor/src/standard_protocols.c`), so
    waybar's taskbar and workspace modules, Quickshell and other toolkits
    work on Shady. Window title changes now emit `window.title_changed`, which
    also keeps shady-shell's and IPC's task titles current.
@@ -173,7 +173,7 @@ with `shell.popup{}` and opened with `shell.open(name, args)`.
 ## Code layout
 
 ```
-src/shell/
+shell/src/
   core.c/.h        Wayland globals, outputs, seat input routing, layer
                    surfaces, timers, fd watches, the poll loop
   render.h         renderer interface: begin() gives a cairo image, end() commits

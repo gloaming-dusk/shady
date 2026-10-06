@@ -1,5 +1,5 @@
 -- The default UI with a CPU pill next to the clock, fed by the native
--- sysinfo plugin (examples/shell-plugins/sysinfo.c): a live graph of the
+-- sysinfo plugin (shell/plugins/sysinfo.c): a live graph of the
 -- last minute and the current load in percent.
 --
 --   SHADY_SHELL_CONFIG=shell/examples/sysinfo.lua ./build/shady-shell

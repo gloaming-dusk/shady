@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "../src/modules/physics/collision.h"
+#include "../compositor/src/modules/physics/collision.h"
 
 static int failures;
 

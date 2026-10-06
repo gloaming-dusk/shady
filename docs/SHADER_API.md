@@ -1,9 +1,9 @@
 # Shader API
 
-Shady uses file-based GLES shaders. Core shaders live in `shaders/`, and plugins are encouraged to keep shader files next to plugin source:
+Shady uses file-based GLES shaders. Core shaders live in `compositor/shaders/`, and plugins are encouraged to keep shader files next to plugin source:
 
 ```text
-examples/plugins/
+plugins/
 ├── my_effect.c
 └── shaders/
     ├── my_effect.vert
@@ -112,7 +112,7 @@ if (SHADY_API_HAS(api, shader_draw_fullscreen_scene))
   `shader_draw_fullscreen`.
 - The texture is RGB only.
 - Each call copies the whole output once, so draw only while the effect is
-  visible. `examples/plugins/black_hole.c` stops calling it once its
+  visible. `plugins/black_hole.c` stops calling it once its
   aftershock has decayed.
 
 ## Per-window shaders
@@ -184,7 +184,7 @@ legacy `u_border_width` client border applies. When the rounded frame is active,
 `u_border_width` is still supplied for the client pass but shaders should draw the
 outline from `u_frame_shape.y` instead, so it continues across the title bar pass.
 
-`shaders/window.frag` contains a reference `frame_distance()` helper: it maps the
+`compositor/shaders/window.frag` contains a reference `frame_distance()` helper: it maps the
 pass's `v_uv` into frame coordinates through `u_frame_rect`, evaluates a rounded-box
 signed distance in px, discards fragments outside it and scales premultiplied colour
 by the anti-aliased coverage. Shaders that do not declare `u_frame_px` keep
@@ -272,14 +272,14 @@ custom shader that looks further away should set `blur` to its reach.
 
 ## Reference examples
 
-- `examples/plugins/shader_overlay.c` — fullscreen overlay shader and render hook.
-- `examples/plugins/shaders/overlay.vert`
-- `examples/plugins/shaders/overlay.frag`
-- `examples/plugins/water_windows.c` — per-window shader association.
-- `examples/plugins/shaders/water_window.vert`
-- `examples/plugins/shaders/water_window.frag`
-- `examples/plugins/frozen_window.c` — per-window animation through `u_params` (`window_set_shader_params`).
-- `examples/plugins/shaders/frozen_window.vert`
-- `examples/plugins/shaders/frozen_window.frag`
+- `plugins/shader_overlay.c` — fullscreen overlay shader and render hook.
+- `plugins/shaders/overlay.vert`
+- `plugins/shaders/overlay.frag`
+- `plugins/water_windows.c` — per-window shader association.
+- `plugins/shaders/water_window.vert`
+- `plugins/shaders/water_window.frag`
+- `plugins/frozen_window.c` — per-window animation through `u_params` (`window_set_shader_params`).
+- `plugins/shaders/frozen_window.vert`
+- `plugins/shaders/frozen_window.frag`
 
 The water-window example is the best starting point for a plugin that deforms both geometry and application pixels.

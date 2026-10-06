@@ -1,6 +1,6 @@
 export const builtinPlugins = [
-  { name: 'window-motion', description: 'Wobble and tilt for spatial windows, driven through the public motion API.', source: 'examples/plugins/window_motion.c' },
-  { name: 'obj-loader', description: 'Loads OBJ environments, including authored collision geometry.', source: 'loaders/obj/obj_loader.c' }
+  { name: 'window-motion', description: 'Wobble and tilt for spatial windows, driven through the public motion API.', source: 'plugins/window_motion.c' },
+  { name: 'obj-loader', description: 'Loads OBJ environments, including authored collision geometry.', source: 'plugins/loaders/obj/obj_loader.c' }
 ];
 
 // External means a separately loaded native plugin, including repository examples.

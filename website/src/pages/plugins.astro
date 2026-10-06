@@ -15,7 +15,7 @@ shady.plugins.path("~/.local/share/shady/plugins")
 -- shady.plugins.disable("obj-loader")`;
 const buildExample = `# From the repository root
 nix develop
-./build.sh
+./tools/build.sh
 
 # Examples marked "Build explicitly"
 ninja -C build libshady-plugin-orbit-layout.so
@@ -61,7 +61,7 @@ export SHADY_ROOT="$PWD"
     <div class="shell">
       <div class="section-head">
         <div><p class="eyebrow">Load what you need</p><h2 id="external-title">External plugins</h2></div>
-        <p>Optional native plugins loaded explicitly through <code>shady.plugins.load()</code>. All entries below are repository examples, not a third-party directory. Most are built by <code>./build.sh</code>, but none are auto-loaded or installed by default.</p>
+        <p>Optional native plugins loaded explicitly through <code>shady.plugins.load()</code>. All entries below are repository examples, not a third-party directory. Most are built by <code>./tools/build.sh</code>, but none are auto-loaded or installed by default.</p>
       </div>
       <div class="card-grid">
         {externalPlugins.map((plugin) => (
@@ -71,7 +71,7 @@ export SHADY_ROOT="$PWD"
             <h3>{plugin.name}</h3><p>{plugin.description}</p>
             <p class="plugin-note">{plugin.note}</p>
             <code class="plugin-load">shady.plugins.load("{plugin.name}")</code>
-            <a class="plugin-source" href={`${repo}/blob/main/examples/plugins/${plugin.name.replaceAll('-', '_')}.c`}>View source ↗</a>
+            <a class="plugin-source" href={`${repo}/blob/main/plugins/${plugin.name.replaceAll('-', '_')}.c`}>View source ↗</a>
           </article>
         ))}
       </div>

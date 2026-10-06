@@ -41,7 +41,7 @@ config: environment_path ──► core environment service ──► loader plu
                                     └─► spatial world colliders (physics, FPS)
 ```
 
-- The **core** (`src/modules/environment/`) owns the active scene, the
+- The **core** (`compositor/src/modules/environment/`) owns the active scene, the
   loader registry, GPU buffers, sky rendering and collision registration. It
   validates and deep-copies everything a plugin hands over.
 - A **loader plugin** only parses. It returns a format-neutral
@@ -180,7 +180,7 @@ loaders/
    `meson_options.txt`) and a `shared_module('shady-plugin-<format>-loader', …)`
    installed to `libdir/shady/plugins`. Also add it to `link_depends` of the
    `shady` executable and pass `-DSHADY_HAS_<FORMAT>_LOADER`.
-3. In `src/module/builtin.c`, add
+3. In `compositor/src/module/builtin.c`, add
    `shady_plugin_manager_add_default(server, "<format>-loader")` under that
    define. The plugin manager loads it after `config.lua` and keeps it out in
    safe mode. See [Plugin manager](PLUGIN_MANAGER.md).
@@ -196,7 +196,7 @@ shady.set("environment_path", "/path/to/scene.glb")
 
 ## Bundled OBJ loader
 
-`loaders/obj/obj_loader.c` builds `libshady-plugin-obj-loader.so` (module
+`plugins/loaders/obj/obj_loader.c` builds `libshady-plugin-obj-loader.so` (module
 `obj-loader`, provides `environment-loader.obj`). With
 `-Dobj_loader=enabled`, the default, the plugin manager loads it after
 `config.lua`. Use `shady.plugins.disable("obj-loader")` to keep it out.

@@ -38,7 +38,7 @@ export ASAN_OPTIONS="${ASAN_OPTIONS:-abort_on_error=1:halt_on_error=1:detect_lea
 export UBSAN_OPTIONS="${UBSAN_OPTIONS:-halt_on_error=1:print_stacktrace=1}"
 
 set +e
-timeout 8s "$COMPOSITOR" -c "$ROOT/examples/rice/neon-transit/config.lua" >"$log" 2>&1
+timeout 8s "$COMPOSITOR" -c "$ROOT/rices/neon-transit/config.lua" >"$log" 2>&1
 rc=$?
 set -e
 

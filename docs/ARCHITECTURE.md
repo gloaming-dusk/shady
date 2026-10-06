@@ -9,19 +9,19 @@ use published visual data rather than interpreting a plugin's state layout.
 
 The implementation is split by responsibility:
 
-- `src/plugin/manager.c`: the user-facing layer. It resolves names through
+- `compositor/src/plugin/manager.c`: the user-facing layer. It resolves names through
   search paths, keeps a record per requested plugin, and loads shipped default
   plugins after `config.lua`. `manager_lua.c` exposes it as `shady.plugins` to
   both Lua states. See [Plugin manager](PLUGIN_MANAGER.md).
-- `src/plugin/plugin.c`: shared-object loading, contract checks, snapshots,
+- `compositor/src/plugin/plugin.c`: shared-object loading, contract checks, snapshots,
   migration, reload rollback, and deferred lifecycle actions.
-- `src/plugin/host_api.c`: opaque-object access and the backwards-compatible
+- `compositor/src/plugin/host_api.c`: opaque-object access and the backwards-compatible
   umbrella API, including feature-table lookup.
-- `src/plugin/representation.c`: provider lifetime, shape validation, collision
+- `compositor/src/plugin/representation.c`: provider lifetime, shape validation, collision
   transforms, and representation queries.
-- `src/plugin/motion.c`: motion-driver ownership, command validation, and visual
+- `compositor/src/plugin/motion.c`: motion-driver ownership, command validation, and visual
   publication. It contains no spring or drag simulation.
-- `src/plugin/environment.c`: resolves the calling plugin for the
+- `compositor/src/plugin/environment.c`: resolves the calling plugin for the
   `shady.environment` table and forwards to the core environment service.
 
 `shady_toplevel` holds an opaque representation pointer. The representation
@@ -70,7 +70,7 @@ routes use the same implementation and ownership checks.
 
 ## Window motion plugin
 
-`examples/plugins/window_motion.c` is the implementation of `window-motion`.
+`plugins/window_motion.c` is the implementation of `window-motion`.
 It is built as `libshady-plugin-window-motion.so` and uses only installed public
 headers and opaque host APIs. It owns per-window spring velocities, accumulated
 wobble/tilt, and drag history. The host stores only the published wobble, tilt,
@@ -100,7 +100,7 @@ existing restrictions.
 
 ## Environment and asset loaders
 
-The core has no model-format parsers. `src/modules/environment/` is a
+The core has no model-format parsers. `compositor/src/modules/environment/` is a
 format-neutral service, created and destroyed with the spatial module:
 
 - `environment.c`: lifetime, config reconciliation (`environment`,
@@ -118,7 +118,7 @@ loader's `release()`. Loader cleanup runs before `dlclose`. It removes the
 plugin's loaders and clears a scene that plugin owns. The visual mesh is never
 used as collision.
 
-The OBJ parser lives in `loaders/obj/obj_loader.c` and uses only public headers.
+The OBJ parser lives in `plugins/loaders/obj/obj_loader.c` and uses only public headers.
 With `-Dobj_loader=enabled`, the plugin manager loads the shipped
 `libshady-plugin-obj-loader.so` as a default plugin, the same way as window
 motion. Further formats (glTF, ...) go in `loaders/<format>/`. See

@@ -7,7 +7,7 @@ wayland_scanner = find_program('wayland-scanner')
 wlr_protocols_dir = wlr_protocols.get_variable(pkgconfig: 'pkgdatadir')
 wayland_protocols_server = dependency('wayland-protocols')
 wayland_protocols_server_dir = wayland_protocols_server.get_variable(pkgconfig: 'pkgdatadir')
-subdir('protocols/wayland-protocols')
+subdir('compositor/protocols/wayland-protocols')
 layer_shell_xml = join_paths(wlr_protocols_dir, 'unstable/wlr-layer-shell-unstable-v1.xml')
 layer_shell_protocol_header = custom_target(
   'wlr-layer-shell-unstable-v1-protocol.h',
@@ -22,7 +22,7 @@ layer_shell_protocol_code = custom_target(
   command: [wayland_scanner, 'private-code', '@INPUT@', '@OUTPUT@'],
 )
 
-shady_shell_protocol_xml = files('protocols/shady-shell-v1.xml')
+shady_shell_protocol_xml = files('compositor/protocols/shady-shell-v1.xml')
 shady_shell_server_header = custom_target(
   'shady-shell-v1-server-protocol.h',
   input: shady_shell_protocol_xml,
@@ -59,67 +59,67 @@ if get_option('installed_data')
 else
   shady_data_root = meson.project_source_root()
 endif
-shader_dir = join_paths(shady_data_root, 'shaders')
+shader_dir = join_paths(shady_data_root, 'compositor', 'shaders')
 
 shady_sources = [
   layer_shell_protocol_header,
-  'src/main.c',
-  'src/module/module.c',
-  'src/event/event.c',
-  'src/module/builtin.c',
-  'src/plugin/plugin.c',
-  'src/plugin/manager.c',
-  'src/plugin/manager_lua.c',
-  'src/plugin/host_api.c',
-  'src/plugin/motion.c',
-  'src/plugin/representation.c',
-  'src/config.c',
-  'src/config_lua.c',
-  'src/titlebar.c',
-  'src/input.c',
-  'src/xdg.c',
-  'src/modules/window_motion/window_motion.c',
-  'src/layer.c',
-  'src/output.c',
-  'src/output_management.c',
-  'src/session_lock.c',
-  'src/shell_protocol.c',
-  'src/standard_protocols.c',
+  'compositor/src/main.c',
+  'compositor/src/module/module.c',
+  'compositor/src/event/event.c',
+  'compositor/src/module/builtin.c',
+  'compositor/src/plugin/plugin.c',
+  'compositor/src/plugin/manager.c',
+  'compositor/src/plugin/manager_lua.c',
+  'compositor/src/plugin/host_api.c',
+  'compositor/src/plugin/motion.c',
+  'compositor/src/plugin/representation.c',
+  'compositor/src/config.c',
+  'compositor/src/config_lua.c',
+  'compositor/src/titlebar.c',
+  'compositor/src/input.c',
+  'compositor/src/xdg.c',
+  'compositor/src/modules/window_motion/window_motion.c',
+  'compositor/src/layer.c',
+  'compositor/src/output.c',
+  'compositor/src/output_management.c',
+  'compositor/src/session_lock.c',
+  'compositor/src/shell_protocol.c',
+  'compositor/src/standard_protocols.c',
   ext_workspace_enum_header,
-  'src/ipc/ipc.c',
-  'src/ipc/json.c',
-  'src/ipc/values.c',
+  'compositor/src/ipc/ipc.c',
+  'compositor/src/ipc/json.c',
+  'compositor/src/ipc/values.c',
   shady_shell_server_header,
   shady_shell_protocol_code,
-  'src/modules/desktop/module.c',
-  'src/modules/desktop/ime.c',
-  'src/modules/workspace/workspace.c',
-  'src/modules/workspace/module.c',
+  'compositor/src/modules/desktop/module.c',
+  'compositor/src/modules/desktop/ime.c',
+  'compositor/src/modules/workspace/workspace.c',
+  'compositor/src/modules/workspace/module.c',
 ]
 
 if spatial_enabled
   shady_sources += [
-    'src/render/render.c',
-    'src/render/gl_pipeline.c',
-    'src/render/math3d.c',
-    'src/render/pick3d.c',
-    'src/experimental/runtime.c',
-    'src/modules/environment/environment.c',
-    'src/modules/environment/loaders.c',
-    'src/modules/environment/scene.c',
-    'src/modules/environment/draw.c',
-    'src/modules/environment/sky.c',
-    'src/modules/spatial/module.c',
-    'src/plugin/environment.c',
+    'compositor/src/render/render.c',
+    'compositor/src/render/gl_pipeline.c',
+    'compositor/src/render/math3d.c',
+    'compositor/src/render/pick3d.c',
+    'compositor/src/experimental/runtime.c',
+    'compositor/src/modules/environment/environment.c',
+    'compositor/src/modules/environment/loaders.c',
+    'compositor/src/modules/environment/scene.c',
+    'compositor/src/modules/environment/draw.c',
+    'compositor/src/modules/environment/sky.c',
+    'compositor/src/modules/spatial/module.c',
+    'compositor/src/plugin/environment.c',
   ]
 else
-  shady_sources += 'src/render/desktop.c'
+  shady_sources += 'compositor/src/render/desktop.c'
 endif
 
 if lua_enabled
   shady_sources += [
-    'src/modules/lua/lua.c',
-    'src/modules/lua/module.c',
+    'compositor/src/modules/lua/lua.c',
+    'compositor/src/modules/lua/module.c',
   ]
 endif
 
@@ -132,27 +132,27 @@ scene_effects_enabled = spatial_enabled and get_option('scene_effects').enabled(
 
 if physics_enabled
   shady_sources += [
-    'src/modules/physics/physics.c',
-    'src/modules/physics/collision.c',
-    'src/modules/physics/module.c',
+    'compositor/src/modules/physics/physics.c',
+    'compositor/src/modules/physics/collision.c',
+    'compositor/src/modules/physics/module.c',
   ]
 endif
 if fps_enabled
   shady_sources += [
-    'src/modules/fps/fps.c',
-    'src/modules/fps/module.c',
+    'compositor/src/modules/fps/fps.c',
+    'compositor/src/modules/fps/module.c',
   ]
 endif
 if close_animation_enabled
   shady_sources += [
-    'src/modules/close_animation/close_animation.c',
-    'src/modules/close_animation/module.c',
+    'compositor/src/modules/close_animation/close_animation.c',
+    'compositor/src/modules/close_animation/module.c',
   ]
 endif
 if scene_effects_enabled
   shady_sources += [
-    'src/modules/scene_effects/scene_effects.c',
-    'src/modules/scene_effects/module.c',
+    'compositor/src/modules/scene_effects/scene_effects.c',
+    'compositor/src/modules/scene_effects/module.c',
   ]
 endif
 
@@ -244,19 +244,19 @@ if shell_enabled
       xdg_shell_protocol_code,
       shady_shell_client_header,
       shady_shell_protocol_code,
-      'src/shell/main.c',
-      'src/shell/core.c',
-      'src/shell/render_gl.c',
-      'src/shell/render_shm.c',
-      'src/shell/theme.c',
-      'src/shell/apps.c',
-      'src/shell/ui.c',
-      'src/shell/script.c',
-      'src/shell/plugins.c',
-      'src/shell/compositor.c',
-      'src/ipc/json.c',
+      'shell/src/main.c',
+      'shell/src/core.c',
+      'shell/src/render_gl.c',
+      'shell/src/render_shm.c',
+      'shell/src/theme.c',
+      'shell/src/apps.c',
+      'shell/src/ui.c',
+      'shell/src/script.c',
+      'shell/src/plugins.c',
+      'shell/src/compositor.c',
+      'compositor/src/ipc/json.c',
     ],
-    include_directories: include_directories('.', 'include'),
+    include_directories: include_directories('.', 'include', 'compositor/src'),
     c_args: [
       '-DSHELL_HAS_GL=@0@'.format(shell_gl_deps_found ? 1 : 0),
       '-DSHADY_SHELL_DATA_DIR="@0@"'.format(join_paths(shady_data_root, 'shell')),
@@ -268,7 +268,7 @@ if shell_enabled
 
   # Native shell plugins (include/shady/shell_plugin.h).
   shared_module('shady-shell-plugin-sysinfo',
-    'examples/shell-plugins/sysinfo.c',
+    'shell/plugins/sysinfo.c',
     include_directories: include_directories('include'),
     dependencies: [cairo],
     install: true,
@@ -276,8 +276,8 @@ if shell_enabled
 
   # Logs people in through greetd for the Shady greeter (greeter/shell.lua).
   shared_module('shady-shell-plugin-greetd',
-    ['src/greeter/greetd.c', 'src/ipc/json.c'],
-    include_directories: include_directories('src', 'include'),
+    ['greeter/src/greetd.c', 'compositor/src/ipc/json.c'],
+    include_directories: include_directories('compositor/src', 'include'),
     dependencies: [cairo],
     install: true,
     install_dir: join_paths(get_option('libdir'), 'shady', 'shell-plugins'))
@@ -340,7 +340,7 @@ endif
 motion_plugin = []
 if window_motion_enabled
   motion_plugin = shared_module('shady-plugin-window-motion',
-    'examples/plugins/window_motion.c',
+    'plugins/window_motion.c',
     include_directories: include_directories('include'),
     dependencies: [cc.find_library('m', required: true)],
     install: true,
@@ -351,7 +351,7 @@ endif
 obj_loader_plugin = []
 if obj_loader_enabled
   obj_loader_plugin = shared_module('shady-plugin-obj-loader',
-    'loaders/obj/obj_loader.c',
+    'plugins/loaders/obj/obj_loader.c',
     include_directories: include_directories('include'),
     dependencies: [cc.find_library('m', required: true)],
     install: true,
@@ -375,17 +375,17 @@ executable('shady',
     '-DSHADY_HAS_CLOSE_ANIMATION=@0@'.format(close_animation_enabled ? 1 : 0),
     '-DSHADY_HAS_SCENE_EFFECTS=@0@'.format(scene_effects_enabled ? 1 : 0),
   ],
-  include_directories: include_directories('src', 'include', 'protocols'),
+  include_directories: include_directories('compositor/src', 'include', 'compositor/protocols'),
   dependencies: shady_deps,
   install: true)
 
 executable('shadyctl',
-  ['src/ctl/shadyctl.c', 'src/ipc/json.c'],
+  ['compositor/ctl/shadyctl.c', 'compositor/src/ipc/json.c'],
   c_args: ['-D_POSIX_C_SOURCE=200809L'],
   install: true)
 
 ipc_json_test = executable('ipc-json-test',
-  ['tests/ipc-json.c', 'src/ipc/json.c'],
+  ['tests/ipc-json.c', 'compositor/src/ipc/json.c'],
   install: false)
 test('ipc-json', ipc_json_test)
 
@@ -430,42 +430,42 @@ shared_module('shady-plugin-orbit-layout',
   install: false)
 
 shared_module('shady-plugin-fps-cube',
-  'examples/plugins/fps_cube.c',
+  'plugins/fps_cube.c',
   include_directories: include_directories('include'),
   build_by_default: true,
   install: true,
   install_dir: plugin_install_dir)
 
 shared_module('shady-plugin-fps-squash',
-  'examples/plugins/fps_squash.c',
+  'plugins/fps_squash.c',
   include_directories: include_directories('include'),
   build_by_default: true,
   install: true,
   install_dir: plugin_install_dir)
 
 shared_module('shady-plugin-fps-jelly',
-  'examples/plugins/fps_jelly.c',
+  'plugins/fps_jelly.c',
   include_directories: include_directories('include'),
   build_by_default: true,
   install: true,
   install_dir: plugin_install_dir)
 
 shared_module('shady-plugin-fps-folded-paper',
-  'examples/plugins/fps_folded_paper.c',
+  'plugins/fps_folded_paper.c',
   include_directories: include_directories('include'),
   build_by_default: true,
   install: true,
   install_dir: plugin_install_dir)
 
 shared_module('shady-plugin-fps-origami',
-  'examples/plugins/fps_origami.c',
+  'plugins/fps_origami.c',
   include_directories: include_directories('include'),
   build_by_default: true,
   install: true,
   install_dir: plugin_install_dir)
 
 shared_module('shady-plugin-magnetic-windows',
-  'examples/plugins/magnetic_windows.c',
+  'plugins/magnetic_windows.c',
   include_directories: include_directories('include'),
   dependencies: [dependency('xkbcommon')],
   build_by_default: true,
@@ -473,7 +473,7 @@ shared_module('shady-plugin-magnetic-windows',
   install_dir: plugin_install_dir)
 
 shared_module('shady-plugin-astral-loom',
-  'examples/plugins/astral_loom.c',
+  'plugins/astral_loom.c',
   include_directories: include_directories('include'),
   dependencies: [dependency('xkbcommon'), cc.find_library('m')],
   build_by_default: true,
@@ -481,7 +481,7 @@ shared_module('shady-plugin-astral-loom',
   install_dir: plugin_install_dir)
 
 shared_module('shady-plugin-afterglow',
-  'examples/plugins/afterglow.c',
+  'plugins/afterglow.c',
   include_directories: include_directories('include'),
   dependencies: [dependency('xkbcommon'), cc.find_library('m')],
   build_by_default: true,
@@ -489,7 +489,7 @@ shared_module('shady-plugin-afterglow',
   install_dir: plugin_install_dir)
 
 shared_module('shady-plugin-window-constellation',
-  'examples/plugins/window_constellation.c',
+  'plugins/window_constellation.c',
   include_directories: include_directories('include'),
   dependencies: [dependency('xkbcommon')],
   build_by_default: true,
@@ -497,7 +497,7 @@ shared_module('shady-plugin-window-constellation',
   install_dir: plugin_install_dir)
 
 shared_module('shady-plugin-window-portal',
-  'examples/plugins/window_portal.c',
+  'plugins/window_portal.c',
   include_directories: include_directories('include'),
   dependencies: [dependency('xkbcommon')],
   build_by_default: true,
@@ -505,14 +505,14 @@ shared_module('shady-plugin-window-portal',
   install_dir: plugin_install_dir)
 
 shared_module('shady-plugin-focus-depth',
-  'examples/plugins/focus_depth.c',
+  'plugins/focus_depth.c',
   include_directories: include_directories('include'),
   build_by_default: true,
   install: true,
   install_dir: plugin_install_dir)
 
 shared_module('shady-plugin-spatial-overview',
-  'examples/plugins/spatial_overview.c',
+  'plugins/spatial_overview.c',
   include_directories: include_directories('include'),
   dependencies: [dependency('xkbcommon')],
   build_by_default: true,
@@ -520,7 +520,7 @@ shared_module('shady-plugin-spatial-overview',
   install_dir: plugin_install_dir)
 
 shared_module('shady-plugin-water-windows',
-  'examples/plugins/water_windows.c',
+  'plugins/water_windows.c',
   include_directories: include_directories('include'),
   dependencies: [dependency('xkbcommon')],
   build_by_default: true,
@@ -528,7 +528,7 @@ shared_module('shady-plugin-water-windows',
   install_dir: plugin_install_dir)
 
 shared_module('shady-plugin-border-accent',
-  'examples/plugins/border_accent.c',
+  'plugins/border_accent.c',
   include_directories: include_directories('include'),
   dependencies: [dependency('xkbcommon')],
   build_by_default: true,
@@ -536,21 +536,21 @@ shared_module('shady-plugin-border-accent',
   install_dir: plugin_install_dir)
 
 shared_module('shady-plugin-close-slide-fade',
-  'examples/plugins/close_slide_fade.c',
+  'plugins/close_slide_fade.c',
   include_directories: include_directories('include'),
   build_by_default: true,
   install: true,
   install_dir: plugin_install_dir)
 
 shared_module('shady-plugin-close-burn',
-  'examples/plugins/close_burn.c',
+  'plugins/close_burn.c',
   include_directories: include_directories('include'),
   build_by_default: true,
   install: true,
   install_dir: plugin_install_dir)
 
 shared_module('shady-plugin-black-hole',
-  'examples/plugins/black_hole.c',
+  'plugins/black_hole.c',
   include_directories: include_directories('include'),
   dependencies: [dependency('xkbcommon'), cc.find_library('m')],
   build_by_default: true,
@@ -558,7 +558,7 @@ shared_module('shady-plugin-black-hole',
   install_dir: plugin_install_dir)
 
 shared_module('shady-plugin-frozen-window',
-  'examples/plugins/frozen_window.c',
+  'plugins/frozen_window.c',
   include_directories: include_directories('include'),
   dependencies: [dependency('xkbcommon')],
   build_by_default: true,
@@ -566,7 +566,7 @@ shared_module('shady-plugin-frozen-window',
   install_dir: plugin_install_dir)
 
 shared_module('shady-plugin-shader-overlay',
-  'examples/plugins/shader_overlay.c',
+  'plugins/shader_overlay.c',
   include_directories: include_directories('include'),
   build_by_default: true,
   install: true,
@@ -575,8 +575,8 @@ shared_module('shady-plugin-shader-overlay',
 module_resolver_test = executable('module-resolver-test',
   [
     'tests/module-resolver.c',
-    'src/module/module.c',
-    'src/event/event.c',
+    'compositor/src/module/module.c',
+    'compositor/src/event/event.c',
   ],
   c_args: [
     '-DWLR_USE_UNSTABLE',
@@ -589,7 +589,7 @@ module_resolver_test = executable('module-resolver-test',
     '-DSHADY_HAS_CLOSE_ANIMATION=0',
     '-DSHADY_HAS_SCENE_EFFECTS=0',
   ],
-  include_directories: include_directories('src', 'include'),
+  include_directories: include_directories('compositor/src', 'include'),
   dependencies: [wlroots, dependency('wayland-server'), dependency('xkbcommon'), dl],
   install: false)
 
@@ -598,12 +598,12 @@ test('module-resolver', module_resolver_test)
 math3d_test = executable('math3d-test',
   [
     'tests/math3d.c',
-    'src/render/math3d.c',
+    'compositor/src/render/math3d.c',
   ],
   c_args: [
     '-D_POSIX_C_SOURCE=200809L',
   ],
-  include_directories: include_directories('src'),
+  include_directories: include_directories('compositor/src'),
   dependencies: [cc.find_library('m', required: true)],
   install: false)
 
@@ -612,12 +612,12 @@ test('math3d', math3d_test)
 physics_collision_test = executable('physics-collision-test',
   [
     'tests/physics-collision.c',
-    'src/modules/physics/collision.c',
+    'compositor/src/modules/physics/collision.c',
   ],
   c_args: [
     '-D_POSIX_C_SOURCE=200809L',
   ],
-  include_directories: include_directories('src'),
+  include_directories: include_directories('compositor/src'),
   dependencies: [cc.find_library('m', required: true)],
   install: false)
 
@@ -626,13 +626,13 @@ test('physics-collision', physics_collision_test)
 config_opacity_test = executable('config-opacity-test',
   [
     'tests/config-opacity.c',
-    'src/config.c',
+    'compositor/src/config.c',
   ],
   c_args: [
     '-DWLR_USE_UNSTABLE',
     '-D_POSIX_C_SOURCE=200809L',
   ],
-  include_directories: include_directories('src', 'include'),
+  include_directories: include_directories('compositor/src', 'include'),
   dependencies: [wlroots, dependency('wayland-server'), dependency('xkbcommon')],
   install: false)
 
@@ -641,13 +641,13 @@ test('config-opacity', config_opacity_test)
 config_border_test = executable('config-border-test',
   [
     'tests/config-border.c',
-    'src/config.c',
+    'compositor/src/config.c',
   ],
   c_args: [
     '-DWLR_USE_UNSTABLE',
     '-D_POSIX_C_SOURCE=200809L',
   ],
-  include_directories: include_directories('src', 'include'),
+  include_directories: include_directories('compositor/src', 'include'),
   dependencies: [wlroots, dependency('wayland-server'), dependency('xkbcommon')],
   install: false)
 
@@ -656,13 +656,13 @@ test('config-border', config_border_test)
 config_titlebar_test = executable('config-titlebar-test',
   [
     'tests/config-titlebar.c',
-    'src/config.c',
+    'compositor/src/config.c',
   ],
   c_args: [
     '-DWLR_USE_UNSTABLE',
     '-D_POSIX_C_SOURCE=200809L',
   ],
-  include_directories: include_directories('src', 'include'),
+  include_directories: include_directories('compositor/src', 'include'),
   dependencies: [wlroots, dependency('wayland-server'), dependency('xkbcommon')],
   install: false)
 
@@ -715,20 +715,22 @@ test('frozen-window-plugin', frozen_window_plugin_test,
 
 # ---- installed data and session ------------------------------------------
 
-install_subdir('shaders', install_dir: shady_data_install_dir)
-install_subdir('shell', install_dir: shady_data_install_dir)
-install_subdir('greeter', install_dir: shady_data_install_dir)
-install_subdir('examples/plugins/shaders',
-  install_dir: join_paths(shady_data_install_dir, 'examples', 'plugins'))
+install_subdir('compositor/shaders', install_dir: join_paths(shady_data_install_dir, 'compositor'))
+# The Lua UIs and their data; their C sources stay behind.
+install_subdir('shell', install_dir: shady_data_install_dir,
+  exclude_directories: ['src', 'plugins'])
+install_subdir('greeter', install_dir: shady_data_install_dir,
+  exclude_directories: ['src'])
+install_subdir('plugins/shaders', install_dir: join_paths(shady_data_install_dir, 'plugins'))
 foreach rice : ['afterglow', 'neon-transit']
   rice_files = []
   foreach file : ['config.lua', 'init.lua', 'shell.lua', 'theme.sh', 'README.md']
-    if import('fs').is_file(join_paths('examples', 'rice', rice, file))
-      rice_files += join_paths('examples', 'rice', rice, file)
+    if import('fs').is_file(join_paths('rices', rice, file))
+      rice_files += join_paths('rices', rice, file)
     endif
   endforeach
   install_data(rice_files,
-    install_dir: join_paths(shady_data_install_dir, 'examples', 'rice', rice))
+    install_dir: join_paths(shady_data_install_dir, 'rices', rice))
 endforeach
 # Rice configs load plugins from $SHADY_ROOT/build, as they do in a checkout.
 install_symlink('build',

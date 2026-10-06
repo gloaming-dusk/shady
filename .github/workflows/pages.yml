@@ -7,9 +7,9 @@ on:
       - ".github/workflows/pages.yml"
       - "website/**"
       - "docs/**"
-      - "examples/rice/afterglow/*.jpg"
-      - "examples/rice/afterglow/hero.*"
-      - "examples/rice/neon-transit/preview.jpg"
+      - "rices/afterglow/*.jpg"
+      - "rices/afterglow/hero.*"
+      - "rices/neon-transit/preview.jpg"
   workflow_dispatch:
 
 permissions:

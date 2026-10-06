@@ -29,11 +29,11 @@ log="$tmp/log"
     export SHADY_SHELL_BIN="$ROOT/$BUILD_DIR/shady-shell"
     export AFTERGLOW_STATUS="$status"
     # What run.sh does for the shell.
-    source "$ROOT/examples/rice/afterglow/theme.sh"
-    export SHADY_SHELL_CONFIG="$ROOT/examples/rice/afterglow/shell.lua"
+    source "$ROOT/rices/afterglow/theme.sh"
+    export SHADY_SHELL_CONFIG="$ROOT/rices/afterglow/shell.lua"
     export ASAN_OPTIONS="${ASAN_OPTIONS:-abort_on_error=1:halt_on_error=1:detect_leaks=0}"
     export UBSAN_OPTIONS="${UBSAN_OPTIONS:-halt_on_error=1:print_stacktrace=1}"
-    exec "$BUILD_DIR/shady" -c "$ROOT/examples/rice/afterglow/config.lua"
+    exec "$BUILD_DIR/shady" -c "$ROOT/rices/afterglow/config.lua"
 ) >"$log" 2>&1 &
 comp=$!
 cleanup() { kill "$comp" 2>/dev/null || true; wait "$comp" 2>/dev/null || true; rm -rf "$tmp"; }

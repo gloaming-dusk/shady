@@ -9,7 +9,7 @@ COMPOSITOR="$BUILD_DIR/shady"
 PROBE="$BUILD_DIR/headless-automation-probe"
 
 if [[ ! -x "$COMPOSITOR" || ! -x "$PROBE" ]]; then
-  echo "headless-automation: missing compositor or probe; run ./daily-driver.sh build first" >&2
+  echo "headless-automation: missing compositor or probe; run ./tools/daily-driver.sh build first" >&2
   exit 2
 fi
 

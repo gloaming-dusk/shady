@@ -24,7 +24,7 @@
 
       nixosConfigurations.live = nixpkgs.lib.nixosSystem {
         system = "x86_64-linux";
-        modules = [ (import ./nix/live.nix self) ];
+        modules = [ (import ./distro/iso.nix self) ];
       };
 
       checks = nixpkgs.lib.genAttrs [ "x86_64-linux" ] (system: {

@@ -21,7 +21,7 @@ in
       default = "afterglow";
       example = "neon-transit";
       description = ''
-        Rice from `share/shady/examples/rice` used for whatever a user has not
+        Rice from `share/shady/rices` used for whatever a user has not
         configured in `~/.config/shady/{config,init,shell}.lua`.
       '';
     };

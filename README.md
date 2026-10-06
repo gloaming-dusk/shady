@@ -1,6 +1,6 @@
 # shady
 
-![Shady Afterglow rice: live Wayland windows floating above a procedural sunset sea](examples/rice/afterglow/preview.jpg)
+![Shady Afterglow rice: live Wayland windows floating above a procedural sunset sea](rices/afterglow/preview.jpg)
 
 *Afterglow rice: a camera-aware procedural sky and sea from one native plugin, four times of day on `Super+T`, rounded glass windows with sky-matched accents, and a themed standalone shell.*
 
@@ -90,7 +90,7 @@ The development Lua config also binds:
 | F9 | Respawn all windows |
 | Ctrl + Alt + Q | Quit through Lua |
 
-The F7–F9 bindings are implemented in `test-shady.lua`, not hard-coded compositor controls. They are examples of what can be built with the scripting API.
+The F7–F9 bindings are implemented in `tools/test-shady.lua`, not hard-coded compositor controls. They are examples of what can be built with the scripting API.
 
 ### Orbit mode
 
@@ -115,7 +115,7 @@ Shady currently targets **wlroots 0.20.2**. The Nix development shell provides w
 
 ```sh
 nix develop
-./build.sh
+./tools/build.sh
 ```
 
 `build.sh` initializes a new Meson build directory or reconfigures the existing
@@ -130,16 +130,16 @@ WLR_BACKENDS=wayland ./build/shady
 Run Shady directly on a Linux VT/TTY with DRM + libinput:
 
 ```sh
-./run-native.sh
+./tools/run-native.sh
 ```
 
-If the launcher reports that `build/shady` is outdated, run `./build.sh` inside
+If the launcher reports that `build/shady` is outdated, run `./tools/build.sh` inside
 the development shell and launch it again.
 
 For the first DRM/TTY smoke test, use the compatibility renderer path first:
 
 ```sh
-./run-native.sh --safe -s foot
+./tools/run-native.sh --safe -s foot
 ```
 
 Once DRM modesetting, keyboard/mouse input, VT ownership and shutdown all work, try the full spatial compositor and then a rice such as Afterglow.
@@ -153,7 +153,7 @@ seatd-launch ./build/shady --native
 Neon Transit can opt into Magnetic Windows without changing its default behavior:
 
 ```sh
-SHADY_NEON_MAGNETIC=1 ./examples/rice/neon-transit/run.sh
+SHADY_NEON_MAGNETIC=1 ./rices/neon-transit/run.sh
 ```
 
 When enabled, Neon Transit skips its default spatial-overview position writer so the magnetic docking plugin can own window motion cleanly. `Super+M` toggles magnetic docking at runtime. To deliberately combine Magnetic Windows with a depth plugin, set `SHADY_NEON_DEPTH_MODE=focus` (or `overview`) explicitly.
@@ -161,7 +161,7 @@ When enabled, Neon Transit skips its default spatial-overview position writer so
 Neon Transit can also opt into live Window Portal mode:
 
 ```sh
-SHADY_NEON_PORTAL=1 ./examples/rice/neon-transit/run.sh
+SHADY_NEON_PORTAL=1 ./rices/neon-transit/run.sh
 ```
 
 `Super+P` opens or cycles the focused window's live source; `Super+Shift+P` closes it. Portal mode takes precedence over Neon Transit's default water-window shader because both effects own the per-window custom shader slot.
@@ -198,7 +198,7 @@ Widgets are drawn with Cairo/Pango and composited with GLES2 through EGL, the ba
 For native testing, Shady can start the shell and a terminal together:
 
 ```sh
-./run-native.sh -s './build/shady-shell & exec foot'
+./tools/run-native.sh -s './build/shady-shell & exec foot'
 ```
 
 The compositor also exposes `text-input-v3` and `input-method-v2` and bridges focused text clients to a single seat input method, including preedit/commit/delete state and input-method keyboard grabs for IME use. `xdg-activation-v1` requests are handled for mapped toplevels so launched applications can request focus through activation tokens. Fractional scaling is advertised through `wp_fractional_scale_v1` together with `wp_viewporter`; wlroots scene surfaces provide the preferred scale feedback based on output visibility. `wp_cursor_shape_v1` is also handled so clients can request standard server-side cursor shapes without uploading cursor surfaces.
@@ -211,7 +211,7 @@ The shell palette defaults to the Neon Transit cyan. Rices can restyle it with
 `#RRGGBB` environment variables read at startup: `SHADY_SHELL_ACCENT`,
 `SHADY_SHELL_ACCENT_2` (badge gradient end), `SHADY_SHELL_ACCENT_DEEP` (selected
 fills), `SHADY_SHELL_SURFACE`, `SHADY_SHELL_TEXT`, `SHADY_SHELL_TEXT_DIM` and
-`SHADY_SHELL_DANGER`. See `examples/rice/afterglow/theme.sh`.
+`SHADY_SHELL_DANGER`. See `rices/afterglow/theme.sh`.
 
 The protocol source lives in `protocols/shady-shell-v1.xml`. Version 1 remains the small workspace/focused-window surface; version 2 adds stable shell window IDs, mapped-window snapshots/updates, and activate/close requests used by the taskbar. Version 3 adds window state updates plus maximize, fullscreen, and move-to-workspace actions used by the task context menu. Version 4 adds shell session actions for cycling windows and terminating the compositor, used by Quick Settings. Launcher state, notifications, network/audio backends, and other shell policy remain outside the compositor core.
 
@@ -235,7 +235,7 @@ WLR_BACKENDS=wayland ./build/shady -s foot
 For the repository development setup:
 
 ```sh
-./test.sh
+./tools/test.sh
 ```
 
 ### Daily-driver sanitizer smoke test
@@ -248,11 +248,11 @@ creates and destroys client windows.
 
 ```sh
 nix develop
-./daily-driver.sh all
+./tools/daily-driver.sh all
 ```
 
-`./daily-driver.sh build` only builds the sanitizer profile and
-`./daily-driver.sh test` reruns the smoke test plus an idle-render regression.
+`./tools/daily-driver.sh build` only builds the sanitizer profile and
+`./tools/daily-driver.sh test` reruns the smoke test plus an idle-render regression.
 The idle check leaves a headless compositor untouched for one second and fails
 if it develops a continuous frame loop. Set `SHADY_RENDER_STATS=1` when running
 Shady manually to log per-output render scheduling requests, coalesced requests,
@@ -273,10 +273,10 @@ This suite uses an AddressSanitizer/UndefinedBehaviorSanitizer spatial build and
 
 The **Neon Transit** rice demonstrates a native-plugin approach to depth: `focus-depth` leaves screen-space x/y placement alone but animates focused/background windows along Z using the C plugin API and module tick callback.
 
-**Afterglow** sets the desktop above an open sea at sunset. Its `afterglow` plugin draws a camera-aware procedural sky and sea, cycles through golden hour, afterglow, blue hour and night (`Super+T`), keeps window accents on the sky's palette, publishes that palette so its frosted-glass shell cross-fades with the sky, and makes closing windows sink into the water. See `examples/rice/afterglow/README.md`.
+**Afterglow** sets the desktop above an open sea at sunset. Its `afterglow` plugin draws a camera-aware procedural sky and sea, cycles through golden hour, afterglow, blue hour and night (`Super+T`), keeps window accents on the sky's palette, publishes that palette so its frosted-glass shell cross-fades with the sky, and makes closing windows sink into the water. See `rices/afterglow/README.md`.
 
 ```sh
-./examples/rice/afterglow/run.sh
+./rices/afterglow/run.sh
 ```
 
 Shady requires the **GLES2** renderer for its custom shaders. The compositor prints the allocated `WAYLAND_DISPLAY` so more clients can be launched from another terminal.
@@ -345,7 +345,7 @@ shady.plugins.disable("obj-loader")                 -- keep a shipped plugin out
 
 Because plugin loading happens before capability resolution, external plugins participate in the same dependency graph as built-in modules.
 
-Close animations are plugin-selectable as well. The public API exposes `window_set_close_effect()`, `window_close_effect()`, and `window_reset_close_effect()`. A plugin selects a built-in render style plus timing/strength/direction per window; `window_close()` then runs that effect instead of bypassing the compositor animation. The default remains `SHADY_CLOSE_EFFECT_CRUMPLE`, while `examples/plugins/close_slide_fade.c` demonstrates `SHADY_CLOSE_EFFECT_SLIDE_FADE`:
+Close animations are plugin-selectable as well. The public API exposes `window_set_close_effect()`, `window_close_effect()`, and `window_reset_close_effect()`. A plugin selects a built-in render style plus timing/strength/direction per window; `window_close()` then runs that effect instead of bypassing the compositor animation. The default remains `SHADY_CLOSE_EFFECT_CRUMPLE`, while `plugins/close_slide_fade.c` demonstrates `SHADY_CLOSE_EFFECT_SLIDE_FADE`:
 
 ```c
 struct shady_close_effect effect = {
@@ -467,7 +467,7 @@ end)
 
 ## 3D environments
 
-Shady can load a static environment as both visual geometry and authored collision geometry. The core does not parse model files. `environment_path` goes to the loader plugin registered for its extension. The bundled OBJ loader (`loaders/obj/`) loads automatically, and other formats such as glTF can be added as plugins. See [docs/ENVIRONMENT_API.md](docs/ENVIRONMENT_API.md).
+Shady can load a static environment as both visual geometry and authored collision geometry. The core does not parse model files. `environment_path` goes to the loader plugin registered for its extension. The bundled OBJ loader (`plugins/loaders/obj/`) loads automatically, and other formats such as glTF can be added as plugins. See [docs/ENVIRONMENT_API.md](docs/ENVIRONMENT_API.md).
 
 ```lua
 shady.set("environment", true)
@@ -518,24 +518,46 @@ Use `shady --legacy-config /path/to/config` to load one. `-c` now selects the bo
 ## Project layout
 
 ```text
-src/
-  modules/
-    lua/              embedded Lua runtime and Shady scripting API
-    physics/          cube gravity and world collision
-    fps/              first-person movement, grabbing and throwing
-    window_motion/    neutral core adapters for plugin-driven motion
-    close_animation/  close state machine
-    scene_effects/    floor and shadow effects
-    environment/      format-neutral environment scene, loader registry, sky
-  plugin/             loading, host APIs, representation and motion drivers
-  render/             GLES2 pipeline, math, picking and debug rendering
-  shell/              standalone layer-shell desktop UI client
-  world/              shared world and collider representation
-examples/plugins/     native feature plugins, including window-motion
-loaders/              environment asset loader plugins (obj/; gltf/ etc. later)
-assets/               development OBJ environments
-shaders/              editable GLSL
+compositor/           the shady compositor
+  src/
+    modules/
+      lua/            embedded Lua runtime and Shady scripting API
+      physics/        cube gravity and world collision
+      fps/            first-person movement, grabbing and throwing
+      window_motion/  neutral core adapters for plugin-driven motion
+      close_animation/ close state machine
+      scene_effects/  floor and shadow effects
+      environment/    format-neutral environment scene, loader registry, sky
+    plugin/           loading, host APIs, representation and motion drivers
+    render/           GLES2 pipeline, math, picking and debug rendering
+    ipc/              the IPC socket and its JSON
+    world/            shared world and collider representation
+  shaders/            the renderer's GLSL
+  protocols/          shady-shell-v1 and vendored protocol XML
+  ctl/                shadyctl
+include/shady/        public plugin and shell-plugin ABI headers
+plugins/              native feature plugins (window-motion, afterglow, ...)
+  shaders/            their GLSL
+  loaders/            environment asset loader plugins (obj/; gltf/ etc. later)
+shell/                shady-shell: default Lua UI, examples and shaders
+  src/                its C sources
+  plugins/            shell plugins (sysinfo)
+greeter/              the greetd login screen (see docs/GREETER.md)
+  src/                the greetd shell plugin
+rices/                complete looks: Afterglow, Neon Transit; archive/
+examples/             small plugins and configs to start from
+data/                 session and greeter launchers, wayland-sessions entries
+nix/                  Nix package, NixOS module and VM tests
+distro/               the NixOS-based distribution (live ISO)
+tests/                unit and headless tests
+tools/                build, run and regression scripts
+assets/               development environments, sky images, media
+docs/, website/       documentation and the project site
 ```
+
+Installed data under `share/shady` mirrors this tree (`compositor/shaders`,
+`plugins/shaders`, `shell`, `greeter`, `rices`), so plugins and rices find
+their files through `SHADY_ROOT` in a checkout and in an installation alike.
 
 The important architectural boundary is that the world owns collision geometry. Physics and interaction query that shared representation rather than embedding knowledge of individual environment objects.
 
@@ -632,7 +654,7 @@ const struct shady_module *shady_plugin_entry_v1(
 
 The host API is object-oriented around opaque `shady_host`, `shady_window`, `shady_output`, `shady_seat`, and `shady_module_handle` values. It exposes object enumeration and queries, focused/visible/maximized/fullscreen window state and actions, named workspace enumeration/switching/window movement, module/window state access for module-owned data, logging, capability checks, config mutation, render scheduling, compositor termination, and event subscriptions for the same event stream used by Lua. Native plugins can also set/query a per-window animated water surface (`window_set_water_effect()` / `window_water_effect()`) and its fragment-surface style (`window_set_water_surface()` / `window_water_surface()`). Per-window borders can be overridden with `window_set_border()`, inspected with `window_border()`, and returned to global config with `window_reset_border()`. The renderer combines mesh waves and UV refraction with deformed-normal Fresnel, specular highlights, cyan tinting, and moving caustics, while handling shader time and demand-driven continuous frames only while the effect is active. Native `.key` hooks can use the stable `SHADY_KEY_*` and `SHADY_MODIFIER_*` constants from `shady/module.h`, so plugins do not need wlroots unstable input headers. `subscribe_event_handle()` returns a `shady_subscription_id` that can be removed with `unsubscribe_event()`. The older boolean `subscribe_event()` remains available as a convenience wrapper.
 
-Plugins never need the private layout of Shady's server/window/output structs. Plugins are loaded from bootstrap Lua with `shady.plugins.load(name_or_path)` (or the older `shady.plugin(path)`) and then participate in normal capability resolution, initialization, hooks, events, and reverse-order teardown. `examples/plugins/hello.c` exercises the V1 host/seat/output/module/event APIs. `examples/plugins/counter.c` is a V2 stateful plugin showing module and per-window migration. `examples/plugins/focus_depth.c` demonstrates tick-driven Z animation, `examples/plugins/spatial_overview.c` demonstrates a fully native `Super+O` 3D overview that saves per-window positions, spreads visible windows into a depth grid, lets arrow keys move the selected window, uses Enter to focus/exit, and Escape to cancel/restore, and `examples/plugins/water_windows.c` demonstrates shader-backed liquid window surfaces toggled with `Super+W`, including geometry waves, multi-scale slope-aware refraction, Fresnel edge light, dual-lobe moving specular highlights, cyan water tint, animated caustics, crest/trough shading, and thin-water transmission. `examples/plugins/border_accent.c` demonstrates the border API by toggling a focused window between the configured border and a 7px magenta override with `Super+B`. `examples/plugins/black_hole.c` (`shady.plugins.load("black-hole")`) tears open a black hole on `Super+H`. It gravitationally lenses the whole scene, background and windows included, into an Einstein ring around the shadow, beneath a ray-traced accretion disk. The windows on the current workspace shudder, then whip in on a spiral, stretching and red-shifting into the dark. Each one lands with its own shockwave, flash and screen shake, and the hole collapses with a final blast. The swallowed windows are parked on a hidden `black-hole` workspace. Press `Super+H` again and a white hole blasts them back onto the current workspace. Nothing is closed, and unloading the plugin returns any swallowed windows immediately. It is built on `shader_draw_fullscreen_scene` (scene post-processing) and `window_set_shader_params` (per-window animation). `examples/plugins/frozen_window.c` (`shady.plugins.load("frozen-window")`) freezes the focused window on `Super+Z`: frost grows in from the frame edges, the window shivers once and its colours cool, while the centre stays clear enough to read. `Super+Z` again thaws it, with meltwater running down the glass; `Super+Shift+Z` freezes or thaws the whole workspace. The effect lives entirely in a per-window shader driven by `window_set_shader_params`, so the window is never moved or blocked and a fully frozen window costs no extra frames. It shares the per-window shader slot with water-windows and window-portal.
+Plugins never need the private layout of Shady's server/window/output structs. Plugins are loaded from bootstrap Lua with `shady.plugins.load(name_or_path)` (or the older `shady.plugin(path)`) and then participate in normal capability resolution, initialization, hooks, events, and reverse-order teardown. `examples/plugins/hello.c` exercises the V1 host/seat/output/module/event APIs. `examples/plugins/counter.c` is a V2 stateful plugin showing module and per-window migration. `plugins/focus_depth.c` demonstrates tick-driven Z animation, `plugins/spatial_overview.c` demonstrates a fully native `Super+O` 3D overview that saves per-window positions, spreads visible windows into a depth grid, lets arrow keys move the selected window, uses Enter to focus/exit, and Escape to cancel/restore, and `plugins/water_windows.c` demonstrates shader-backed liquid window surfaces toggled with `Super+W`, including geometry waves, multi-scale slope-aware refraction, Fresnel edge light, dual-lobe moving specular highlights, cyan water tint, animated caustics, crest/trough shading, and thin-water transmission. `plugins/border_accent.c` demonstrates the border API by toggling a focused window between the configured border and a 7px magenta override with `Super+B`. `plugins/black_hole.c` (`shady.plugins.load("black-hole")`) tears open a black hole on `Super+H`. It gravitationally lenses the whole scene, background and windows included, into an Einstein ring around the shadow, beneath a ray-traced accretion disk. The windows on the current workspace shudder, then whip in on a spiral, stretching and red-shifting into the dark. Each one lands with its own shockwave, flash and screen shake, and the hole collapses with a final blast. The swallowed windows are parked on a hidden `black-hole` workspace. Press `Super+H` again and a white hole blasts them back onto the current workspace. Nothing is closed, and unloading the plugin returns any swallowed windows immediately. It is built on `shader_draw_fullscreen_scene` (scene post-processing) and `window_set_shader_params` (per-window animation). `plugins/frozen_window.c` (`shady.plugins.load("frozen-window")`) freezes the focused window on `Super+Z`: frost grows in from the frame edges, the window shivers once and its colours cool, while the centre stays clear enough to read. `Super+Z` again thaws it, with meltwater running down the glass; `Super+Shift+Z` freezes or thaws the whole workspace. The effect lives entirely in a per-window shader driven by `window_set_shader_params`, so the window is never moved or blocked and a fully frozen window costs no extra frames. It shares the per-window shader slot with water-windows and window-portal.
 
 ### Hot reload and state migration
 

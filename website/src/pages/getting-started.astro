@@ -29,7 +29,7 @@ import BaseLayout from '../layouts/BaseLayout.astro';
         <article class="step">
           <div>
             <h3>Build the compositor</h3>
-            <p><code>./build.sh</code> creates or reconfigures the Meson build and runs Ninja.</p>
+            <p><code>./tools/build.sh</code> creates or reconfigures the Meson build and runs Ninja.</p>
           </div>
         </article>
         <article class="step">
@@ -47,13 +47,13 @@ import BaseLayout from '../layouts/BaseLayout.astro';
         <article class="step">
           <div>
             <h3>Move to a real VT</h3>
-            <p>Once nested operation is reliable, use <code>./run-native.sh</code> for DRM + libinput on a normal Linux VT login.</p>
+            <p>Once nested operation is reliable, use <code>./tools/run-native.sh</code> for DRM + libinput on a normal Linux VT login.</p>
           </div>
         </article>
         <article class="step">
           <div>
             <h3>Pick a rice</h3>
-            <p>Each rice has nested and native launchers. Start with <a href="/demo/afterglow/">Afterglow</a> (<code>./examples/rice/afterglow/run.sh</code>), or read one as a template for your own config.</p>
+            <p>Each rice has nested and native launchers. Start with <a href="/demo/afterglow/">Afterglow</a> (<code>./rices/afterglow/run.sh</code>), or read one as a template for your own config.</p>
           </div>
         </article>
       </div>
@@ -62,7 +62,7 @@ import BaseLayout from '../layouts/BaseLayout.astro';
         <div class="code-window">
           <div class="code-title">build + nested run</div>
           <pre><code>nix develop
-./build.sh
+./tools/build.sh
 
 WLR_BACKENDS=wayland ./build/shady -s foot</code></pre>
         </div>
@@ -73,7 +73,7 @@ WLR_BACKENDS=wayland ./build/shady -s foot</code></pre>
           <pre><code>WLR_BACKENDS=wayland ./build/shady --safe
 
 # First native smoke test from a real VT
-./run-native.sh --safe -s foot</code></pre>
+./tools/run-native.sh --safe -s foot</code></pre>
         </div>
 
 
@@ -93,8 +93,8 @@ WLR_BACKENDS=wayland ./build/shady -s foot</code></pre>
         </div>
         <div class="code-window">
           <div class="code-title">stability checks</div>
-          <pre><code>./daily-driver.sh all
-./spatial-daily-driver.sh all
+          <pre><code>./tools/daily-driver.sh all
+./tools/spatial-daily-driver.sh all
 ./tests/spatial-suite.sh</code></pre>
         </div>
       </div>

@@ -1,12 +1,12 @@
 -- Shady greeter: the login card shady-shell shows over Afterglow's sky while
 -- greetd waits for someone to log in. Authentication goes through the
--- greetd shell plugin (src/greeter/greetd.c); see docs/GREETER.md.
+-- greetd shell plugin (greeter/src/greetd.c); see docs/GREETER.md.
 --
 -- Keys: type the password and press Enter. Up/Down pick the user, Tab the
 -- session, Escape clears what was typed.
 
 -- Afterglow's live palette, with theme.sh's colours until it arrives
--- (as in examples/rice/afterglow/shell.lua).
+-- (as in rices/afterglow/shell.lua).
 local base = shell.theme
 local live = {}
 for _, name in ipairs({ "accent", "accent_2", "accent_deep", "surface", "text", "text_dim" }) do

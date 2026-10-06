@@ -48,7 +48,7 @@ Regenerate all previews from the repository root:
 
 ```sh
 nix develop
-./build.sh
+./tools/build.sh
 ninja -C build libshady-plugin-hello.so libshady-plugin-counter.so libshady-plugin-orbit-layout.so
 python3 website/scripts/capture-plugin-previews.py
 ```

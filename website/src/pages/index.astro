@@ -2,8 +2,8 @@
 import { Code } from 'astro:components';
 import BaseLayout from '../layouts/BaseLayout.astro';
 import HourVideo from '../components/HourVideo.astro';
-import afterglowShot from '../../../examples/rice/afterglow/preview.jpg';
-import neonShot from '../../../examples/rice/neon-transit/preview.jpg';
+import afterglowShot from '../../../rices/afterglow/preview.jpg';
+import neonShot from '../../../rices/neon-transit/preview.jpg';
 
 const repo = 'https://github.com/jihoo12/shady';
 
@@ -158,7 +158,7 @@ hook = api->render_hook_add(host,
             <span class="rice-meta">afterglow plugin · camera-aware sky · sinking close</span>
           </div>
         </a>
-        <a class="rice neon" href={`${repo}/tree/main/examples/rice/neon-transit`}>
+        <a class="rice neon" href={`${repo}/tree/main/rices/neon-transit`}>
           <img src={neonShot.src} width={neonShot.width} height={neonShot.height} loading="lazy" alt="Neon Transit: cyan-rimmed windows with liquid water surfaces over a neon grid" />
           <div class="rice-body">
             <h3><span class="pip"></span>Neon Transit</h3>
@@ -188,7 +188,7 @@ hook = api->render_hook_add(host,
           <Code code={luaSnippet} lang="lua" theme="github-dark-default" />
         </div>
         <div class="code-window">
-          <div class="code-title">examples/plugins/afterglow.c</div>
+          <div class="code-title">plugins/afterglow.c</div>
           <Code code={cSnippet} lang="c" theme="github-dark-default" />
         </div>
       </div>
@@ -213,10 +213,10 @@ hook = api->render_hook_add(host,
         <div class="code-window">
           <div class="code-title">terminal</div>
           <pre><code>nix develop
-./build.sh
+./tools/build.sh
 
 # nested, with the Afterglow rice
-./examples/rice/afterglow/run.sh</code></pre>
+./rices/afterglow/run.sh</code></pre>
         </div>
       </div>
     </div>

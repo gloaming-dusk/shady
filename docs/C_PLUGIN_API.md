@@ -229,7 +229,7 @@ Shady renders with a flipped Y, so the ray for a fragment at output NDC `(x, y)`
 vec3 d = normalize(fwd + right * x * tan_half_fov_y * aspect - up * y * tan_half_fov_y);
 ```
 
-`examples/plugins/afterglow.c` with `shaders/afterglow_sky.frag` is a complete
+`plugins/afterglow.c` with `plugins/shaders/afterglow_sky.frag` is a complete
 example: a sky and sea that stay fixed in the world while the camera orbits.
 The floor's horizon fog fades floor coverage rather than painting a colour, so
 an `AFTER_BACKGROUND` sky shows through the distant floor seamlessly.
@@ -247,7 +247,7 @@ The renderer binds the source's current client surface as `u_portal_tex` on text
 
 Reset the auxiliary source with `window_reset_shader_source`; `window_reset_shader` also clears a source owned by the same plugin. Plugin unload and shader-owner cleanup remove these bindings automatically, and destroying a source window clears every target that referenced it before the source object is freed.
 
-`examples/plugins/window_portal.c` demonstrates the full path: `Super+P` attaches/cycles a live source window behind a circular refractive portal lens, while `Super+Shift+P` detaches it. The plugin never receives a GLuint or wlroots texture pointer.
+`plugins/window_portal.c` demonstrates the full path: `Super+P` attaches/cycles a live source window behind a circular refractive portal lens, while `Super+Shift+P` detaches it. The plugin never receives a GLuint or wlroots texture pointer.
 
 ## Spatial window representations
 
@@ -484,10 +484,10 @@ a different plugin's active representation is not overwritten.
 
 The repository includes several provider examples:
 
-- `examples/plugins/fps_cube.c` — fixed cube with box, single-hull, and two-part compound collision paths.
-- `examples/plugins/fps_squash.c` — flattened body with host-owned per-window state and dynamic model/update callbacks.
-- `examples/plugins/fps_jelly.c` — spring state integrated in `update(dt)` and used to deform both the visible model and its derived collision body.
-- `examples/plugins/fps_origami.c` — spring-driven hinged window whose render mesh and two-panel compound collision are rebuilt from the same per-window fold state.
+- `plugins/fps_cube.c` — fixed cube with box, single-hull, and two-part compound collision paths.
+- `plugins/fps_squash.c` — flattened body with host-owned per-window state and dynamic model/update callbacks.
+- `plugins/fps_jelly.c` — spring state integrated in `update(dt)` and used to deform both the visible model and its derived collision body.
+- `plugins/fps_origami.c` — spring-driven hinged window whose render mesh and two-panel compound collision are rebuilt from the same per-window fold state.
 
 This API is plugin-owned. The FPS module itself no longer decides that folded windows
 must be cubes.
@@ -550,10 +550,10 @@ representation. A mesh
 callback that fails validation falls back to the normal representation path rather than
 calling into invalid geometry.
 
-`examples/plugins/fps_folded_paper.c` demonstrates a continuously deforming 81-vertex
+`plugins/fps_folded_paper.c` demonstrates a continuously deforming 81-vertex
 indexed surface with independent UVs and triangle-accurate picking.
 
-`examples/plugins/fps_origami.c` demonstrates a more physical deformable representation:
+`plugins/fps_origami.c` demonstrates a more physical deformable representation:
 a two-panel hinged render mesh driven by spring state, plus two matching convex prisms
 returned through `collision_compound()`. The same fold state and revision therefore drive
 rendering, picking, free physics, held-window motion, debug wireframes, and cache
@@ -589,7 +589,7 @@ The 16 floats are exposed to the window's plugin shader as
 set them, and non-finite values are rejected. They return to zero when the
 shader is reset or when another plugin sets a shader on the window. Close
 animations keep the values the window had when it closed.
-`examples/plugins/black_hole.c` drives a whole orbit animation this way
+`plugins/black_hole.c` drives a whole orbit animation this way
 without ever moving the window.
 
 Resources are associated with the plugin that created them. On plugin unload/hot reload, Shady removes its hooks, window shader associations, and shader programs.
@@ -600,7 +600,7 @@ See [SHADER_API.md](SHADER_API.md) for the shader contract.
 
 Stateless plugins can reload directly.
 
-Stateful plugins should use ABI v2 snapshot/restore callbacks. Snapshot memory is host-owned so it remains valid while the old shared object is closed and the replacement is loaded. `examples/plugins/magnetic_windows.c` is a practical example: it snapshots both module-level enable/animation state and per-window spring velocity/bond state, allowing its magnetic docking simulation to continue safely after hot reload. `examples/plugins/window_constellation.c` goes further by preserving an active orbital phase plus each window's captured origin and spring velocity, so a hot reload can occur mid-orbit without losing the animated workspace or its eventual exact restore target.
+Stateful plugins should use ABI v2 snapshot/restore callbacks. Snapshot memory is host-owned so it remains valid while the old shared object is closed and the replacement is loaded. `plugins/magnetic_windows.c` is a practical example: it snapshots both module-level enable/animation state and per-window spring velocity/bond state, allowing its magnetic docking simulation to continue safely after hot reload. `plugins/window_constellation.c` goes further by preserving an active orbital phase plus each window's captured origin and spring velocity, so a hot reload can occur mid-orbit without losing the animated workspace or its eventual exact restore target.
 
 Reload is rejected if capability/dependency contracts become incompatible.
 
@@ -640,7 +640,7 @@ const struct shady_module *shady_plugin_entry_v1(
 }
 ```
 
-See `examples/plugins/` for larger examples.
+See `plugins/` for larger examples and `examples/plugins/` for small ones.
 
 ## Versioned feature tables
 
@@ -665,7 +665,7 @@ if (motion && motion->struct_size >= sizeof(*motion)) {
 `shady.window-motion` version 1 supports impulses, damping, reset, visual queries,
 and an exclusive driver contract. Only the attached driver's shared object may
 publish visual data. Detach and loader cleanup clear the driver and its visual
-state before unmapping the plugin. `examples/plugins/window_motion.c` is a
+state before unmapping the plugin. `plugins/window_motion.c` is a
 complete public-API driver with V2 state migration.
 
 `shady.window-representation` version 1 is declared in
@@ -677,6 +677,6 @@ caches are allocated on demand, rather than embedded in every core window.
 `shady.environment` version 1 is declared in `shady/environment.h`. Plugins
 register asset loaders per file extension or submit a procedural scene; the
 host owns the copy, rendering, and world collision. See
-[Environment API](ENVIRONMENT_API.md) and `loaders/obj/obj_loader.c`.
+[Environment API](ENVIRONMENT_API.md) and `plugins/loaders/obj/obj_loader.c`.
 
 See [Architecture](ARCHITECTURE.md) for implementation boundaries and tests.

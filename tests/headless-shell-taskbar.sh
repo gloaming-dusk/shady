@@ -9,7 +9,7 @@ SHELL_BIN="$BUILD_DIR/shady-shell"
 PROBE="$BUILD_DIR/headless-automation-probe"
 
 if [[ ! -x "$COMPOSITOR" || ! -x "$SHELL_BIN" || ! -x "$PROBE" ]]; then
-  echo "shell-taskbar: missing test binaries; run ./daily-driver.sh build first" >&2
+  echo "shell-taskbar: missing test binaries; run ./tools/daily-driver.sh build first" >&2
   exit 2
 fi
 

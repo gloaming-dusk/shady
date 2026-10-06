@@ -1,6 +1,6 @@
 -- Afterglow rice: sky hook renders, Super+T cycles the hour both ways while
 -- the transition keeps frames flowing, and a closing window sinks cleanly.
-dofile(assert(os.getenv("SHADY_ROOT")) .. "/examples/rice/afterglow/init.lua")
+dofile(assert(os.getenv("SHADY_ROOT")) .. "/rices/afterglow/init.lua")
 local probe = assert(os.getenv("SHADY_AUTOMATION_PROBE"))
 local mapped, started, destroyed = 0, false, false
 
