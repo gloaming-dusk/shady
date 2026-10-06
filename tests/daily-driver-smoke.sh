@@ -31,7 +31,7 @@ export UBSAN_OPTIONS="${UBSAN_OPTIONS:-halt_on_error=1:print_stacktrace=1}"
 
 set +e
 timeout 30s "$COMPOSITOR" --safe -c "$ROOT/tests/daily-driver-config.lua" \
-  -s "exec '$ROOT/tests/daily-driver-window-churn.sh'" >"$log" 2>&1
+  -s "exec '$ROOT/tests/daily-driver-window-churn-helper.sh'" >"$log" 2>&1
 rc=$?
 set -e
 

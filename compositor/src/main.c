@@ -351,6 +351,15 @@ int main(int argc, char *argv[]) {
 		return 1;
 	}
 
+	/* Everything Shady starts (-s, shady.spawn, plugins) is its client. A
+	 * nested backend already holds its connection to the parent compositor,
+	 * so the parent's WAYLAND_DISPLAY is no longer needed and must not leak
+	 * into children, which would otherwise open on the parent instead. */
+	if (setenv("WAYLAND_DISPLAY", socket, true) < 0) {
+		wlr_log_errno(WLR_ERROR, "setenv WAYLAND_DISPLAY");
+	}
+	unsetenv("WAYLAND_SOCKET");
+
 	/* Optional: scripts and shells lose IPC, the session keeps running. */
 	shady_ipc_init(&server, socket);
 
@@ -365,11 +374,6 @@ int main(int argc, char *argv[]) {
 	if (startup_cmd) {
 		pid_t pid = fork();
 		if (pid == 0) {
-			if (setenv("WAYLAND_DISPLAY", socket, true) < 0) {
-				perror("setenv");
-				_exit(1);
-			}
-			unsetenv("WAYLAND_SOCKET");
 			execlp("sh", "sh", "-c", startup_cmd, (void *)NULL);
 			perror("exec startup command");
 			_exit(127);
