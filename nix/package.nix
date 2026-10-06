@@ -32,6 +32,7 @@ stdenv.mkDerivation {
       ../assets
       ../data
       ../examples
+      ../greeter
       ../include
       ../loaders
       ../protocols

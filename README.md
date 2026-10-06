@@ -21,6 +21,7 @@ The project is intentionally experimental. The imported TinyWL example is CC0; s
 - [Shell Lua API](docs/SHELL_LUA_API.md)
 - [Shell plugin API](docs/SHELL_PLUGIN_API.md)
 - [Shell design](docs/SHELL_DESIGN.md)
+- [Greeter](docs/GREETER.md)
 
 ## Website
 

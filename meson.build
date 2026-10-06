@@ -274,6 +274,14 @@ if shell_enabled
     install: true,
     install_dir: join_paths(get_option('libdir'), 'shady', 'shell-plugins'))
 
+  # Logs people in through greetd for the Shady greeter (greeter/shell.lua).
+  shared_module('shady-shell-plugin-greetd',
+    ['src/greeter/greetd.c', 'src/ipc/json.c'],
+    include_directories: include_directories('src', 'include'),
+    dependencies: [cairo],
+    install: true,
+    install_dir: join_paths(get_option('libdir'), 'shady', 'shell-plugins'))
+
   shared_module('shady-shell-plugin-probe',
     'tests/shell-plugin-probe.c',
     include_directories: include_directories('include'),
@@ -709,6 +717,7 @@ test('frozen-window-plugin', frozen_window_plugin_test,
 
 install_subdir('shaders', install_dir: shady_data_install_dir)
 install_subdir('shell', install_dir: shady_data_install_dir)
+install_subdir('greeter', install_dir: shady_data_install_dir)
 install_subdir('examples/plugins/shaders',
   install_dir: join_paths(shady_data_install_dir, 'examples', 'plugins'))
 foreach rice : ['afterglow', 'neon-transit']
@@ -730,6 +739,9 @@ session_conf = configuration_data()
 session_conf.set('bindir', join_paths(get_option('prefix'), get_option('bindir')))
 session_conf.set('datadir', join_paths(get_option('prefix'), shady_data_install_dir))
 configure_file(input: 'data/shady-session.in', output: 'shady-session',
+  configuration: session_conf,
+  install: true, install_dir: get_option('bindir'), install_mode: 'rwxr-xr-x')
+configure_file(input: 'data/shady-greeter.in', output: 'shady-greeter',
   configuration: session_conf,
   install: true, install_dir: get_option('bindir'), install_mode: 'rwxr-xr-x')
 foreach session : ['shady', 'shady-safe']

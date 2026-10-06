@@ -1,0 +1,26 @@
+#!/bin/sh
+# Start the Shady greeter. greetd runs this as its default_session; the
+# login card (greeter/shell.lua) authenticates through greetd and quits the
+# compositor once the chosen session is accepted.
+#
+# SHADY_GREETER_DEMO=1 fakes greetd so the greeter can be tried nested.
+
+: "${SHADY_ROOT:=@datadir@}"
+export SHADY_ROOT
+export XDG_SESSION_TYPE=wayland
+export XDG_CURRENT_DESKTOP=shady-greeter
+export SHADY_LUA_INIT="$SHADY_ROOT/greeter/init.lua"
+export SHADY_SHELL_CONFIG="$SHADY_ROOT/greeter/shell.lua"
+. "$SHADY_ROOT/examples/rice/afterglow/theme.sh"
+
+# The greeter account usually has no writable home; keep caches in the
+# runtime directory instead.
+if [ ! -w "${HOME:-/nonexistent}" ]; then
+    export XDG_CACHE_HOME="${XDG_RUNTIME_DIR:-/tmp}/shady-greeter-cache"
+fi
+
+if [ "${SHADY_SESSION_LOG:-journal}" = journal ] && command -v systemd-cat >/dev/null 2>&1; then
+    exec systemd-cat --identifier=shady-greeter -- \
+        "@bindir@/shady" -c "$SHADY_ROOT/greeter/config.lua" -s "@bindir@/shady-shell" "$@"
+fi
+exec "@bindir@/shady" -c "$SHADY_ROOT/greeter/config.lua" -s "@bindir@/shady-shell" "$@"

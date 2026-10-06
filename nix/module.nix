@@ -32,9 +32,11 @@ in
       defaultText = lib.literalExpression "with pkgs; [ foot grim slurp wl-clipboard wlr-randr ]";
       description = "Extra packages installed alongside the session.";
     };
+
+    greeter.enable = lib.mkEnableOption "the Shady greeter, a login card over the Afterglow sky";
   };
 
-  config = lib.mkIf cfg.enable {
+  config = lib.mkMerge [ (lib.mkIf cfg.enable {
     environment.systemPackages = [ cfg.package ] ++ cfg.extraPackages;
     environment.sessionVariables.SHADY_RICE = cfg.rice;
 
@@ -54,5 +56,24 @@ in
       extraPortals = [ pkgs.xdg-desktop-portal-gtk ];
       config.shady.default = lib.mkDefault [ "wlr" "gtk" ];
     };
-  };
+  })
+
+  (lib.mkIf (cfg.enable && cfg.greeter.enable) {
+    services.greetd = {
+      enable = true;
+      settings.default_session = {
+        user = "greeter";
+        # greetd does not pass its own environment on to the greeter.
+        command = lib.concatStringsSep " " [
+          "env"
+          "SHADY_GREETER_SESSIONS=${config.services.displayManager.sessionData.desktops}/share/wayland-sessions"
+          "SHADY_GREETER_STATE=/var/lib/shady-greeter/last"
+          "${cfg.package}/bin/shady-greeter"
+        ];
+      };
+    };
+    # The last user and session, so the next login starts from them.
+    systemd.tmpfiles.rules = [ "d /var/lib/shady-greeter 0700 greeter greeter -" ];
+  })
+  ];
 }
