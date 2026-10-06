@@ -4,8 +4,11 @@ self:
 {
   name = "shady-session";
 
-  nodes.machine = { pkgs, ... }: {
+  nodes.machine = { lib, pkgs, ... }: {
     imports = [ self.nixosModules.default ];
+
+    # What the installer ISO base sets; shady-shell cannot draw without it.
+    fonts.fontconfig.enable = lib.mkOverride 500 false;
 
     programs.shady.enable = true;
 
@@ -27,18 +30,46 @@ self:
     environment.sessionVariables.WLR_RENDERER_ALLOW_SOFTWARE = "1";
     virtualisation.qemu.options = [ "-vga none" "-device virtio-gpu-pci" ];
     virtualisation.memorySize = 2048;
+    # Real machines are multi-core; the shell bar once failed to show only there.
+    virtualisation.cores = 4;
   };
 
   testScript = ''
+    from datetime import timedelta
+
     def as_alice(cmd):
         return machine.succeed(
             "su - alice -c 'XDG_RUNTIME_DIR=/run/user/1000 " + cmd + "'"
         )
 
+    def bar_visible():
+        # The Afterglow bar starts with an orange "S" badge in the top-left
+        # corner; the sky behind it has no orange that high up.
+        import base64, re
+        ppm = base64.b64decode(machine.succeed(
+            "su - alice -c 'XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 "
+            "grim -g \"0,0 64x38\" -t ppm -' | base64 -w0"
+        ))
+        header = re.match(rb"P6\s+(\d+)\s+(\d+)\s+255\s", ppm)
+        assert header, ppm[:32]
+        width, height = int(header[1]), int(header[2])
+        pixels = ppm[header.end():]
+        orange = sum(
+            1 for i in range(0, width * height * 3, 3)
+            if pixels[i] > 200 and 90 < pixels[i + 1] < 200 and pixels[i + 2] < 150
+        )
+        return orange > 40
+
+    def wait_for_bar():
+        retry(lambda _: bar_visible(), timeout=timedelta(seconds=30))
+
     machine.wait_for_unit("greetd.service")
     machine.wait_until_succeeds("pgrep -u alice -x shady", timeout=60)
     machine.wait_until_succeeds("pgrep -u alice -x shady-shell", timeout=60)
     machine.wait_for_file("/run/user/1000/shady-wayland-0.sock")
+
+    with subtest("the shell bar is on screen"):
+        wait_for_bar()
 
     with subtest("rice and plugins loaded"):
         plugins = as_alice("shadyctl plugins")
@@ -64,7 +95,26 @@ self:
             timeout=30,
         )
 
-    machine.sleep(duration=3)
+    machine.sleep(duration=timedelta(seconds=3))
     machine.screenshot("shady-session")
+
+    with subtest("Ctrl+Alt+F2 switches to another VT"):
+        assert machine.succeed("fgconsole").strip() == "1"
+        machine.send_key("ctrl-alt-f2")
+        machine.wait_until_succeeds("[ $(fgconsole) = 2 ]", timeout=10)
+        machine.send_key("ctrl-alt-f1")
+        machine.wait_until_succeeds("[ $(fgconsole) = 1 ]", timeout=10)
+
+    with subtest("the shell bar comes back after a VT round trip"):
+        machine.sleep(duration=timedelta(seconds=3))
+        session_log = machine.succeed("journalctl -b -t shady -o cat")
+        print("\n".join(l for l in session_log.splitlines()
+                        if "output" in l or "shady-shell" in l or "layer" in l))
+        bars = session_log.count("shady-shell: shady-shell on ")
+        removed = session_log.count("shady-shell: shady-shell removed from ")
+        assert bars > removed, f"bar shown {bars} times, removed {removed} times"
+        assert "Fontconfig error" not in session_log, "shady-shell has no fontconfig"
+        wait_for_bar()
+        machine.screenshot("after-vt-switch")
   '';
 }

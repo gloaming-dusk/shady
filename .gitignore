@@ -1,5 +1,6 @@
 /build/
 /result
+/result-*
 
 /build-*/
 /website/node_modules/

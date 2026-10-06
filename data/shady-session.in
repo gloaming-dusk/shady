@@ -43,4 +43,9 @@ if [ -z "${SHADY_STARTUP:-}" ]; then
     fi
 fi
 
+# Login managers usually drop session output; keep it in the journal
+# (journalctl -t shady) unless SHADY_SESSION_LOG=stderr.
+if [ "${SHADY_SESSION_LOG:-journal}" = journal ] && command -v systemd-cat >/dev/null 2>&1; then
+    exec systemd-cat --identifier=shady -- "@bindir@/shady" -s "$SHADY_STARTUP" "$@"
+fi
 exec "@bindir@/shady" -s "$SHADY_STARTUP" "$@"

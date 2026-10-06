@@ -44,6 +44,9 @@ in
     security.polkit.enable = lib.mkDefault true;
     programs.dconf.enable = lib.mkDefault true;
     fonts.enableDefaultPackages = lib.mkDefault true;
+    # shady-shell lays out text with Pango and draws nothing without
+    # fontconfig; the installer ISO base turns it off (mkOverride 500).
+    fonts.fontconfig.enable = true;
 
     xdg.portal = {
       enable = lib.mkDefault true;
