@@ -44,18 +44,21 @@ self:
 
     def bar_visible():
         # The Afterglow bar starts with an orange "S" badge in the top-left
-        # corner; the sky behind it has no orange that high up.
-        import base64, re
-        ppm = base64.b64decode(machine.succeed(
-            "su - alice -c 'XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 "
-            "grim -g \"0,0 64x38\" -t ppm -' | base64 -w0"
-        ))
+        # corner; the sky behind it has no orange that high up. Read what is
+        # scanned out (QEMU's screendump), not the compositor's own frame:
+        # with llvmpipe the two once differed and only the display lost the bar.
+        import os, re, tempfile
+        path = os.path.join(tempfile.mkdtemp(), "screen.ppm")
+        machine.send_monitor_command(f"screendump {path}")
+        with open(path, "rb") as f:
+            ppm = f.read()
         header = re.match(rb"P6\s+(\d+)\s+(\d+)\s+255\s", ppm)
         assert header, ppm[:32]
-        width, height = int(header[1]), int(header[2])
+        width = int(header[1])
         pixels = ppm[header.end():]
         orange = sum(
-            1 for i in range(0, width * height * 3, 3)
+            1 for y in range(38) for x in range(64)
+            for i in [(y * width + x) * 3]
             if pixels[i] > 200 and 90 < pixels[i + 1] < 200 and pixels[i + 2] < 150
         )
         return orange > 40

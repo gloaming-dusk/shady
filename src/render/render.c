@@ -44,6 +44,9 @@
 static struct shady_gl_pipeline pipeline;
 static bool pipeline_ready;
 static struct wlr_renderer *plugin_renderer;
+/* llvmpipe and friends rasterize on worker threads and put no fence on the
+ * buffer, so a page flip can scan out a frame they are still drawing. */
+static bool renderer_is_software;
 
 #define SHADY_PLUGIN_SHADER_MAX 64
 #define SHADY_PLUGIN_HOOK_MAX 64
@@ -870,6 +873,14 @@ bool shady_render_init(
 			renderer
 		);
 	if (pipeline_ready) shady_environment_gl_init();
+	if (pipeline_ready && plugin_make_current()) {
+		const char *name = (const char *)glGetString(GL_RENDERER);
+		renderer_is_software = name && (strstr(name, "llvmpipe") ||
+			strstr(name, "softpipe") || strstr(name, "swrast"));
+		if (renderer_is_software)
+			wlr_log(WLR_INFO, "software renderer (%s): finishing each frame before commit",
+				name);
+	}
 
 	depth_rbo = 0;
 	depth_rbo_w = 0;
@@ -2968,6 +2979,7 @@ void shady_render_output_frame(
 			"failed to submit render pass"
 		);
 	}
+	if (renderer_is_software && plugin_make_current()) glFinish();
 
 	wlr_output_commit_state(
 		wlr_output,
