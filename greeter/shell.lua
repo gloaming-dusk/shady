@@ -21,6 +21,8 @@ local t = setmetatable({}, {
 
 local WHITE, BLACK = "#ffffff", "#000000"
 local CARD = 380
+-- A line under the card, e.g. how to log in to a live system (programs.shady.greeter.hint).
+local hint = os.getenv("SHADY_GREETER_HINT") or ""
 local a, mix = shell.alpha, shell.mix
 
 local ok, err = shell.plugin("greetd")
@@ -222,6 +224,12 @@ shell.popup {
                     shell.text("⇅", { font = "Sans 9", color = a(t.accent, 0.8) }),
                 },
             },
+            hint ~= "" and shell.box { height = 14 } or false,
+            hint ~= "" and shell.row {
+                radius = 10, padding = { 7, 14 },
+                background = a(BLACK, 0.28), border = a(t.accent, 0.35),
+                shell.text(hint, { font = "Sans 9.5", color = t.text }),
+            } or false,
             shell.box { height = 16 },
             shell.text("↵ log in     ↑ ↓ user     Tab session     Esc clear",
                 { font = "Sans 8.5", color = a(t.text, 0.55) }),

@@ -34,6 +34,13 @@ in
     };
 
     greeter.enable = lib.mkEnableOption "the Shady greeter, a login card over the Afterglow sky";
+
+    greeter.hint = lib.mkOption {
+      type = lib.types.str;
+      default = "";
+      example = "Live session: the nixos user has no password, press Enter.";
+      description = "A line shown under the login card, e.g. how to log in to a live system.";
+    };
   };
 
   config = lib.mkMerge [ (lib.mkIf cfg.enable {
@@ -64,12 +71,15 @@ in
       settings.default_session = {
         user = "greeter";
         # greetd does not pass its own environment on to the greeter.
-        command = lib.concatStringsSep " " [
+        command = lib.concatStringsSep " " ([
           "env"
           "SHADY_GREETER_SESSIONS=${config.services.displayManager.sessionData.desktops}/share/wayland-sessions"
           "SHADY_GREETER_STATE=/var/lib/shady-greeter/last"
+        ] ++ lib.optional (cfg.greeter.hint != "")
+          "SHADY_GREETER_HINT=${lib.escapeShellArg cfg.greeter.hint}"
+        ++ [
           "${cfg.package}/bin/shady-greeter"
-        ];
+        ]);
       };
     };
     # The last user and session, so the next login starts from them.

@@ -16,7 +16,8 @@ programs.shady.greeter.enable = true;
 
 This enables greetd with `shady-greeter` as its default session, run as the
 `greeter` user, and keeps the last user and session in
-`/var/lib/shady-greeter/last`.
+`/var/lib/shady-greeter/last`. `programs.shady.greeter.hint` adds a line under
+the card, for example how to log in to a live system.
 
 Elsewhere, point greetd at the installed script:
 

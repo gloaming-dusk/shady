@@ -30,14 +30,10 @@ in
   # The install guide uses nixos-install --flake.
   nix.settings.experimental-features = [ "nix-command" "flakes" ];
 
-  # Log the live user straight in; after logging out, the Shady greeter
-  # offers Shady and Shady (Safe Mode). The nixos user has no password:
-  # press Enter.
-  services.greetd.settings.initial_session = {
-    user = "nixos";
-    command = "shady-session";
-  };
+  # Boot to the Shady greeter. The live nixos user has no password, so greetd
+  # must accept an empty one, and the card says so.
   security.pam.services.greetd.allowNullPassword = true;
+  programs.shady.greeter.hint = "Live session: the nixos user has no password, press Enter.";
 
   # Let wlroots fall back to llvmpipe so the ISO also runs in VMs.
   environment.sessionVariables.WLR_RENDERER_ALLOW_SOFTWARE = "1";

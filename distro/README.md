@@ -21,9 +21,14 @@ nix build .#nixosConfigurations.gloam-live.config.system.build.isoImage
 ls result/iso/   # gloam-live-0.1.0-x86_64-linux.iso
 ```
 
-The live user `nixos` is logged straight into Shady. After logging out, the
-greeter offers Shady and Shady (Safe Mode); the password is empty, so press
-Enter. In a VM without a GPU, wlroots falls back to llvmpipe.
+The ISO boots to the Shady greeter. The live user `nixos` has no password, so
+press Enter (the card says so through `programs.shady.greeter.hint`); Tab picks
+Shady or Shady (Safe Mode). In a VM without a GPU, wlroots falls back to
+llvmpipe.
+
+Gloam follows the latest NixOS stable release (the flake's `nixpkgs` input,
+now `nixos-26.05`). `nix/wlroots.nix` builds wlroots 0.20.2 for Shady while
+that release still ships an older 0.20.x.
 
 ## Releasing
 
