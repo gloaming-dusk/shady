@@ -9,6 +9,7 @@
 #include "shady.h"
 #include "modules/desktop/state.h"
 #include "modules/workspace/workspace.h"
+#include "render/render.h"
 
 static struct wlr_output *fallback_output(struct shady_server *server) {
 	if (wl_list_empty(&server->outputs)) {
@@ -98,11 +99,12 @@ static void focus_layer_surface(struct shady_layer_surface *layer) {
 		struct wlr_xdg_toplevel *xdg = wlr_xdg_toplevel_try_from_wlr_surface(old);
 		if (xdg) wlr_xdg_toplevel_set_activated(xdg, false);
 	}
+	/* Focus even before the seat has a keyboard (one plugged in later, or a
+	 * virtual keyboard): keys sent to an unfocused seat are dropped. */
 	struct wlr_keyboard *keyboard = wlr_seat_get_keyboard(server->seat);
-	if (keyboard) {
-		wlr_seat_keyboard_notify_enter(server->seat, surface->surface,
-			keyboard->keycodes, keyboard->num_keycodes, &keyboard->modifiers);
-	}
+	wlr_seat_keyboard_notify_enter(server->seat, surface->surface,
+		keyboard ? keyboard->keycodes : NULL, keyboard ? keyboard->num_keycodes : 0,
+		keyboard ? &keyboard->modifiers : NULL);
 }
 
 static void restore_layer_keyboard_focus(struct shady_layer_surface *layer) {
@@ -154,6 +156,8 @@ static void layer_surface_commit(struct wl_listener *listener, void *data) {
 	struct shady_layer_surface *layer =
 		wl_container_of(listener, layer, commit);
 	struct wlr_layer_surface_v1 *surface = layer->layer_surface;
+	/* A new buffer needs a frame: the spatial renderer draws on demand. */
+	shady_render_schedule_all_outputs(layer->server);
 	const uint32_t layout_fields =
 		WLR_LAYER_SURFACE_V1_STATE_DESIRED_SIZE |
 		WLR_LAYER_SURFACE_V1_STATE_ANCHOR |
