@@ -1,0 +1,85 @@
+name: Gloam ISO
+
+# Pushing a tag gloam-v<version> (matching distro/VERSION) builds the live ISO
+# and publishes it as a release, which https://gloaming-dusk.github.io/download/
+# lists. A manual run builds the same ISO and keeps it as a workflow artifact.
+on:
+  push:
+    tags: ["gloam-v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: gloam-iso
+  cancel-in-progress: false
+
+jobs:
+  iso:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force || true
+          df -h /
+
+      - uses: actions/checkout@v4
+
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Check the tag against distro/VERSION
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          version="$(cat distro/VERSION)"
+          if [ "$GITHUB_REF_NAME" != "gloam-v$version" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match distro/VERSION ($version)"
+            exit 1
+          fi
+
+      - name: Build the live ISO
+        run: nix build -L .#nixosConfigurations.gloam-live.config.system.build.isoImage
+
+      # GitHub caps a release asset at 2 GiB: attach <iso>.part0, .part1, ...
+      # and the SHA-256 of the joined image.
+      - name: Split the ISO
+        run: |
+          mkdir out
+          iso="$(basename result/iso/*.iso)"
+          (cd result/iso && sha256sum "$iso") > "out/$iso.sha256"
+          split --bytes=1900M --numeric-suffixes --suffix-length=1 "result/iso/$iso" "out/$iso.part"
+          ls -l out
+
+      - name: Publish the release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="$(cat distro/VERSION)"
+          iso="$(basename result/iso/*.iso)"
+          cat > notes.md <<EOF
+          The Gloam $version live ISO: NixOS with the Shady desktop and greeter.
+
+          GitHub limits an asset to 2 GiB, so the ISO comes in parts. Download every \`$iso.part*\` file, then:
+
+          \`\`\`sh
+          cat $iso.part* > $iso
+          sha256sum -c $iso.sha256
+          \`\`\`
+
+          Writing it to a USB stick and installing: https://gloaming-dusk.github.io/get-started/
+          EOF
+          gh release create "$GITHUB_REF_NAME" out/* --title "Gloam $version" --notes-file notes.md
+
+      - name: Keep the ISO (manual runs)
+        if: "!startsWith(github.ref, 'refs/tags/')"
+        uses: actions/upload-artifact@v4
+        with:
+          name: gloam-live-iso
+          path: out/
+          retention-days: 3

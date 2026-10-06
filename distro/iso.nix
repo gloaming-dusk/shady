@@ -3,6 +3,11 @@
 self:
 { config, lib, pkgs, modulesPath, ... }:
 
+let
+  # The Gloam release, tagged gloam-v<version> (see .github/workflows/gloam-iso.yml).
+  version = lib.fileContents ./VERSION;
+  arch = pkgs.stdenv.hostPlatform.uname.processor;
+in
 {
   imports = [
     "${modulesPath}/installer/cd-dvd/installation-cd-minimal.nix"
@@ -12,13 +17,18 @@ self:
   # Gloam is a NixOS derivative: its name goes into os-release and the boot menu.
   system.nixos.distroName = "Gloam";
   system.nixos.distroId = "gloam";
-  image.baseName = lib.mkForce "gloam-live-${config.system.nixos.label}-${pkgs.stdenv.hostPlatform.system}";
-  isoImage.volumeID = lib.mkForce "gloam-live-${config.system.nixos.release}-${pkgs.stdenv.hostPlatform.uname.processor}";
+  # The boot menu reads "Gloam <version> Live".
+  system.nixos.label = version;
+  image.baseName = lib.mkForce "gloam-live-${version}-${pkgs.stdenv.hostPlatform.system}";
+  isoImage.volumeID = lib.mkForce "gloam-live-${version}-${arch}";
   isoImage.appendToMenuLabel = " Live";
   isoImage.squashfsCompression = "zstd -Xcompression-level 6";
 
   programs.shady.enable = true;
   programs.shady.greeter.enable = true;
+
+  # The install guide uses nixos-install --flake.
+  nix.settings.experimental-features = [ "nix-command" "flakes" ];
 
   # Log the live user straight in; after logging out, the Shady greeter
   # offers Shady and Shady (Safe Mode). The nixos user has no password:
