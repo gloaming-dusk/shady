@@ -50,6 +50,9 @@ struct view_def {
     size_t output_count;
     char *shader; /* whole-surface shader, absolute path */
     int uniforms; /* registry ref: table or function returning one */
+    /* A popup kept open on one output: opened when an output appears and
+     * moved to another when its output goes away. */
+    bool persistent;
 };
 
 /* A live surface showing one view_def. */
@@ -448,6 +451,22 @@ static bool def_wants_output(const struct view_def *def, const struct shell_outp
     return false;
 }
 
+static bool measure_popup(struct shell_lua *lua, struct view_def *def,
+        struct shell_output *output, int args, uint32_t *width, uint32_t *height);
+
+/* Open on `output` the persistent popups that are not showing anywhere. */
+static void ensure_persistent(struct shell_lua *lua, struct shell_output *output) {
+    for (size_t i = 0; i < lua->def_count; i++) {
+        struct view_def *def = &lua->defs[i];
+        if (!def->popup || !def->persistent || find_popup(lua, def->name)) continue;
+        uint32_t width = 0, height = 0;
+        if (measure_popup(lua, def, output, LUA_NOREF, &width, &height) &&
+                view_create(lua, def, output, LUA_NOREF, def->margin, width, height))
+            fprintf(stderr, "shady-shell: %s on %s\n", def->name,
+                output->name[0] ? output->name : "output");
+    }
+}
+
 static void create_bars(struct shell_lua *lua, struct shell_output *output) {
     for (size_t i = 0; i < lua->def_count; i++) {
         struct view_def *def = &lua->defs[i];
@@ -456,6 +475,7 @@ static void create_bars(struct shell_lua *lua, struct shell_output *output) {
             fprintf(stderr, "shady-shell: %s on %s\n", def->name,
                 output->name[0] ? output->name : "output");
     }
+    ensure_persistent(lua, output);
 }
 
 /* Natural size of a popup's content, for its first surface. */
@@ -599,7 +619,8 @@ static int l_bar(lua_State *L) {
 }
 
 /* shell.popup{name=, view=, on_key=, layer="overlay", anchor={...},
- *             margin={...}, width=, height=, keyboard="none"|"exclusive"|"on_demand"} */
+ *             margin={...}, width=, height=, keyboard="none"|"exclusive"|"on_demand",
+ *             persistent=false} */
 static int l_popup(lua_State *L) {
     struct view_def *def = new_def(L, true);
     def->layer = parse_layer(L, 1, ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY);
@@ -620,6 +641,9 @@ static int l_popup(lua_State *L) {
     else if (!strcmp(keyboard, "none"))
         def->keyboard = ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE;
     else luaL_error(L, "keyboard is none, exclusive or on_demand");
+    lua_pop(L, 1);
+    lua_getfield(L, 1, "persistent");
+    def->persistent = lua_toboolean(L, -1);
     lua_pop(L, 1);
     return 0;
 }
@@ -1470,6 +1494,9 @@ void shell_lua_output_removed(struct shell *shell, struct shell_output *output) 
             fprintf(stderr, "shady-shell: %s removed from %s\n", view->def->name, output->name);
         view_destroy(view);
     }
+    struct shell_output *other;
+    wl_list_for_each(other, &shell->core.outputs, link)
+        if (other != output && other->ready) ensure_persistent(lua, other);
 }
 
 void shell_lua_model_changed(struct shell *shell) {

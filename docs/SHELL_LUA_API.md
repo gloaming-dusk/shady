@@ -72,6 +72,7 @@ shell.popup {
     margin = { top = 42, right = 8 },
     width = 250,                  -- omit width/height to fit the content
     keyboard = "none",            -- none | exclusive | on_demand
+    persistent = false,           -- keep it open, like a bar
     layer = "overlay",
     view = function(ctx, args) ... end,
     on_key = function(key, text, args) ... end,
@@ -82,6 +83,11 @@ Without `width` or `height` the popup takes its content's natural size and
 follows it as the content changes. `on_key` receives the xkb key name
 (`"Escape"`, `"Return"`, `"Up"`, `"BackSpace"`, `"a"`) and the text it
 types (`""` for none).
+
+A `persistent` popup is opened by the shell itself as soon as an output is
+ready, stays on one output, and moves to another when its output goes away
+(a monitor unplugged, a VT switch). The greeter's login card is one
+([GREETER.md](GREETER.md)).
 
 ### Opening popups
 
