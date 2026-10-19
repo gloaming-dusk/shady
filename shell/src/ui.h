@@ -107,6 +107,7 @@ struct ui_node {
     struct ui_style enter, exit;
     bool has_enter, has_exit;
     char *key; /* identity for transitions; defaults to `id`, then the tree path */
+    bool caret; /* where text goes: the input method places its popup here */
     struct ui_anim *anim; /* this paint's state, owned by the view's ui_anims */
     double radius;
     double border_width;
@@ -116,6 +117,9 @@ struct ui_node {
     double letter_spacing;
     bool ellipsize;
     double text_align; /* 0 left, 0.5 centre, 1 right */
+    bool wrap; /* break into lines at max_width (or width) */
+    int max_lines; /* with wrap: ellipsize after this many; 0 for no limit */
+    double wrap_width; /* the width the text wraps at; 0 when it is one line */
     PangoLayout *layout;
 
     double pip_radius;

@@ -18,6 +18,7 @@
 #include <wayland-client.h>
 #include <xkbcommon/xkbcommon.h>
 
+#include "text-input-unstable-v3-client-protocol.h"
 #include "wlr-layer-shell-unstable-v1-protocol.h"
 
 #include "effects.h"
@@ -58,6 +59,14 @@ struct shell_core {
     struct xkb_keymap *xkb_keymap;
     struct xkb_state *xkb_state;
     struct shell_renderer *renderer;
+
+    /* Input methods (text-input-v3): text arrives through the compositor's
+     * input method for surfaces that ask for it. */
+    struct zwp_text_input_manager_v3 *text_input_manager;
+    struct zwp_text_input_v3 *text_input;
+    struct shell_surface *text_focus; /* the surface text-input entered */
+    bool text_enabled;
+    char *text_commit, *text_preedit; /* pending until done */
 
     struct wl_list outputs; /* shell_output.link */
     struct wl_list surfaces; /* shell_surface.link */
@@ -109,6 +118,7 @@ struct shell_surface_config {
     int32_t margin_top, margin_right, margin_bottom, margin_left;
     enum zwlr_layer_surface_v1_keyboard_interactivity keyboard;
     struct shell_output *output; /* NULL: the compositor chooses */
+    bool text_input; /* take text from input methods while focused */
 };
 
 struct shell_surface_handler {
@@ -127,6 +137,10 @@ struct shell_surface_handler {
     /* `utf8` is the text the key produces, "" for none. */
     void (*key)(void *data, struct shell_surface *surface, xkb_keysym_t sym,
         const char *utf8);
+    /* An input method committed `commit` (NULL for none) and now composes
+     * `preedit` ("" for nothing). */
+    void (*text)(void *data, struct shell_surface *surface, const char *commit,
+        const char *preedit);
 };
 
 struct shell_surface {
@@ -153,6 +167,8 @@ struct shell_surface {
      * Such a repaint has `repaint_only` set during draw(). */
     bool animating;
     bool repaint_only;
+    bool wants_text_input;
+    int32_t text_cursor[4]; /* where the caret is, for the input method's popup */
     char name[32]; /* layer namespace, for logs */
 };
 
@@ -168,6 +184,9 @@ void shell_surface_set_keyboard(struct shell_surface *surface,
     enum zwlr_layer_surface_v1_keyboard_interactivity keyboard);
 /* Let pointer input fall through the surface to whatever is below. */
 void shell_surface_ignore_input(struct shell_surface *surface);
+/* Tell the input method where the caret is, in surface coordinates. */
+void shell_surface_set_text_cursor(struct shell_surface *surface, int32_t x, int32_t y,
+    int32_t width, int32_t height);
 /* Take pointer input only inside these logical rectangles ({x, y, w, h}
  * each); applies with the next commit. */
 void shell_surface_set_input_rects(struct shell_surface *surface, const int (*rects)[4],

@@ -512,6 +512,7 @@ static struct ui_node *build_node(struct build *b, int t, int depth) {
     read_animation(b, t, node);
     node->id = get_string(L, t, "id");
     node->key = get_string(L, t, "key");
+    node->caret = get_bool(L, t, "caret", false);
     lua_getfield(L, t, "on_click");
     if (lua_isfunction(L, -1)) node->on_click = luaL_ref(L, LUA_REGISTRYINDEX);
     else lua_pop(L, 1);
@@ -548,6 +549,8 @@ static struct ui_node *build_node(struct build *b, int t, int depth) {
         node->letter_spacing = get_number(L, t, "letter_spacing", 0.25);
         node->ellipsize = get_bool(L, t, "ellipsize", true);
         node->text_align = get_number(L, t, "text_align", 0);
+        node->wrap = get_bool(L, t, "wrap", false);
+        node->max_lines = (int)get_number(L, t, "max_lines", 0);
         break;
     case UI_NODE_PIP:
         node->pip_radius = get_number(L, t, "radius", 3);
@@ -652,12 +655,27 @@ void ui_measure(cairo_t *cr, struct ui_node *node, const struct ui_defaults *def
             pango_attr_list_unref(attrs);
         }
         pango_layout_set_text(node->layout, node->text ? node->text : "", -1);
-        if (node->max_width > 0 && node->ellipsize) {
+        double wrap_at = node->width >= 0 ? node->width : node->max_width;
+        node->wrap_width = 0;
+        if (node->wrap && wrap_at > 0) {
+            pango_layout_set_alignment(node->layout, node->text_align < 0.25 ? PANGO_ALIGN_LEFT
+                : node->text_align > 0.75 ? PANGO_ALIGN_RIGHT : PANGO_ALIGN_CENTER);
+            pango_layout_set_wrap(node->layout, PANGO_WRAP_WORD_CHAR);
+            pango_layout_set_width(node->layout, (int)(wrap_at * PANGO_SCALE));
+            if (node->max_lines > 0) {
+                pango_layout_set_height(node->layout, -node->max_lines);
+                pango_layout_set_ellipsize(node->layout, PANGO_ELLIPSIZE_END);
+            }
+            /* One line needs no wrapping box: size it like plain text. */
+            if (pango_layout_get_line_count(node->layout) > 1) node->wrap_width = wrap_at;
+            else pango_layout_set_width(node->layout, -1);
+        } else if (node->max_width > 0 && node->ellipsize) {
             pango_layout_set_ellipsize(node->layout, PANGO_ELLIPSIZE_END);
             pango_layout_set_width(node->layout, (int)(node->max_width * PANGO_SCALE));
         }
         int pw = 0, ph = 0;
         pango_layout_get_pixel_size(node->layout, &pw, &ph);
+        if (node->wrap_width > 0) pw = (int)ceil(node->wrap_width);
         w = pw;
         h = ph;
         break;
@@ -836,7 +854,10 @@ static void set_rect(cairo_t *cr, struct ui_node *node, double x, double y, doub
     node->w = w;
     node->h = h;
     node->hidden = false;
-    if (node->kind == UI_NODE_TEXT && node->layout && node->ellipsize && w + 0.5 < node->nat_w) {
+    if (node->kind == UI_NODE_TEXT && node->layout && node->wrap_width > 0) {
+        /* Narrower than asked: wrap at the width there is. */
+        if (w + 0.5 < node->wrap_width) pango_layout_set_width(node->layout, (int)(w * PANGO_SCALE));
+    } else if (node->kind == UI_NODE_TEXT && node->layout && node->ellipsize && w + 0.5 < node->nat_w) {
         pango_layout_set_ellipsize(node->layout, PANGO_ELLIPSIZE_END);
         pango_layout_set_width(node->layout, (int)(w * PANGO_SCALE));
     }
@@ -1231,7 +1252,11 @@ void ui_draw(cairo_t *cr, const struct ui_node *node, const struct ui_node *hove
             int lw = 0, lh = 0;
             pango_cairo_update_layout(cr, node->layout);
             pango_layout_get_pixel_size(node->layout, &lw, &lh);
-            double tx = x + (w - lw) * node->text_align;
+            /* Wrapped lines are aligned by pango inside the layout width. */
+            double box = lw;
+            if (node->wrap_width > 0 && pango_layout_get_width(node->layout) > 0)
+                box = pango_layout_get_width(node->layout) / (double)PANGO_SCALE;
+            double tx = x + (w - box) * node->text_align;
             double ty = y + (h - lh) / 2;
             cairo_set_source_rgba(cr, color[0], color[1], color[2], color[3]);
             cairo_move_to(cr, tx, ty);
