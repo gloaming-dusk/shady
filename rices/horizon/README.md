@@ -1,5 +1,7 @@
 # Horizon
 
+![Horizon: the time across the sky, a workspace light on the horizon and the glass control center](preview.jpg)
+
 shady-shell living in [Afterglow](../afterglow/README.md)'s sky. There is no
 bar:
 
@@ -28,9 +30,9 @@ nix develop -c ./tools/build.sh
 nix develop -c ./rices/horizon/run.sh
 ```
 
-It uses Afterglow's compositor config, sky plugin and key bindings
-(`rices/afterglow/config.lua`, `init.lua`); `init.lua` here adds the glass
-and the 3D turn of the control center. The control center's tools are the
+Horizon is the default rice. Its `config.lua` and `init.lua` load
+Afterglow's (sky plugin, sea, camera, window style and key bindings);
+`init.lua` adds the glass and the 3D turn of the control center. The control center's tools are the
 same optional ones as in the Objects rice: `wpctl`, `brightnessctl`,
 `nmcli`, `bluetoothctl`, `playerctl` and `grim`.
 

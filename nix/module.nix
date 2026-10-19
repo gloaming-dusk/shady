@@ -18,8 +18,8 @@ in
 
     rice = lib.mkOption {
       type = lib.types.str;
-      default = "afterglow";
-      example = "neon-transit";
+      default = "horizon";
+      example = "objects";
       description = ''
         Rice from `share/shady/rices` used for whatever a user has not
         configured in `~/.config/shady/{config,init,shell}.lua`.

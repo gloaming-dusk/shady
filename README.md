@@ -1,8 +1,8 @@
 # shady
 
-![Shady Afterglow rice: live Wayland windows floating above a procedural sunset sea](rices/afterglow/preview.jpg)
+![Shady Horizon rice: the time written across a procedural sunset sky, a workspace light on the horizon and a frosted control center turned in 3D](rices/horizon/preview.jpg)
 
-*Afterglow rice: a camera-aware procedural sky and sea from one native plugin, four times of day on `Super+T`, rounded glass windows with sky-matched accents, and a themed standalone shell.*
+*Horizon, the default rice: shady-shell living in Afterglow's procedural sky and sea. The time is written across the sky, workspaces are lights on the horizon with the open windows reflected below, notifications appear in the sky, the control center is a slab of frosted glass turned in 3D that also picks the hour (`Super+T`), and the launcher scatters the applications as stars.*
 
 Shady is an experimental **3D Wayland compositor** built on wlroots 0.20.2 and inspired by TinyWL. It can run as a conventional compositor through its wlroots scene-graph path, or turn normal xdg-shell applications into objects inside a shared perspective 3D world.
 
@@ -266,6 +266,18 @@ The 3D stack has a separate GLES2/headless sanitizer suite. It covers matrix and
 This suite uses an AddressSanitizer/UndefinedBehaviorSanitizer spatial build and software GLES2 so renderer/module regressions can be exercised without a physical display.
 
 The **Neon Transit** rice demonstrates a native-plugin approach to depth: `focus-depth` leaves screen-space x/y placement alone but animates focused/background windows along Z using the C plugin API and module tick callback.
+
+**Horizon** is the default rice (`SHADY_RICE`, or `programs.shady.rice` in the NixOS module). It keeps Afterglow's world and replaces the bar with a shell that lives in the sky: a clock written across it, workspace lights on the horizon, notifications as words in the sky, a 3D-turned glass control center and a constellation launcher. See `rices/horizon/README.md`.
+
+```sh
+./rices/horizon/run.sh
+```
+
+**Objects** is the playful alternative: chunky ink-outlined cards with hard shadows on a paper sunset, a desk clock, a floating dock, a leaning control center, sticker notifications and a launcher that fans the applications out like a hand of cards. See `rices/objects/README.md`.
+
+```sh
+./rices/objects/run.sh
+```
 
 **Afterglow** sets the desktop above an open sea at sunset. Its `afterglow` plugin draws a camera-aware procedural sky and sea, cycles through golden hour, afterglow, blue hour and night (`Super+T`), keeps window accents on the sky's palette, publishes that palette so its frosted-glass shell cross-fades with the sky, and makes closing windows sink into the water. See `rices/afterglow/README.md`.
 

@@ -32,7 +32,7 @@ self:
     environment.sessionVariables.WLR_RENDERER_ALLOW_SOFTWARE = "1";
     virtualisation.qemu.options = [ "-vga none" "-device virtio-gpu-pci" ];
     virtualisation.memorySize = 2048;
-    # Real machines are multi-core; the shell bar once failed to show only there.
+    # Real machines are multi-core; the shell once failed to show only there.
     virtualisation.cores = 4;
   };
 
@@ -43,11 +43,12 @@ self:
             "su - alice -c 'XDG_RUNTIME_DIR=/run/user/1000 " + cmd + "'"
         )
 
-    def bar_visible():
-        # The Afterglow bar starts with an orange "S" badge in the top-left
-        # corner; the sky behind it has no orange that high up. Read what is
-        # scanned out (QEMU's screendump), not the compositor's own frame:
-        # with llvmpipe the two once differed and only the display lost the bar.
+    def shell_visible():
+        # The default rice (Horizon) writes the time in large white serif
+        # numerals across the dark top-left sky, which holds nothing that
+        # bright but a few one-pixel stars. Read what is scanned out (QEMU's
+        # screendump), not the compositor's own frame: with llvmpipe the two
+        # once differed and only the display lost the shell.
         import os, re, tempfile
         path = os.path.join(tempfile.mkdtemp(), "screen.ppm")
         machine.send_monitor_command(f"screendump {path}")
@@ -57,23 +58,23 @@ self:
         assert header, ppm[:32]
         width = int(header[1])
         pixels = ppm[header.end():]
-        orange = sum(
-            1 for y in range(38) for x in range(64)
+        white = sum(
+            1 for y in range(25, 175) for x in range(50, 340)
             for i in [(y * width + x) * 3]
-            if pixels[i] > 200 and 90 < pixels[i + 1] < 200 and pixels[i + 2] < 150
+            if pixels[i] > 220 and pixels[i + 1] > 220 and pixels[i + 2] > 220
         )
-        return orange > 40
+        return white > 500
 
-    def wait_for_bar():
-        retry(lambda _: bar_visible(), 30)
+    def wait_for_shell():
+        retry(lambda _: shell_visible(), 30)
 
     machine.wait_for_unit("greetd.service")
     machine.wait_until_succeeds("pgrep -u alice -x shady", timeout=60)
     machine.wait_until_succeeds("pgrep -u alice -x shady-shell", timeout=60)
     machine.wait_for_file("/run/user/1000/shady-wayland-0.sock")
 
-    with subtest("the shell bar is on screen"):
-        wait_for_bar()
+    with subtest("the shell is on screen"):
+        wait_for_shell()
 
     with subtest("rice and plugins loaded"):
         plugins = as_alice("shadyctl plugins")
@@ -127,16 +128,17 @@ self:
         machine.send_key("ctrl-alt-f1")
         machine.wait_until_succeeds("[ $(fgconsole) = 1 ]", timeout=10)
 
-    with subtest("the shell bar comes back after a VT round trip"):
+    with subtest("the shell comes back after a VT round trip"):
         machine.sleep(3)
         session_log = machine.succeed("journalctl -b -t shady -o cat")
         print("\n".join(l for l in session_log.splitlines()
                         if "output" in l or "shady-shell" in l or "layer" in l))
-        bars = session_log.count("shady-shell: shady-shell on ")
-        removed = session_log.count("shady-shell: shady-shell removed from ")
-        assert bars > removed, f"bar shown {bars} times, removed {removed} times"
+        # Horizon's desk (clock, horizon, reflections) is on every output.
+        shown = session_log.count("shady-shell: horizon-desk on ")
+        removed = session_log.count("shady-shell: horizon-desk removed from ")
+        assert shown > removed, f"desk shown {shown} times, removed {removed} times"
         assert "Fontconfig error" not in session_log, "shady-shell has no fontconfig"
-        wait_for_bar()
+        wait_for_shell()
         machine.screenshot("after-vt-switch")
   '';
 }
