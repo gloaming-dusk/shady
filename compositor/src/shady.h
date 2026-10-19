@@ -132,6 +132,8 @@ struct shady_server {
 	struct wlr_allocator *allocator;
 	struct wlr_scene *scene;
 	struct wlr_scene_tree *content_tree;
+	/* Background and bottom layer surfaces, below the windows. */
+	struct wlr_scene_tree *background_tree;
 	struct wlr_scene_tree *overlay_tree;
 	struct wlr_scene_output_layout *scene_layout;
 

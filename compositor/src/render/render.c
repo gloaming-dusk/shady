@@ -1787,12 +1787,12 @@ static bool layer_plane_for(struct shady_server *server, struct shady_layer_surf
 }
 
 int shady_render_layer_pick(struct shady_server *server, double lx, double ly,
-		struct wlr_surface **surface, double *sx, double *sy) {
+		uint32_t lowest, struct wlr_surface **surface, double *sx, double *sy) {
 	struct shady_desktop_state *desktop = shady_desktop_state(server);
 	if (!desktop || !server->config.spatial_mode || desktop->session_locked) return -1;
 	/* The reverse of the drawing order: overlay down to background, and
 	 * newest first within a layer (the list's head). */
-	for (int z = ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY; z >= ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND; z--) {
+	for (int z = ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY; z >= (int)lowest; z--) {
 		struct shady_layer_surface *layer;
 		wl_list_for_each(layer, &desktop->layer_surfaces, link) {
 			struct wlr_layer_surface_v1 *ls = layer->layer_surface;
@@ -2024,9 +2024,11 @@ static void render_spatial_subsurface_buffer(struct wlr_scene_buffer *buffer,
 		server->config.window_brightness * (focused ? 1.08f : 1.0f));
 }
 
+/* Layer surfaces from layer `lowest` to `highest`, then (with `popups`)
+ * the xdg popups. */
 static void render_spatial_overlays(struct shady_server *server,
 		struct wlr_render_pass *pass, struct wlr_output *output,
-		double ox, double oy, float scale) {
+		double ox, double oy, float scale, uint32_t lowest, uint32_t highest, bool popups) {
 	struct shady_overlay_render_data ctx = {
 		.pass = pass,
 		.output = output,
@@ -2040,8 +2042,7 @@ static void render_spatial_overlays(struct shady_server *server,
 	 * bottom to top: by layer (background .. overlay), and within a layer
 	 * oldest first, as the list keeps the newest surface at its head. */
 	struct shady_layer_surface *layer;
-	for (uint32_t z = ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND;
-			z <= ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY; z++)
+	for (uint32_t z = lowest; z <= highest; z++)
 	wl_list_for_each_reverse(layer, &shady_desktop_state(server)->layer_surfaces, link) {
 		if ((uint32_t)layer->layer_surface->current.layer != z) continue;
 		if (layer->layer_surface->output &&
@@ -2061,7 +2062,7 @@ static void render_spatial_overlays(struct shady_server *server,
 
 	/* XDG popups remain readable/interactive while their parent is spatial. */
 	struct shady_popup *popup;
-	wl_list_for_each(popup, &server->popups, link) {
+	if (popups) wl_list_for_each(popup, &server->popups, link) {
 		wlr_scene_node_for_each_buffer(&popup->scene_tree->node,
 			render_scene_overlay_buffer, &ctx);
 	}
@@ -2238,6 +2239,20 @@ void shady_render_output_frame(
 		server->config.background_bottom);
 	plugin_render_hooks_run(server, SHADY_RENDER_STAGE_AFTER_BACKGROUND,
 		output, buf_w, buf_h, logical_w, logical_h, time_seconds);
+
+	/* Background and bottom layer surfaces (a wallpaper, desktop widgets)
+	 * lie flat behind the world, without touching its depth. */
+	{
+		double bx = 0, by = 0;
+		wlr_output_layout_output_coords(server->output_layout, wlr_output, &bx, &by);
+		glDisable(GL_DEPTH_TEST);
+		glDepthMask(GL_FALSE);
+		render_spatial_overlays(server, pass, wlr_output, bx, by, scale,
+			ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND, ZWLR_LAYER_SHELL_V1_LAYER_BOTTOM, false);
+		glDepthMask(GL_TRUE);
+		glEnable(GL_DEPTH_TEST);
+		glDepthFunc(GL_LEQUAL);
+	}
 
 	float view[16];
 	float proj[16];
@@ -2965,7 +2980,8 @@ void shady_render_output_frame(
 
 	/* Compose protocol-driven 2D surfaces after the spatial pass. */
 	if (profile) clock_gettime(CLOCK_MONOTONIC, &profile_overlay_start);
-	render_spatial_overlays(server, pass, wlr_output, ox, oy, scale);
+	render_spatial_overlays(server, pass, wlr_output, ox, oy, scale,
+		ZWLR_LAYER_SHELL_V1_LAYER_TOP, ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY, true);
 	plugin_render_hooks_run(server, SHADY_RENDER_STAGE_OVERLAY,
 		output, buf_w, buf_h, logical_w, logical_h, time_seconds);
 	if (profile) {
