@@ -69,6 +69,13 @@ local function hash(s)
     return h
 end
 
+local function ago(seconds)
+    if seconds < 60 then return "just now" end
+    if seconds < 3600 then return (seconds // 60) .. " min ago" end
+    if seconds < 86400 then return (seconds // 3600) .. " h ago" end
+    return (seconds // 86400) .. " d ago"
+end
+
 local function hour()
     return shell.compositor_value("afterglow.hour", "afterglow")
 end
@@ -250,6 +257,92 @@ shell.popup {
     end,
 }
 
+-- ---- notifications: words that appear in the sky ------------------------
+
+shell.notification_server()
+
+local function active_notifications(limit)
+    local list = {}
+    for _, n in ipairs(shell.notifications()) do
+        if n.active and #list < limit then list[#list + 1] = n end
+    end
+    return list
+end
+
+local function sync_toasts()
+    local want = #active_notifications(1) > 0
+    if want and not shell.is_open("horizon-toasts") then
+        shell.open("horizon-toasts")
+    elseif not want and shell.is_open("horizon-toasts") then
+        shell.close("horizon-toasts")
+    end
+end
+
+shell.on("notifications", sync_toasts)
+
+local function activate(n)
+    for _, action in ipairs(n.actions) do
+        if action.key == "default" then
+            shell.invoke_notification(n.id, "default")
+            return
+        end
+    end
+    shell.dismiss_notification(n.id)
+end
+
+local function sky_note(ctx, n)
+    local id = "toast:" .. n.id
+    local critical = n.urgency == "critical"
+    local actions = {}
+    for _, action in ipairs(n.actions) do
+        if action.key ~= "default" and action.label ~= "" then
+            local aid = id .. ":" .. action.key
+            actions[#actions + 1] = shell.row {
+                id = aid, radius = 9, padding = { 5, 11 }, animate = "smooth",
+                border = a(c.text, ctx.hovered == aid and 0.6 or 0.28),
+                background = ctx.hovered == aid and a(c.text, 0.12) or nil,
+                on_click = function() shell.invoke_notification(n.id, action.key) end,
+                text(action.label, { font = sans("SemiBold", 9) }),
+            }
+        end
+    end
+    return shell.column {
+        key = id, id = id, width = 340, align = "end", gap = 4, padding = { 14, 18 }, radius = 18,
+        background = shell.gradient("vertical", a(c.surface, 0.42), a(c.surface, 0.30)),
+        border = critical and a(c.accent, 0.7) or a(c.text, 0.16),
+        animate = "gentle", enter = { opacity = 0, translate = { 0, -14 } },
+        hover = { border = a(c.text, 0.4) },
+        on_click = function() activate(n) end,
+        shell.row {
+            gap = 8, align = "center",
+            critical and shell.pip { radius = 3, lit = true, color = c.accent } or false,
+            label(n.app ~= "" and n.app or "Notification"),
+        },
+        text(n.summary, { font = serif(22), max_width = 300, text_align = 1 }),
+        n.body ~= "" and text(n.body, {
+            font = sans("Medium", 9.5), color = a(c.text, 0.8), max_width = 300, text_align = 1,
+        }) or false,
+        #actions > 0 and shell.row { gap = 8, padding = { 6, 0, 0, 0 }, actions } or false,
+    }
+end
+
+shell.popup {
+    name = "horizon-toasts",
+    anchor = { "top", "right" },
+    margin = { top = 76, right = 44 },
+    view = function(ctx)
+        -- The control center lists them itself; step out of its way.
+        if shell.is_open("horizon-control") then return shell.box { width = 1, height = 1 } end
+        local notes = {}
+        for _, n in ipairs(active_notifications(3)) do notes[#notes + 1] = sky_note(ctx, n) end
+        return shell.column {
+            gap = 12, align = "end",
+            exit = { opacity = 0, translate = { 0, -10 } }, animate = "gentle",
+            notes,
+        }
+    end,
+}
+
 -- ---- status: a line of text in the top-right sky -----------------------
 
 local control_output
@@ -384,6 +477,38 @@ local function now_playing()
     }
 end
 
+-- What the sky said lately: the last few notifications.
+local function earlier()
+    local list = shell.notifications()
+    if #list == 0 then return false end
+    local rows = {}
+    for i = 1, math.min(3, #list) do
+        local n = list[i]
+        rows[#rows + 1] = shell.row {
+            gap = 10, align = "center", opacity = n.active and 1 or 0.6,
+            text(n.summary ~= "" and n.summary or n.app, { font = serif(16), max_width = 220 }),
+            shell.spacer(),
+            text(ago(os.time() - n.time), { font = sans("Medium", 8.5), color = c.text_dim }),
+        }
+    end
+    return shell.column {
+        gap = 8, align = "stretch",
+        shell.box { height = 1, background = a(c.text, 0.16) },
+        shell.row {
+            align = "center", padding = { 6, 0, 0, 0 },
+            label("Earlier"),
+            shell.spacer(),
+            shell.row {
+                id = "c:clear", radius = 8, padding = { 3, 9 }, animate = "smooth",
+                hover = { background = a(c.text, 0.12) },
+                on_click = function() shell.clear_notifications() end,
+                label("Clear", { color = c.text }),
+            },
+        },
+        rows,
+    }
+end
+
 shell.popup {
     name = "horizon-control",
     anchor = { "top", "right" },
@@ -468,6 +593,7 @@ shell.popup {
                 shell.box { height = 1, background = a(c.text, 0.16) },
                 now_playing(),
             },
+            earlier(),
         }
     end,
 }

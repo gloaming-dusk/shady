@@ -17,6 +17,8 @@ bar:
 - the launcher (`Super+d`) scatters every application across the sky as a
   star. Type a name and the matching stars light up and join into a
   constellation; `Tab` moves to the next one, `↵` launches it.
+- notifications appear as words in the sky under the status line, on a
+  faint frosted card; the control center lists them under "Earlier".
 
 Every colour follows the sky's published palette, so the whole shell
 cross-fades with `Super+T`.
