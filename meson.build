@@ -186,6 +186,8 @@ shell_xkbcommon = dependency('xkbcommon', required: shell_option)
 # App fonts for shell.fonts(): fontconfig, and pango's fontconfig font map.
 shell_fontconfig = dependency('fontconfig', required: shell_option)
 shell_pangoft2 = dependency('pangoft2', required: shell_option)
+# The notification server (org.freedesktop.Notifications) talks D-Bus through sd-bus.
+shell_sd_bus = dependency('libsystemd', required: false)
 # GL composition for the shell; without these it renders with wl_shm only.
 shell_egl = dependency('egl', required: false)
 shell_glesv2 = dependency('glesv2', required: false)
@@ -255,6 +257,7 @@ if shell_enabled
       'shell/src/apps.c',
       'shell/src/ui.c',
       'shell/src/anim.c',
+      'shell/src/notify.c',
       'shell/src/script.c',
       'shell/src/plugins.c',
       'shell/src/compositor.c',
@@ -263,11 +266,12 @@ if shell_enabled
     include_directories: include_directories('.', 'include', 'compositor/src'),
     c_args: [
       '-DSHELL_HAS_GL=@0@'.format(shell_gl_deps_found ? 1 : 0),
+      '-DHAVE_SD_BUS=@0@'.format(shell_sd_bus.found() ? 1 : 0),
       '-DSHADY_SHELL_DATA_DIR="@0@"'.format(join_paths(shady_data_root, 'shell')),
       '-DSHADY_SHELL_PLUGIN_DIR="@0@"'.format(meson.current_build_dir()),
       '-DSHADY_SHELL_PLUGIN_INSTALL_DIR="@0@"'.format(join_paths(get_option('prefix'), get_option('libdir'), 'shady', 'shell-plugins')),
     ],
-    dependencies: [wayland_client, cairo, pangocairo, shell_pangoft2, shell_fontconfig, shell_xkbcommon, lua, dl, cc.find_library('m')] + shell_gl_deps,
+    dependencies: [wayland_client, cairo, pangocairo, shell_pangoft2, shell_fontconfig, shell_xkbcommon, shell_sd_bus, lua, dl, cc.find_library('m')] + shell_gl_deps,
     install: true)
 
   # Native shell plugins (include/shady/shell_plugin.h).

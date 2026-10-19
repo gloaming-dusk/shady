@@ -896,7 +896,7 @@ static void draw_pip_node(cairo_t *cr, const struct ui_node *node, const double 
 const char *const ui_icon_names[] = {
     "wifi", "volume", "mute", "bluetooth", "moon", "sun", "capture", "play", "pause",
     "next", "previous", "battery", "search", "power", "grid", "plus", "close", "sliders",
-    "lock", "music", "check", NULL,
+    "lock", "music", "check", "bell", NULL,
 };
 
 static double deg(double d) {
@@ -1065,6 +1065,17 @@ static void draw_icon(cairo_t *cr, const char *name, double stroke) {
         cairo_new_sub_path(cr);
         cairo_arc(cr, 17.5, 15.5, 2.8, 0, 2 * G_PI);
         cairo_fill(cr);
+    } else if (!strcmp(name, "bell")) {
+        cairo_move_to(cr, 5, 17);
+        cairo_line_to(cr, 19, 17);
+        cairo_curve_to(cr, 17.5, 15.5, 17.5, 13.5, 17.5, 11);
+        cairo_curve_to(cr, 17.5, 7, 15, 4.5, 12, 4.5);
+        cairo_curve_to(cr, 9, 4.5, 6.5, 7, 6.5, 11);
+        cairo_curve_to(cr, 6.5, 13.5, 6.5, 15.5, 5, 17);
+        cairo_close_path(cr);
+        cairo_move_to(cr, 10, 20.2);
+        cairo_line_to(cr, 14, 20.2);
+        cairo_stroke(cr);
     } else if (!strcmp(name, "check")) {
         cairo_move_to(cr, 4, 12.5);
         cairo_line_to(cr, 9.5, 18);

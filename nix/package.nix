@@ -18,6 +18,7 @@
   cairo,
   pango,
   fontconfig,
+  systemd,
 }:
 
 stdenv.mkDerivation {
@@ -50,7 +51,7 @@ stdenv.mkDerivation {
   nativeBuildInputs = [ meson ninja pkg-config wayland-scanner ];
   buildInputs = [
     wlroots wayland wayland-protocols wlr-protocols libxkbcommon libinput
-    pixman libdrm libGL lua5_4 cairo pango fontconfig
+    pixman libdrm libGL lua5_4 cairo pango fontconfig systemd
   ];
 
   mesonBuildType = "release";
