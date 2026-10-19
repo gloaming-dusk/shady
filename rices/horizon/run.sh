@@ -20,7 +20,6 @@ if [[ $# -eq 0 ]]; then
   set -- -s "${SHADY_STARTUP:-$default_startup}"
 fi
 
-# Afterglow's world: the sky plugin, sea, camera and window style.
 exec "$ROOT/build/shady" \
-  -c "$ROOT/rices/afterglow/config.lua" \
+  -c "$ROOT/rices/horizon/config.lua" \
   "$@"

@@ -1867,7 +1867,7 @@ void shell_lua_output_removed(struct shell *shell, struct shell_output *output) 
     struct view *view, *tmp;
     wl_list_for_each_safe(view, tmp, &lua->views, link) {
         if (view->output != output) continue;
-        if (!view->def->popup)
+        if (!view->def->popup || view->def->persistent)
             fprintf(stderr, "shady-shell: %s removed from %s\n", view->def->name, output->name);
         view_destroy(view);
     }

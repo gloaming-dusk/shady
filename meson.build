@@ -770,7 +770,7 @@ install_subdir('shell', install_dir: shady_data_install_dir,
 install_subdir('greeter', install_dir: shady_data_install_dir,
   exclude_directories: ['src'])
 install_subdir('plugins/shaders', install_dir: join_paths(shady_data_install_dir, 'plugins'))
-foreach rice : ['afterglow', 'neon-transit']
+foreach rice : ['horizon', 'afterglow', 'objects', 'neon-transit']
   rice_files = []
   foreach file : ['config.lua', 'init.lua', 'shell.lua', 'theme.sh', 'README.md']
     if import('fs').is_file(join_paths('rices', rice, file))
@@ -779,6 +779,11 @@ foreach rice : ['afterglow', 'neon-transit']
   endforeach
   install_data(rice_files,
     install_dir: join_paths(shady_data_install_dir, 'rices', rice))
+  # Typefaces the rice's shell.lua loads with shell.fonts("fonts").
+  if import('fs').is_dir(join_paths('rices', rice, 'fonts'))
+    install_subdir(join_paths('rices', rice, 'fonts'),
+      install_dir: join_paths(shady_data_install_dir, 'rices', rice))
+  endif
 endforeach
 # Rice configs load plugins from $SHADY_ROOT/build, as they do in a checkout.
 install_symlink('build',

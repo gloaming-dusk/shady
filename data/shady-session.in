@@ -2,11 +2,11 @@
 # Start shady as a login session.
 #
 # Your own ~/.config/shady/{config,init,shell}.lua win when present; anything
-# missing comes from the rice named by SHADY_RICE (default: afterglow).
+# missing comes from the rice named by SHADY_RICE (default: horizon).
 # Extra arguments go to shady, e.g. `shady-session --safe`.
 
 : "${SHADY_ROOT:=@datadir@}"
-: "${SHADY_RICE:=afterglow}"
+: "${SHADY_RICE:=horizon}"
 export SHADY_ROOT SHADY_RICE
 
 export XDG_SESSION_TYPE=wayland
