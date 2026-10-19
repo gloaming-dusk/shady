@@ -225,6 +225,7 @@ shell.popup {
     layer = "bottom",
     fill = true,
     persistent = true,
+    outputs = "all",
     input = "widgets",
     view = function(ctx)
         local hy = math.floor(ctx.height * HORIZON)
@@ -268,6 +269,7 @@ shell.popup {
     anchor = { "top", "right" },
     margin = { top = 26, right = 40 },
     persistent = true,
+    outputs = "all",
     view = function(ctx)
         local open = shell.is_open("horizon-control") and control_output == ctx.output
         local wifi, ssid = sys.wifi()

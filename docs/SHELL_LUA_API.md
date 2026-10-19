@@ -73,6 +73,7 @@ shell.popup {
     width = 250,                  -- omit width/height to fit the content
     keyboard = "none",            -- none | exclusive | on_demand
     persistent = false,           -- keep it open, like a bar
+    outputs = nil,                -- "all": persistent on every output, one each
     fill = false,                 -- cover the whole output (anchors and size ignored)
     exclusive = 0,                -- pixels to reserve along its anchored edge
     input = "all",                -- or "widgets": take the pointer only over interactive widgets
@@ -103,6 +104,12 @@ A `persistent` popup is opened by the shell itself as soon as an output is
 ready, stays on one output, and moves to another when its output goes away
 (a monitor unplugged, a VT switch). The greeter's login card is one
 ([GREETER.md](GREETER.md)).
+
+With `outputs = "all"` a popup is persistent on every output instead: one
+copy per output, following hotplug, each getting its own output as
+`ctx.output`. Wallpapers, docks and desktop widgets use it. `shell.open`,
+`shell.close` and `shell.is_open` are meant for popups that come and go, not
+for these.
 
 ### Opening popups
 

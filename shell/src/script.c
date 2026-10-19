@@ -58,6 +58,7 @@ struct view_def {
     /* A popup kept open on one output: opened when an output appears and
      * moved to another when its output goes away. */
     bool persistent;
+    bool every_output; /* persistent on every output, not just one */
     bool fill; /* a popup that covers its whole output */
     bool input_widgets; /* take the pointer only over interactive widgets */
 };
@@ -628,11 +629,22 @@ static bool def_wants_output(const struct view_def *def, const struct shell_outp
 static bool measure_popup(struct shell_lua *lua, struct view_def *def,
         struct shell_output *output, int args, uint32_t *width, uint32_t *height);
 
-/* Open on `output` the persistent popups that are not showing anywhere. */
+static bool showing_on(struct shell_lua *lua, const struct view_def *def,
+        const struct shell_output *output) {
+    struct view *view;
+    wl_list_for_each(view, &lua->views, link)
+        if (view->def == def && !view->closing && view->output == output) return true;
+    return false;
+}
+
+/* Open on `output` the persistent popups that are not showing anywhere, and
+ * the every-output ones that are not showing on it. */
 static void ensure_persistent(struct shell_lua *lua, struct shell_output *output) {
     for (size_t i = 0; i < lua->def_count; i++) {
         struct view_def *def = &lua->defs[i];
-        if (!def->popup || !def->persistent || find_popup(lua, def->name)) continue;
+        if (!def->popup || !def->persistent) continue;
+        if (def->every_output ? showing_on(lua, def, output) : find_popup(lua, def->name) != NULL)
+            continue;
         uint32_t width = 0, height = 0;
         if (measure_popup(lua, def, output, LUA_NOREF, &width, &height) &&
                 view_create(lua, def, output, LUA_NOREF, def->margin, width, height))
@@ -822,6 +834,13 @@ static int l_popup(lua_State *L) {
     lua_pop(L, 1);
     lua_getfield(L, 1, "persistent");
     def->persistent = lua_toboolean(L, -1);
+    lua_pop(L, 1);
+    lua_getfield(L, 1, "outputs");
+    if (!lua_isnil(L, -1)) {
+        const char *outputs = lua_tostring(L, -1);
+        if (!outputs || strcmp(outputs, "all") != 0) luaL_error(L, "popup outputs can only be \"all\"");
+        def->every_output = def->persistent = true;
+    }
     lua_pop(L, 1);
     lua_getfield(L, 1, "exclusive");
     def->exclusive = (int32_t)luaL_optinteger(L, -1, 0);
