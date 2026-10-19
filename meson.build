@@ -242,8 +242,23 @@ if shell_enabled
     output: 'wlr-output-management-unstable-v1-protocol.c',
     command: [wayland_scanner, 'private-code', '@INPUT@', '@OUTPUT@'],
   )
+  text_input_xml = join_paths(wayland_protocols_dir, 'unstable/text-input/text-input-unstable-v3.xml')
+  text_input_client_header = custom_target(
+    'text-input-unstable-v3-client-protocol.h',
+    input: text_input_xml,
+    output: 'text-input-unstable-v3-client-protocol.h',
+    command: [wayland_scanner, 'client-header', '@INPUT@', '@OUTPUT@'],
+  )
+  text_input_protocol_code = custom_target(
+    'text-input-unstable-v3-protocol.c',
+    input: text_input_xml,
+    output: 'text-input-unstable-v3-protocol.c',
+    command: [wayland_scanner, 'private-code', '@INPUT@', '@OUTPUT@'],
+  )
   executable('shady-shell',
     [
+      text_input_client_header,
+      text_input_protocol_code,
       layer_shell_protocol_header,
       layer_shell_protocol_code,
       xdg_shell_protocol_code,
@@ -325,6 +340,32 @@ if shell_enabled
       xdg_shell_client_header,
       xdg_shell_protocol_code,
       'tests/headless-automation-probe.c',
+    ],
+    include_directories: include_directories('.'),
+    dependencies: [wayland_client],
+    build_by_default: false,
+    install: false)
+
+  input_method_xml = files('tests/protocols/input-method-unstable-v2.xml')
+  input_method_client_header = custom_target(
+    'input-method-unstable-v2-client-protocol.h',
+    input: input_method_xml,
+    output: 'input-method-unstable-v2-client-protocol.h',
+    command: [wayland_scanner, 'client-header', '@INPUT@', '@OUTPUT@'],
+  )
+  input_method_protocol_code = custom_target(
+    'input-method-unstable-v2-protocol.c',
+    input: input_method_xml,
+    output: 'input-method-unstable-v2-protocol.c',
+    command: [wayland_scanner, 'private-code', '@INPUT@', '@OUTPUT@'],
+  )
+  # A scripted input method for tests/headless-shell-ime.sh.
+  executable('ime-probe',
+    [
+      input_method_client_header,
+      input_method_protocol_code,
+      text_input_client_header,
+      'tests/ime-probe.c',
     ],
     include_directories: include_directories('.'),
     dependencies: [wayland_client],

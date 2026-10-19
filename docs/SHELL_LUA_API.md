@@ -77,11 +77,18 @@ shell.popup {
     fill = false,                 -- cover the whole output (anchors and size ignored)
     exclusive = 0,                -- pixels to reserve along its anchored edge
     input = "all",                -- or "widgets": take the pointer only over interactive widgets
+    text_input = false,           -- take text from input methods (Hangul, Japanese, ...)
     layer = "overlay",
     view = function(ctx, args) ... end,
     on_key = function(key, text, args) ... end,
 }
 ```
+
+With `text_input = true` (and a `keyboard` mode) the popup takes text from
+the input method, through text-input-v3: what is still being composed is
+`ctx.preedit` in the view, and committed text arrives in `on_key` with an
+empty key name, like typed text. Mark the widget where text goes with
+`caret = true`, so the input method places its candidate window next to it.
 
 Without `width` or `height` the popup takes its content's natural size and
 follows it as the content changes. `on_key` receives the xkb key name
@@ -179,6 +186,7 @@ backdrop with all four 0); otherwise `justify` places it horizontally and
 | `letter_spacing` | points, default 0.25 |
 | `text_align` | 0 left .. 1 right, within the text's box |
 | `ellipsize` | default true |
+| `wrap`, `max_lines` | break text into lines at `max_width` (or `width`), ellipsizing after `max_lines` if set |
 
 Colours are `"#RGB"`, `"#RRGGBB"`, `"#RRGGBBAA"` or `{r, g, b, a}` in 0..1.
 

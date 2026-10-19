@@ -62,6 +62,7 @@ struct view_def {
     bool every_output; /* persistent on every output, not just one */
     bool fill; /* a popup that covers its whole output */
     bool input_widgets; /* take the pointer only over interactive widgets */
+    bool text_input; /* take text from input methods (text-input-v3) */
 };
 
 /* A live surface showing one view_def. */
@@ -89,6 +90,7 @@ struct view {
      * handler (the tree may be rebuilt meanwhile) and its rectangle. */
     int drag;
     double drag_box[4];
+    char *preedit; /* what the input method is composing, for ctx.preedit */
 };
 
 /* shell.poll / shell.listen: a command whose output is a string value. */
@@ -239,6 +241,10 @@ static struct ui_node *build_tree(struct view *view, double width, double height
         lua_pushstring(L, view->hover_id);
         lua_setfield(L, -2, "hovered");
     }
+    if (view->preedit && *view->preedit) {
+        lua_pushstring(L, view->preedit);
+        lua_setfield(L, -2, "preedit");
+    }
     if (view->args != LUA_NOREF) lua_rawgeti(L, LUA_REGISTRYINDEX, view->args);
     else lua_pushnil(L);
 
@@ -309,6 +315,16 @@ static void collect_effects(struct view *view, struct shell_surface *surface,
         warned = true;
         fprintf(stderr, "shady-shell: shader effects need the gl renderer; drawing without them\n");
     }
+}
+
+static const struct ui_node *find_caret(const struct ui_node *node) {
+    if (node->hidden) return NULL;
+    if (node->caret) return node;
+    for (size_t i = 0; i < node->child_count; i++) {
+        const struct ui_node *caret = find_caret(node->children[i]);
+        if (caret) return caret;
+    }
+    return NULL;
 }
 
 #define MAX_INPUT_RECTS 256
@@ -388,6 +404,10 @@ static void view_draw(void *data, struct shell_surface *surface, cairo_t *cr,
     surface->animating = moving;
     ui_draw(cr, view->tree, view->hovered, &defaults);
     collect_effects(view, surface, view->tree, width, height);
+    const struct ui_node *caret = view->def->text_input ? find_caret(view->tree) : NULL;
+    if (caret)
+        shell_surface_set_text_cursor(surface, (int32_t)floor(caret->x), (int32_t)floor(caret->y),
+            (int32_t)ceil(caret->w), (int32_t)ceil(caret->h));
     if (view->def->input_widgets && !view->closing) {
         static int rects[MAX_INPUT_RECTS][4];
         size_t count = 0;
@@ -555,6 +575,28 @@ static void view_key(void *data, struct shell_surface *surface, xkb_keysym_t sym
     call(L, 3, 0, "on_key", NULL, 0);
 }
 
+/* Text from an input method: the composition shows as ctx.preedit, and
+ * committed text reaches on_key like typed text (with no key name). */
+static void view_text(void *data, struct shell_surface *surface, const char *commit,
+        const char *preedit) {
+    struct view *view = data;
+    if (view->closing) return;
+    if (strcmp(view->preedit ? view->preedit : "", preedit) != 0) {
+        free(view->preedit);
+        view->preedit = strdup(preedit);
+        shell_surface_redraw(surface);
+    }
+    if (!commit || !*commit || view->def->on_key == LUA_NOREF) return;
+    lua_State *L = view->lua->L;
+    lua_rawgeti(L, LUA_REGISTRYINDEX, view->def->on_key);
+    lua_pushstring(L, "");
+    lua_pushstring(L, commit);
+    if (view->args != LUA_NOREF) lua_rawgeti(L, LUA_REGISTRYINDEX, view->args);
+    else lua_pushnil(L);
+    /* The handler may close this view; nothing touches it afterwards. */
+    call(L, 3, 0, "on_key", NULL, 0);
+}
+
 static void view_closed(void *data, struct shell_surface *surface) {
     (void)surface;
     view_destroy(data);
@@ -568,6 +610,7 @@ static const struct shell_surface_handler view_handler = {
     .pointer_button = view_button,
     .pointer_scroll = view_scroll,
     .key = view_key,
+    .text = view_text,
 };
 
 static struct view *view_create(struct shell_lua *lua, struct view_def *def,
@@ -597,6 +640,7 @@ static struct view *view_create(struct shell_lua *lua, struct view_def *def,
         .margin_left = margin[3],
         .keyboard = def->keyboard,
         .output = output,
+        .text_input = def->text_input,
     };
     view->surface = shell_surface_create(&lua->shell->core, &config, &view_handler, view);
     if (!view->surface) {
@@ -612,6 +656,7 @@ static void view_destroy(struct view *view) {
     lua_State *L = view->lua->L;
     shell_timer_cancel(view->destroy_timer);
     luaL_unref(L, LUA_REGISTRYINDEX, view->drag);
+    free(view->preedit);
     shell_surface_destroy(view->surface);
     ui_free(L, view->tree);
     ui_anims_destroy(view->anims);
@@ -848,6 +893,9 @@ static int l_popup(lua_State *L) {
     lua_pop(L, 1);
     lua_getfield(L, 1, "fill");
     def->fill = lua_toboolean(L, -1);
+    lua_pop(L, 1);
+    lua_getfield(L, 1, "text_input");
+    def->text_input = lua_toboolean(L, -1);
     lua_pop(L, 1);
     lua_getfield(L, 1, "input");
     const char *input = luaL_optstring(L, -1, "all");

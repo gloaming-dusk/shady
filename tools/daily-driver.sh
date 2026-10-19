@@ -41,7 +41,8 @@ build() {
     libshady-plugin-counter.so \
     libshady-plugin-counter-bad.so \
     headless-automation-probe \
-    headless-session-lock-probe
+    headless-session-lock-probe \
+    ime-probe
 }
 
 test_daily() {
@@ -63,6 +64,7 @@ test_daily() {
   SHADY_DAILY_BUILD_DIR="$BUILD_DIR" bash ./tests/headless-shell-outputs.sh
   SHADY_DAILY_BUILD_DIR="$BUILD_DIR" bash ./tests/headless-shell-lua.sh
   SHADY_DAILY_BUILD_DIR="$BUILD_DIR" bash ./tests/headless-shell-notify.sh
+  SHADY_DAILY_BUILD_DIR="$BUILD_DIR" bash ./tests/headless-shell-ime.sh
   SHADY_DAILY_BUILD_DIR="$BUILD_DIR" bash ./tests/headless-shell-effects.sh
   SHADY_DAILY_BUILD_DIR="$BUILD_DIR" bash ./tests/headless-shell-plugin.sh
 }

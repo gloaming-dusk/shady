@@ -230,6 +230,7 @@ struct shell_surface *shell_surface_create(struct shell_core *core,
     zwlr_layer_surface_v1_set_margin(surface->layer_surface, config->margin_top,
         config->margin_right, config->margin_bottom, config->margin_left);
     zwlr_layer_surface_v1_set_keyboard_interactivity(surface->layer_surface, config->keyboard);
+    surface->wants_text_input = config->text_input;
     wl_list_insert(core->surfaces.prev, &surface->link);
     surface_update_scale(surface);
     surface->dirty = false; /* nothing to paint before the first configure */
@@ -237,9 +238,15 @@ struct shell_surface *shell_surface_create(struct shell_core *core,
     return surface;
 }
 
+static void text_disable(struct shell_core *core);
+
 void shell_surface_destroy(struct shell_surface *surface) {
     if (!surface) return;
     struct shell_core *core = surface->core;
+    if (core->text_focus == surface) {
+        text_disable(core);
+        core->text_focus = NULL;
+    }
     if (core->pointer_focus == surface) core->pointer_focus = NULL;
     if (core->keyboard_focus == surface) core->keyboard_focus = NULL;
     if (core->renderer) core->renderer->impl->surface_finish(core->renderer, surface);
@@ -602,6 +609,9 @@ static void registry_global(void *data, struct wl_registry *registry, uint32_t n
     } else if (!strcmp(interface, wl_seat_interface.name) && !core->seat) {
         core->seat = wl_registry_bind(registry, name, &wl_seat_interface, min_u32(version, 7));
         wl_seat_add_listener(core->seat, &seat_listener, core);
+    } else if (!strcmp(interface, zwp_text_input_manager_v3_interface.name)) {
+        core->text_input_manager = wl_registry_bind(registry, name,
+            &zwp_text_input_manager_v3_interface, 1);
     } else if (!strcmp(interface, zwlr_layer_shell_v1_interface.name)) {
         core->layer_shell = wl_registry_bind(registry, name, &zwlr_layer_shell_v1_interface,
             min_u32(version, 4));
@@ -637,6 +647,111 @@ static const struct wl_registry_listener registry_listener = {
     .global_remove = registry_global_remove,
 };
 
+/* ---- text input (input methods) ---------------------------------------- */
+
+static void text_send_cursor(struct shell_core *core) {
+    const int32_t *r = core->text_focus->text_cursor;
+    zwp_text_input_v3_set_cursor_rectangle(core->text_input, r[0], r[1], r[2], r[3]);
+}
+
+static void text_enable(struct shell_core *core) {
+    if (!core->text_input || core->text_enabled) return;
+    zwp_text_input_v3_enable(core->text_input);
+    zwp_text_input_v3_set_content_type(core->text_input,
+        ZWP_TEXT_INPUT_V3_CONTENT_HINT_NONE, ZWP_TEXT_INPUT_V3_CONTENT_PURPOSE_NORMAL);
+    text_send_cursor(core);
+    zwp_text_input_v3_commit(core->text_input);
+    core->text_enabled = true;
+}
+
+static void text_disable(struct shell_core *core) {
+    if (!core->text_input || !core->text_enabled) return;
+    zwp_text_input_v3_disable(core->text_input);
+    zwp_text_input_v3_commit(core->text_input);
+    core->text_enabled = false;
+}
+
+void shell_surface_set_text_cursor(struct shell_surface *surface, int32_t x, int32_t y,
+        int32_t width, int32_t height) {
+    int32_t *r = surface->text_cursor;
+    if (r[0] == x && r[1] == y && r[2] == width && r[3] == height) return;
+    r[0] = x; r[1] = y; r[2] = width; r[3] = height;
+    struct shell_core *core = surface->core;
+    if (core->text_focus == surface && core->text_enabled) {
+        text_send_cursor(core);
+        zwp_text_input_v3_commit(core->text_input);
+    }
+}
+
+static void text_enter(void *data, struct zwp_text_input_v3 *text_input,
+        struct wl_surface *wl_surface) {
+    (void)text_input;
+    struct shell_core *core = data;
+    struct shell_surface *s;
+    core->text_focus = NULL;
+    wl_list_for_each(s, &core->surfaces, link)
+        if (s->wl_surface == wl_surface) core->text_focus = s;
+    if (core->text_focus && core->text_focus->wants_text_input) text_enable(core);
+}
+
+static void text_leave(void *data, struct zwp_text_input_v3 *text_input,
+        struct wl_surface *wl_surface) {
+    (void)text_input; (void)wl_surface;
+    struct shell_core *core = data;
+    struct shell_surface *s = core->text_focus;
+    text_disable(core);
+    core->text_focus = NULL;
+    /* Whatever was being composed is gone. */
+    if (s && s->wants_text_input && s->handler->text) s->handler->text(s->data, s, NULL, "");
+}
+
+static void text_preedit(void *data, struct zwp_text_input_v3 *text_input, const char *text,
+        int32_t cursor_begin, int32_t cursor_end) {
+    (void)text_input; (void)cursor_begin; (void)cursor_end;
+    struct shell_core *core = data;
+    free(core->text_preedit);
+    core->text_preedit = strdup(text ? text : "");
+}
+
+static void text_commit(void *data, struct zwp_text_input_v3 *text_input, const char *text) {
+    (void)text_input;
+    struct shell_core *core = data;
+    if (!text) return;
+    size_t old = core->text_commit ? strlen(core->text_commit) : 0;
+    char *joined = realloc(core->text_commit, old + strlen(text) + 1);
+    if (!joined) return;
+    memcpy(joined + old, text, strlen(text) + 1);
+    core->text_commit = joined;
+}
+
+static void text_delete_surrounding(void *data, struct zwp_text_input_v3 *text_input,
+        uint32_t before, uint32_t after) {
+    (void)data; (void)text_input; (void)before; (void)after;
+    /* No surrounding text is reported, so there is nothing to delete. */
+}
+
+static void text_done(void *data, struct zwp_text_input_v3 *text_input, uint32_t serial) {
+    (void)text_input; (void)serial;
+    struct shell_core *core = data;
+    char *commit = core->text_commit, *preedit = core->text_preedit;
+    core->text_commit = core->text_preedit = NULL;
+    /* A preedit not sent in this round is cleared (text-input-v3). */
+    struct shell_surface *s = core->text_focus;
+    if (s && core->text_enabled && s->handler->text)
+        s->handler->text(s->data, s, commit, preedit ? preedit : "");
+    free(commit);
+    free(preedit);
+}
+
+static const struct zwp_text_input_v3_listener text_input_listener = {
+    .enter = text_enter,
+    .leave = text_leave,
+    .preedit_string = text_preedit,
+    .commit_string = text_commit,
+    .delete_surrounding_text = text_delete_surrounding,
+    .done = text_done,
+};
+
 /* ---- lifecycle and loop ----------------------------------------------- */
 
 bool shell_core_init(struct shell_core *core,
@@ -664,6 +779,11 @@ bool shell_core_init(struct shell_core *core,
     if (!core->compositor || !core->shm || !core->layer_shell) {
         fprintf(stderr, "shady-shell: compositor lacks wl_compositor, wl_shm or layer-shell\n");
         return false;
+    }
+    if (core->text_input_manager && core->seat) {
+        core->text_input = zwp_text_input_manager_v3_get_text_input(core->text_input_manager,
+            core->seat);
+        zwp_text_input_v3_add_listener(core->text_input, &text_input_listener, core);
     }
     core->renderer = shell_renderer_create(core);
     if (!core->renderer) return false;
@@ -790,6 +910,10 @@ int shell_core_run(struct shell_core *core) {
 void shell_core_finish(struct shell_core *core) {
     struct shell_surface *surface, *stmp;
     wl_list_for_each_safe(surface, stmp, &core->surfaces, link) shell_surface_destroy(surface);
+    if (core->text_input) zwp_text_input_v3_destroy(core->text_input);
+    if (core->text_input_manager) zwp_text_input_manager_v3_destroy(core->text_input_manager);
+    free(core->text_commit);
+    free(core->text_preedit);
     struct shell_timer *timer, *ttmp;
     wl_list_for_each_safe(timer, ttmp, &core->timers, link) shell_timer_cancel(timer);
     struct shell_watch *watch;
