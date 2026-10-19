@@ -292,6 +292,7 @@ int main(int argc, char *argv[]) {
 	wl_signal_add(&server.backend->events.new_output, &server.new_output);
 
 	server.scene = wlr_scene_create();
+	server.background_tree = wlr_scene_tree_create(&server.scene->tree);
 	server.content_tree = wlr_scene_tree_create(&server.scene->tree);
 	server.overlay_tree = wlr_scene_tree_create(&server.scene->tree);
 	server.scene_layout = wlr_scene_attach_output_layout(server.scene,

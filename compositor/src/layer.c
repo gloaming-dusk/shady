@@ -151,6 +151,14 @@ void shady_layers_arrange(struct shady_server *server) {
 		refresh_maximized_for_output(server, output->wlr_output);
 }
 
+/* Background and bottom surfaces sit below the windows, top and overlay
+ * above them. */
+static struct wlr_scene_tree *layer_tree(struct shady_server *server,
+		enum zwlr_layer_shell_v1_layer layer) {
+	return layer <= ZWLR_LAYER_SHELL_V1_LAYER_BOTTOM
+		? server->background_tree : server->overlay_tree;
+}
+
 static void layer_surface_commit(struct wl_listener *listener, void *data) {
 	(void)data;
 	struct shady_layer_surface *layer =
@@ -171,6 +179,9 @@ static void layer_surface_commit(struct wl_listener *listener, void *data) {
 	bool keyboard_changed = surface->initial_commit ||
 		(surface->current.committed & WLR_LAYER_SURFACE_V1_STATE_KEYBOARD_INTERACTIVITY) != 0;
 	if (layout_changed) {
+		struct wlr_scene_tree *tree = layer_tree(layer->server, surface->current.layer);
+		if (layer->scene_layer->tree->node.parent != tree)
+			wlr_scene_node_reparent(&layer->scene_layer->tree->node, tree);
 		configure_layer_surface(layer);
 		if (surface->surface->mapped && surface->output)
 			refresh_maximized_for_output(layer->server, surface->output);
@@ -226,7 +237,7 @@ void server_new_layer_surface(struct wl_listener *listener, void *data) {
 	layer->server = server;
 	layer->layer_surface = layer_surface;
 	layer->scene_layer = wlr_scene_layer_surface_v1_create(
-		server->overlay_tree, layer_surface);
+		layer_tree(server, layer_surface->pending.layer), layer_surface);
 	if (!layer->scene_layer) {
 		free(layer);
 		wlr_layer_surface_v1_destroy(layer_surface);

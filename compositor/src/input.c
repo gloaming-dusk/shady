@@ -179,7 +179,8 @@ static bool overlay_surface_at(struct shady_server *server,
 	}
 	/* The spatial renderer may draw layer surfaces in 3D: hit-test them all
 	 * in stacking order where they are drawn. */
-	int picked = shady_render_layer_pick(server, lx, ly, surface, sx, sy);
+	int picked = shady_render_layer_pick(server, lx, ly, ZWLR_LAYER_SHELL_V1_LAYER_TOP,
+		surface, sx, sy);
 	if (picked >= 0) return picked == 1;
 	if (!scene_hit) return false;
 	*surface = scene_hit;
