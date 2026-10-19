@@ -4,11 +4,14 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <fontconfig/fontconfig.h>
 #include <lauxlib.h>
 #include <limits.h>
 #include <lua.h>
 #include <lualib.h>
 #include <math.h>
+#include <pango/pangocairo.h>
+#include <pango/pangofc-fontmap.h>
 #include <poll.h>
 #include <signal.h>
 #include <stdlib.h>
@@ -19,6 +22,7 @@
 #include <unistd.h>
 
 #include "shady-shell-v1-client-protocol.h"
+#include "anim.h"
 #include "compositor.h"
 #include "plugins.h"
 #include "render.h"
@@ -32,6 +36,7 @@
 #define POLL_BUFFER (64 * 1024)
 #define LISTEN_RESTART_MS 2000
 #define RELOAD_DEBOUNCE_MS 150
+#define EXIT_TIMEOUT_MS 1500 /* a closing popup goes away by then, settled or not */
 
 /* A bar or popup declared by shell.bar{} / shell.popup{}. */
 struct view_def {
@@ -53,6 +58,8 @@ struct view_def {
     /* A popup kept open on one output: opened when an output appears and
      * moved to another when its output goes away. */
     bool persistent;
+    bool fill; /* a popup that covers its whole output */
+    bool input_widgets; /* take the pointer only over interactive widgets */
 };
 
 /* A live surface showing one view_def. */
@@ -69,6 +76,17 @@ struct view {
     bool pointer_in;
     double px, py;
     char last_error[256];
+    struct ui_anims *anims;
+    struct timespec last_step; /* when the springs last advanced */
+    bool stepping; /* the last paint left springs moving */
+    /* A closed popup playing its exit animation: it ignores input, no
+     * longer counts as open and is destroyed by `destroy_timer`. */
+    bool closing;
+    struct shell_timer *destroy_timer;
+    /* While the left button holds a widget with on_drag: a reference of its
+     * handler (the tree may be rebuilt meanwhile) and its rectangle. */
+    int drag;
+    double drag_box[4];
 };
 
 /* shell.poll / shell.listen: a command whose output is a string value. */
@@ -114,6 +132,7 @@ static struct {
 static const char *REGISTRY_KEY = "shady.shell";
 
 static void view_destroy(struct view *view);
+static void call_drag(struct view *view, bool done);
 
 /* ---- helpers ---------------------------------------------------------- */
 
@@ -171,10 +190,12 @@ static struct view_def *find_def(struct shell_lua *lua, const char *name, bool p
     return NULL;
 }
 
+/* The open popup with this name; one that is playing its exit animation
+ * does not count. */
 static struct view *find_popup(struct shell_lua *lua, const char *name) {
     struct view *view;
     wl_list_for_each(view, &lua->views, link)
-        if (view->def->popup && !strcmp(view->def->name, name)) return view;
+        if (view->def->popup && !view->closing && !strcmp(view->def->name, name)) return view;
     return NULL;
 }
 
@@ -288,30 +309,110 @@ static void collect_effects(struct view *view, struct shell_surface *surface,
     }
 }
 
+#define MAX_INPUT_RECTS 256
+
+/* The boxes of the outermost widgets that react to the pointer. */
+static void collect_input(const struct ui_node *node, int (*rects)[4], size_t *count) {
+    if (node->hidden || *count == MAX_INPUT_RECTS) return;
+    if (node->on_click != LUA_NOREF || node->on_drag != LUA_NOREF ||
+            node->on_scroll != LUA_NOREF || node->id || node->has_hover) {
+        int x = (int)floor(node->x), y = (int)floor(node->y);
+        rects[*count][0] = x;
+        rects[*count][1] = y;
+        rects[*count][2] = (int)ceil(node->x + node->w) - x;
+        rects[*count][3] = (int)ceil(node->y + node->h) - y;
+        (*count)++;
+        return;
+    }
+    for (size_t i = 0; i < node->child_count; i++) collect_input(node->children[i], rects, count);
+}
+
+static void destroy_later(void *data) {
+    struct view *view = data;
+    view->destroy_timer = NULL;
+    view_destroy(view);
+}
+
+/* Seconds the springs advance this paint: the time since the last paint
+ * while they move, nothing on the first paint after a pause. */
+static double step_time(struct view *view) {
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    double dt = 0;
+    if (view->stepping) {
+        dt = (double)(now.tv_sec - view->last_step.tv_sec) +
+            (double)(now.tv_nsec - view->last_step.tv_nsec) / 1e9;
+        if (dt < 0) dt = 0;
+        if (dt > 1.0 / 15) dt = 1.0 / 15; /* a stall does not jump to the end */
+    }
+    view->last_step = now;
+    return dt;
+}
+
 static void view_draw(void *data, struct shell_surface *surface, cairo_t *cr,
         double width, double height) {
     struct view *view = data;
     lua_State *L = view->lua->L;
-    ui_free(L, view->tree);
-    view->tree = NULL;
-    view->hovered = NULL;
     struct ui_defaults defaults;
     ui_defaults(&defaults);
 
-    struct ui_node *tree = build_tree(view, width, height);
-    if (!tree) return;
-    ui_measure(cr, tree, &defaults);
-    if (view->def->popup) {
-        /* Popups without a fixed size follow their content. */
-        uint32_t want_w = view->def->width ? view->def->width : (uint32_t)ceil(tree->nat_w);
-        uint32_t want_h = view->def->height ? view->def->height : (uint32_t)ceil(tree->nat_h);
-        if (want_w && want_h) shell_surface_set_size(surface, want_w, want_h);
+    /* Frames that only move springs, and a closing popup's frames, redraw
+     * the last tree without running the view. */
+    bool reuse = view->tree && (surface->repaint_only || view->closing);
+    if (!reuse) {
+        ui_free(L, view->tree);
+        view->tree = NULL;
+        view->hovered = NULL;
+        struct ui_node *tree = build_tree(view, width, height);
+        if (!tree) {
+            view->stepping = false;
+            return;
+        }
+        ui_measure(cr, tree, &defaults);
+        if (view->def->popup && !view->def->fill) {
+            /* Popups without a fixed size follow their content. */
+            uint32_t want_w = view->def->width ? view->def->width : (uint32_t)ceil(tree->nat_w);
+            uint32_t want_h = view->def->height ? view->def->height : (uint32_t)ceil(tree->nat_h);
+            if (want_w && want_h) shell_surface_set_size(surface, want_w, want_h);
+        }
+        ui_layout(cr, tree, 0, 0, width, height);
+        view->tree = tree;
+        if (view->pointer_in) view->hovered = ui_hit(tree, view->px, view->py, false);
     }
-    ui_layout(cr, tree, 0, 0, width, height);
-    view->tree = tree;
-    if (view->pointer_in) view->hovered = ui_hit(tree, view->px, view->py, false);
-    ui_draw(cr, tree, view->hovered, &defaults);
-    collect_effects(view, surface, tree, width, height);
+    double dt = step_time(view);
+    bool moving = ui_anims_step(view->anims, view->tree, view->hovered, &defaults, dt,
+        view->closing);
+    view->stepping = moving;
+    surface->animating = moving;
+    ui_draw(cr, view->tree, view->hovered, &defaults);
+    collect_effects(view, surface, view->tree, width, height);
+    if (view->def->input_widgets && !view->closing) {
+        static int rects[MAX_INPUT_RECTS][4];
+        size_t count = 0;
+        collect_input(view->tree, rects, &count);
+        shell_surface_set_input_rects(surface, (const int (*)[4])rects, count);
+    }
+    if (view->closing && !moving) {
+        /* Not from inside draw(): the core still commits this frame. */
+        shell_timer_cancel(view->destroy_timer);
+        view->destroy_timer = shell_timer_add(&view->lua->shell->core, 0, destroy_later, view);
+    }
+}
+
+/* Close a popup: play its `exit` styles if it has any, else go at once. */
+static void close_view(struct view *view) {
+    if (view->closing) return;
+    if (!view->tree || !ui_tree_has_exit(view->tree)) {
+        view_destroy(view);
+        return;
+    }
+    view->closing = true;
+    view->hovered = NULL;
+    shell_surface_set_keyboard(view->surface, ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE);
+    shell_surface_ignore_input(view->surface);
+    shell_surface_redraw(view->surface);
+    view->destroy_timer = shell_timer_add(&view->lua->shell->core, EXIT_TIMEOUT_MS,
+        destroy_later, view);
 }
 
 static void set_hover(struct view *view, struct ui_node *node) {
@@ -324,9 +425,14 @@ static void set_hover(struct view *view, struct ui_node *node) {
 static void view_motion(void *data, struct shell_surface *surface, double x, double y) {
     (void)surface;
     struct view *view = data;
+    if (view->closing) return;
     view->pointer_in = true;
     view->px = x;
     view->py = y;
+    if (view->drag != LUA_NOREF) {
+        call_drag(view, false);
+        return;
+    }
     if (view->tree) set_hover(view, ui_hit(view->tree, x, y, false));
 }
 
@@ -334,7 +440,7 @@ static void view_leave(void *data, struct shell_surface *surface) {
     (void)surface;
     struct view *view = data;
     view->pointer_in = false;
-    set_hover(view, NULL);
+    if (!view->closing) set_hover(view, NULL);
 }
 
 static const char *button_name(uint32_t button) {
@@ -346,38 +452,96 @@ static const char *button_name(uint32_t button) {
     }
 }
 
-static void view_button(void *data, struct shell_surface *surface, uint32_t button,
-        bool pressed) {
-    (void)surface;
-    struct view *view = data;
-    if (!pressed || !view->tree) return;
-    struct ui_node *hit = ui_hit(view->tree, view->px, view->py, true);
-    if (!hit) return;
+/* The handler's info table: the widget's box, the pointer inside it (px,
+ * py) and the same as 0..1 fractions of its size (fx, fy). */
+static void push_info(struct view *view, const double box[4]) {
     lua_State *L = view->lua->L;
-    lua_rawgeti(L, LUA_REGISTRYINDEX, hit->on_click);
-    lua_pushstring(L, button_name(button));
-    lua_createtable(L, 0, 5);
-    lua_pushnumber(L, hit->x);
-    lua_setfield(L, -2, "x");
-    lua_pushnumber(L, hit->y);
-    lua_setfield(L, -2, "y");
-    lua_pushnumber(L, hit->w);
-    lua_setfield(L, -2, "width");
-    lua_pushnumber(L, hit->h);
-    lua_setfield(L, -2, "height");
+    lua_createtable(L, 0, 9);
+    const char *names[] = { "x", "y", "width", "height" };
+    for (int i = 0; i < 4; i++) {
+        lua_pushnumber(L, box[i]);
+        lua_setfield(L, -2, names[i]);
+    }
+    double px = view->px - box[0], py = view->py - box[1];
+    lua_pushnumber(L, px);
+    lua_setfield(L, -2, "px");
+    lua_pushnumber(L, py);
+    lua_setfield(L, -2, "py");
+    lua_pushnumber(L, box[2] > 0 ? fmin(1, fmax(0, px / box[2])) : 0);
+    lua_setfield(L, -2, "fx");
+    lua_pushnumber(L, box[3] > 0 ? fmin(1, fmax(0, py / box[3])) : 0);
+    lua_setfield(L, -2, "fy");
     if (view->output) {
         lua_pushstring(L, view->output->name);
         lua_setfield(L, -2, "output");
     }
+}
+
+/* Call the drag handler with the pointer's place; `done` on release. The
+ * handler may close this view, so nothing touches it afterwards. */
+static void call_drag(struct view *view, bool done) {
+    lua_State *L = view->lua->L;
+    int ref = view->drag;
+    if (done) view->drag = LUA_NOREF;
+    lua_rawgeti(L, LUA_REGISTRYINDEX, ref);
+    push_info(view, view->drag_box);
+    lua_pushboolean(L, done);
+    lua_setfield(L, -2, "done");
+    if (done) luaL_unref(L, LUA_REGISTRYINDEX, ref);
+    call(L, 1, 0, "on_drag", NULL, 0);
+}
+
+static void view_button(void *data, struct shell_surface *surface, uint32_t button,
+        bool pressed) {
+    (void)surface;
+    struct view *view = data;
+    if (!view->tree || view->closing) return;
+    if (!pressed) {
+        if (button == 0x110 && view->drag != LUA_NOREF) call_drag(view, true);
+        return;
+    }
+    lua_State *L = view->lua->L;
+    struct ui_node *drag = button == 0x110 /* BTN_LEFT */
+        ? ui_hit_handler(view->tree, view->px, view->py, UI_ON_DRAG) : NULL;
+    if (drag) {
+        if (view->drag != LUA_NOREF) luaL_unref(L, LUA_REGISTRYINDEX, view->drag);
+        lua_rawgeti(L, LUA_REGISTRYINDEX, drag->on_drag);
+        view->drag = luaL_ref(L, LUA_REGISTRYINDEX);
+        double box[4] = { drag->x, drag->y, drag->w, drag->h };
+        memcpy(view->drag_box, box, sizeof(box));
+        call_drag(view, false);
+        return;
+    }
+    struct ui_node *hit = ui_hit(view->tree, view->px, view->py, true);
+    if (!hit) return;
+    lua_rawgeti(L, LUA_REGISTRYINDEX, hit->on_click);
+    lua_pushstring(L, button_name(button));
+    double box[4] = { hit->x, hit->y, hit->w, hit->h };
+    push_info(view, box);
     /* The handler may close this very view; nothing touches it afterwards. */
     call(L, 2, 0, "on_click", NULL, 0);
+}
+
+static void view_scroll(void *data, struct shell_surface *surface, double dx, double dy) {
+    (void)surface;
+    struct view *view = data;
+    if (!view->tree || view->closing) return;
+    struct ui_node *hit = ui_hit_handler(view->tree, view->px, view->py, UI_ON_SCROLL);
+    if (!hit) return;
+    lua_State *L = view->lua->L;
+    lua_rawgeti(L, LUA_REGISTRYINDEX, hit->on_scroll);
+    lua_pushnumber(L, dy);
+    lua_pushnumber(L, dx);
+    double box[4] = { hit->x, hit->y, hit->w, hit->h };
+    push_info(view, box);
+    call(L, 3, 0, "on_scroll", NULL, 0);
 }
 
 static void view_key(void *data, struct shell_surface *surface, xkb_keysym_t sym,
         const char *utf8) {
     (void)surface;
     struct view *view = data;
-    if (view->def->on_key == LUA_NOREF) return;
+    if (view->def->on_key == LUA_NOREF || view->closing) return;
     lua_State *L = view->lua->L;
     char name[64];
     if (xkb_keysym_get_name(sym, name, sizeof(name)) < 0) name[0] = '\0';
@@ -400,6 +564,7 @@ static const struct shell_surface_handler view_handler = {
     .pointer_motion = view_motion,
     .pointer_leave = view_leave,
     .pointer_button = view_button,
+    .pointer_scroll = view_scroll,
     .key = view_key,
 };
 
@@ -412,6 +577,11 @@ static struct view *view_create(struct shell_lua *lua, struct view_def *def,
     view->def = def;
     view->output = output;
     view->args = args;
+    view->drag = LUA_NOREF;
+    if (!(view->anims = ui_anims_create())) {
+        free(view);
+        return NULL;
+    }
     struct shell_surface_config config = {
         .name_space = def->name,
         .layer = def->layer,
@@ -428,6 +598,7 @@ static struct view *view_create(struct shell_lua *lua, struct view_def *def,
     };
     view->surface = shell_surface_create(&lua->shell->core, &config, &view_handler, view);
     if (!view->surface) {
+        ui_anims_destroy(view->anims);
         free(view);
         return NULL;
     }
@@ -437,8 +608,11 @@ static struct view *view_create(struct shell_lua *lua, struct view_def *def,
 
 static void view_destroy(struct view *view) {
     lua_State *L = view->lua->L;
+    shell_timer_cancel(view->destroy_timer);
+    luaL_unref(L, LUA_REGISTRYINDEX, view->drag);
     shell_surface_destroy(view->surface);
     ui_free(L, view->tree);
+    ui_anims_destroy(view->anims);
     if (view->args != LUA_NOREF) luaL_unref(L, LUA_REGISTRYINDEX, view->args);
     wl_list_remove(&view->link);
     free(view);
@@ -481,6 +655,10 @@ static void create_bars(struct shell_lua *lua, struct shell_output *output) {
 /* Natural size of a popup's content, for its first surface. */
 static bool measure_popup(struct shell_lua *lua, struct view_def *def,
         struct shell_output *output, int args, uint32_t *width, uint32_t *height) {
+    if (def->fill) {
+        *width = *height = 0; /* stretched across the output by its anchors */
+        return true;
+    }
     struct view probe = { .lua = lua, .def = def, .output = output, .args = args };
     struct ui_node *tree = build_tree(&probe, 0, 0);
     if (!tree) return false;
@@ -645,6 +823,22 @@ static int l_popup(lua_State *L) {
     lua_getfield(L, 1, "persistent");
     def->persistent = lua_toboolean(L, -1);
     lua_pop(L, 1);
+    lua_getfield(L, 1, "exclusive");
+    def->exclusive = (int32_t)luaL_optinteger(L, -1, 0);
+    lua_pop(L, 1);
+    lua_getfield(L, 1, "fill");
+    def->fill = lua_toboolean(L, -1);
+    lua_pop(L, 1);
+    lua_getfield(L, 1, "input");
+    const char *input = luaL_optstring(L, -1, "all");
+    if (!strcmp(input, "widgets")) def->input_widgets = true;
+    else if (strcmp(input, "all") != 0) luaL_error(L, "input is all or widgets");
+    lua_pop(L, 1);
+    if (def->fill) {
+        def->anchor = ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP | ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM |
+            ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT | ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT;
+        def->width = def->height = 0;
+    }
     return 0;
 }
 
@@ -694,7 +888,7 @@ static int l_close(lua_State *L) {
     struct shell_lua *lua = lua_of(L);
     struct view *view = find_popup(lua, luaL_checkstring(L, 1));
     if (view) {
-        view_destroy(view);
+        close_view(view);
         redraw_all(lua);
     }
     return 0;
@@ -1136,6 +1330,36 @@ static bool is_file(const char *path) {
 /* shell.shader(path): a fragment shader for `shader =` on a widget, bar or
  * popup. Relative paths are looked up next to the config, then in the data
  * directory (which ships shell/shaders/). */
+/* shell.fonts(dir): make the fonts in a directory (relative to the config
+ * file) available to every widget. */
+static int l_fonts(lua_State *L) {
+    const char *name = luaL_checkstring(L, 1);
+    char path[2 * PATH_MAX];
+    if (name[0] == '/') {
+        snprintf(path, sizeof(path), "%s", name);
+    } else {
+        char dir[sizeof(host.config)];
+        snprintf(dir, sizeof(dir), "%s", host.config);
+        char *slash = strrchr(dir, '/');
+        if (slash) *slash = '\0';
+        snprintf(path, sizeof(path), "%s/%s", slash ? dir : ".", name);
+    }
+    if (!FcConfigAppFontAddDir(NULL, (const FcChar8 *)path)) {
+        fprintf(stderr, "shady-shell: no fonts in %s\n", path);
+        lua_pushboolean(L, 0);
+        return 1;
+    }
+    PangoFontMap *map = pango_cairo_font_map_get_default();
+    if (PANGO_IS_FC_FONT_MAP(map)) pango_fc_font_map_config_changed(PANGO_FC_FONT_MAP(map));
+    lua_pushboolean(L, 1);
+    return 1;
+}
+
+static int l_key(lua_State *L) {
+    lua_pushboolean(L, shell_compositor_key(luaL_checkstring(L, 1)));
+    return 1;
+}
+
 static int l_shader(lua_State *L) {
     const char *name = luaL_checkstring(L, 1);
     char path[2 * PATH_MAX];
@@ -1206,6 +1430,7 @@ static const char *prelude =
     "shell.box = widget('box', {})\n"
     "shell.row = widget('box', { direction = 'row' })\n"
     "shell.column = widget('box', { direction = 'column' })\n"
+    "shell.stack = widget('box', { direction = 'stack' })\n"
     "shell.pip = widget('pip', {})\n"
     "shell.image = widget('image', {})\n"
     "function shell.spacer(props)\n"
@@ -1218,6 +1443,12 @@ static const char *prelude =
     "  if type(text) == 'table' then props = text\n"
     "  else props = props or {}; props.text = text end\n"
     "  props.type = 'text'\n"
+    "  return props\n"
+    "end\n"
+    "function shell.icon(name, props)\n"
+    "  props = props or {}\n"
+    "  props.type = 'icon'\n"
+    "  props.name = name\n"
     "  return props\n"
     "end\n"
     "function shell.widget(kind, props)\n"
@@ -1239,6 +1470,8 @@ static const luaL_Reg api[] = {
     { "toggle", l_toggle },
     { "is_open", l_is_open },
     { "redraw", l_redraw },
+    { "fonts", l_fonts },
+    { "key", l_key },
     { "on", l_on },
     { "workspaces", l_workspaces },
     { "active_workspace", l_active_workspace },

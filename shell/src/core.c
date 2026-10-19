@@ -264,6 +264,31 @@ void shell_surface_set_size(struct shell_surface *surface, uint32_t width, uint3
     wl_surface_commit(surface->wl_surface);
 }
 
+void shell_surface_set_keyboard(struct shell_surface *surface,
+        enum zwlr_layer_surface_v1_keyboard_interactivity keyboard) {
+    if (!surface) return;
+    zwlr_layer_surface_v1_set_keyboard_interactivity(surface->layer_surface, keyboard);
+    wl_surface_commit(surface->wl_surface);
+}
+
+void shell_surface_ignore_input(struct shell_surface *surface) {
+    if (!surface) return;
+    struct wl_region *empty = wl_compositor_create_region(surface->core->compositor);
+    wl_surface_set_input_region(surface->wl_surface, empty);
+    wl_region_destroy(empty);
+    wl_surface_commit(surface->wl_surface);
+}
+
+void shell_surface_set_input_rects(struct shell_surface *surface, const int (*rects)[4],
+        size_t count) {
+    if (!surface) return;
+    struct wl_region *region = wl_compositor_create_region(surface->core->compositor);
+    for (size_t i = 0; i < count; i++)
+        wl_region_add(region, rects[i][0], rects[i][1], rects[i][2], rects[i][3]);
+    wl_surface_set_input_region(surface->wl_surface, region);
+    wl_region_destroy(region);
+}
+
 void shell_core_redraw_all(struct shell_core *core) {
     struct shell_surface *surface;
     wl_list_for_each(surface, &core->surfaces, link) surface->dirty = true;
@@ -350,15 +375,18 @@ static void composite(struct shell_surface *surface) {
     }
 }
 
-/* Paint every dirty surface that is configured and not waiting on a frame,
- * and re-composite animated ones. */
+/* Paint every dirty or animating surface that is configured and not
+ * waiting on a frame, and re-composite ones with animated shaders. */
 static void paint_dirty(struct shell_core *core) {
     struct shell_surface *surface;
     wl_list_for_each(surface, &core->surfaces, link) {
         if (!surface->configured || surface->frame) continue;
-        if (surface->dirty) {
+        if (surface->dirty || surface->animating) {
+            surface->repaint_only = !surface->dirty;
             surface->dirty = false;
+            surface->animating = false;
             paint(surface);
+            surface->repaint_only = false;
         } else if (surface->animated && core->renderer->impl->composite) {
             composite(surface);
         }
@@ -418,7 +446,14 @@ static void pointer_button(void *data, struct wl_pointer *pointer, uint32_t seri
 
 static void pointer_axis(void *data, struct wl_pointer *pointer, uint32_t time,
         uint32_t axis, wl_fixed_t value) {
-    (void)data; (void)pointer; (void)time; (void)axis; (void)value;
+    (void)pointer; (void)time;
+    struct shell_core *core = data;
+    struct shell_surface *s = core->pointer_focus;
+    double v = wl_fixed_to_double(value);
+    if (s && s->handler->pointer_scroll)
+        s->handler->pointer_scroll(s->data, s,
+            axis == WL_POINTER_AXIS_HORIZONTAL_SCROLL ? v : 0,
+            axis == WL_POINTER_AXIS_VERTICAL_SCROLL ? v : 0);
 }
 
 static void pointer_frame(void *data, struct wl_pointer *pointer) {

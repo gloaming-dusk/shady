@@ -10,10 +10,15 @@
  * or goes away, the shell keeps retrying.
  */
 
+#include <stdbool.h>
+
 struct shell;
 
 void shell_compositor_init(struct shell *shell);
 void shell_compositor_finish(void);
 const char *shell_compositor_value(const char *key);
+/* Press a shortcut through the compositor (the IPC `key` command), e.g.
+ * "Super+t". False when not connected or the keys look malformed. */
+bool shell_compositor_key(const char *keys);
 
 #endif

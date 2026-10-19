@@ -122,6 +122,8 @@ struct shell_surface_handler {
     void (*pointer_leave)(void *data, struct shell_surface *surface);
     void (*pointer_button)(void *data, struct shell_surface *surface,
         uint32_t button, bool pressed);
+    /* Wheel or touchpad scrolling in logical pixels; positive is down/right. */
+    void (*pointer_scroll)(void *data, struct shell_surface *surface, double dx, double dy);
     /* `utf8` is the text the key produces, "" for none. */
     void (*key)(void *data, struct shell_surface *surface, xkb_keysym_t sym,
         const char *utf8);
@@ -147,6 +149,10 @@ struct shell_surface {
     void *render_data; /* owned by the renderer */
     struct shell_effects effects; /* filled by the owner on each paint */
     bool animated; /* set by the renderer: an effect uses u_time */
+    /* Set by the owner: repaint on the next frame even if nothing changed.
+     * Such a repaint has `repaint_only` set during draw(). */
+    bool animating;
+    bool repaint_only;
     char name[32]; /* layer namespace, for logs */
 };
 
@@ -158,6 +164,14 @@ void shell_surface_destroy(struct shell_surface *surface);
 void shell_surface_redraw(struct shell_surface *surface);
 /* Ask for a new logical size; the compositor answers with a configure. */
 void shell_surface_set_size(struct shell_surface *surface, uint32_t width, uint32_t height);
+void shell_surface_set_keyboard(struct shell_surface *surface,
+    enum zwlr_layer_surface_v1_keyboard_interactivity keyboard);
+/* Let pointer input fall through the surface to whatever is below. */
+void shell_surface_ignore_input(struct shell_surface *surface);
+/* Take pointer input only inside these logical rectangles ({x, y, w, h}
+ * each); applies with the next commit. */
+void shell_surface_set_input_rects(struct shell_surface *surface, const int (*rects)[4],
+    size_t count);
 void shell_core_redraw_all(struct shell_core *core);
 
 #endif

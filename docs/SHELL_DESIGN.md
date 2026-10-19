@@ -185,6 +185,7 @@ shell/src/
   script.c/.h      Lua runtime: the shell API, bars and popups, poll/listen,
                    config loading and hot reload
   ui.c/.h          widget trees from Lua tables: layout, drawing, hit-testing
+  anim.c/.h        transitions: match nodes across trees, spring their look
   effects.h        shader effects handed from Lua to the GL renderer
   plugins.c/.h     native shell plugins: loading, values, actions, widgets
   apps.c           .desktop index for the launcher
