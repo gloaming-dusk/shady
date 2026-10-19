@@ -14,6 +14,10 @@ local BAR = 38
 local BOLD, MEDIUM = "Sans SemiBold 9.5", "Sans Medium 9.5"
 local a, mix = shell.alpha, shell.mix
 
+-- Popups grow out of a slightly smaller, lifted, transparent card and go
+-- back into it when they close.
+local POP = { opacity = 0, scale = 0.96, translate = { 0, -6 } }
+
 -- A rounded fill that is a little lighter at the top.
 local function sheen(base, alpha, lift)
     return shell.gradient("vertical", a(mix(base, WHITE, lift), alpha), a(base, alpha))
@@ -34,6 +38,7 @@ end
 local function panel(radius, props)
     props.radius = radius
     props.align = props.align or "stretch"
+    props.animate, props.enter, props.exit = "snappy", POP, POP
     props.background = sheen(t.surface, options.panel_opacity or 0.975, 0.045)
     props.border = a(t.text, 0.08)
     table.insert(props, 1, shell.row {
@@ -55,11 +60,12 @@ local function menu_row(ctx, id, height, inset, label, opts)
         id = id, height = height, padding = { inset, inset * 2 + 1, inset, inset * 2 + 1 },
         align = "stretch", on_click = opts.on_click,
         shell.row {
-            grow = 1, radius = 8, padding = { 0, 9 }, gap = 8,
+            grow = 1, radius = 8, padding = { 0, 9 }, gap = 8, animate = "snappy",
             background = hovered and sheen(tint, 0.85, 0.06) or nil,
             border = hovered and a(line, 0.32) or nil,
             opts.pip ~= nil and shell.pip { radius = 2.6, lit = opts.pip } or false,
             shell.text(label, {
+                animate = "snappy",
                 font = (hovered or opts.strong) and "Sans SemiBold 9" or "Sans 9",
                 color = a(text_color, (hovered or opts.strong) and 1.0 or (opts.danger and 0.85 or 0.78)),
             }),
@@ -106,6 +112,7 @@ shell.popup {
             local initial = (app.name:match("^[%z\1-\127\194-\244][\128-\191]*") or "?"):upper()
             results[#results + 1] = shell.row {
                 id = id, height = 46, radius = 11, padding = { 0, 12 }, gap = 12,
+                animate = "snappy",
                 background = lit and sheen(t.accent_deep, selected and 0.85 or 0.55, 0.06) or nil,
                 border = lit and a(t.accent, selected and 0.32 or 0.16) or nil,
                 on_click = function() launch(app) end,
@@ -319,15 +326,16 @@ local function workspaces(ctx)
         local on = name == active
         local hovered = ctx.hovered == id
         pills[#pills + 1] = shell.row {
-            id = id, height = 22, radius = 7,
+            id = id, height = 22, radius = 7, animate = "bouncy",
             padding = on and { 0, 5, 0, 8 } or { 0, 11 }, gap = 4.6,
             background = on and sheen(t.accent_deep, 0.92, 0.08) or (hovered and a(WHITE, 0.06) or nil),
             border = on and a(t.accent, 0.35) or nil,
             on_click = function(button)
                 if button == "left" then shell.workspace(name) end
             end,
-            on and shell.box { width = 4.4, height = 4.4, radius = 2.2, background = t.accent } or false,
-            shell.text(name, { font = on and BOLD or MEDIUM,
+            on and shell.box { key = id .. ":dot", width = 4.4, height = 4.4, radius = 2.2,
+                background = t.accent, enter = { scale = 0, opacity = 0 } } or false,
+            shell.text(name, { key = id .. ":name", animate = "snappy", font = on and BOLD or MEDIUM,
                 color = a(t.text, on and 0.98 or (hovered and 0.85 or 0.55)) }),
         }
     end
@@ -349,6 +357,7 @@ local function tasks(ctx)
             local label = w.title ~= "" and w.title or (w.app_id ~= "" and w.app_id or "Window")
             chips[#chips + 1] = shell.row {
                 id = id, height = 26, min_width = 92, max_width = 200, radius = 9,
+                animate = "smooth", enter = { opacity = 0, scale = 0.9 },
                 padding = { 0, 13, 0, 10 }, gap = 7,
                 background = w.focused and sheen(t.accent_deep, 0.90, 0.08)
                     or a(WHITE, hovered and 0.06 or 0.025),
@@ -376,6 +385,7 @@ local function clock(ctx)
     local open = shell.is_open("quick") and quick_output == ctx.output
     return shell.row {
         id = "clock", height = 26, radius = 9, padding = { 0, 10, 0, 12 }, gap = 10,
+        animate = "snappy",
         background = open and sheen(t.accent_deep, 0.92, 0.08) or a(WHITE, 0.03),
         border = open and a(t.accent, 0.38) or a(WHITE, 0.07),
         on_click = function(button, info)
@@ -396,6 +406,8 @@ shell.bar {
         local surface = t.surface
         return shell.column {
             align = "stretch",
+            -- Slides down from above the screen when the bar appears.
+            enter = { translate = { 0, -BAR }, opacity = 0 }, animate = "gentle",
             background = shell.gradient("vertical",
                 a(mix(surface, WHITE, 0.025), options.bar_opacity or 0.94),
                 a(mix(surface, BLACK, 0.35), options.bar_opacity or 0.94)),

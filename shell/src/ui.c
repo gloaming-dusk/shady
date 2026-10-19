@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "anim.h"
 #include "theme.h"
 
 #define UI_MAX_DEPTH 48
@@ -157,6 +158,91 @@ static void read_style(struct build *b, int t, struct ui_style *style) {
     style->has_opacity = lua_isnumber(b->L, -1);
     style->opacity = style->has_opacity ? lua_tonumber(b->L, -1) : 1.0;
     lua_pop(b->L, 1);
+    lua_getfield(b->L, t, "scale");
+    style->has_scale = lua_isnumber(b->L, -1);
+    style->scale = style->has_scale ? lua_tonumber(b->L, -1) : 1.0;
+    lua_pop(b->L, 1);
+    lua_getfield(b->L, t, "translate");
+    style->has_translate = lua_istable(b->L, -1);
+    for (int i = 0; i < 2; i++) {
+        style->translate[i] = 0;
+        if (!style->has_translate) continue;
+        lua_rawgeti(b->L, -1, i + 1);
+        style->translate[i] = lua_tonumber(b->L, -1);
+        lua_pop(b->L, 1);
+    }
+    if (!style->has_translate && !lua_isnil(b->L, -1))
+        build_error(b, "translate must be {x, y}%s", NULL);
+    lua_pop(b->L, 1);
+    lua_getfield(b->L, t, "rotate");
+    style->has_rotate = lua_isnumber(b->L, -1);
+    style->rotate = style->has_rotate ? lua_tonumber(b->L, -1) : 0;
+    lua_pop(b->L, 1);
+    /* shadow = {x, y, colour} or {x =, y =, color =}; false for none. */
+    lua_getfield(b->L, t, "shadow");
+    style->has_shadow = false;
+    if (lua_istable(b->L, -1)) {
+        int s = lua_gettop(b->L);
+        lua_getfield(b->L, s, "x");
+        if (lua_isnil(b->L, -1)) { lua_pop(b->L, 1); lua_rawgeti(b->L, s, 1); }
+        style->shadow[0] = lua_tonumber(b->L, -1);
+        lua_pop(b->L, 1);
+        lua_getfield(b->L, s, "y");
+        if (lua_isnil(b->L, -1)) { lua_pop(b->L, 1); lua_rawgeti(b->L, s, 2); }
+        style->shadow[1] = lua_tonumber(b->L, -1);
+        lua_pop(b->L, 1);
+        lua_getfield(b->L, s, "color");
+        if (lua_isnil(b->L, -1)) { lua_pop(b->L, 1); lua_rawgeti(b->L, s, 3); }
+        style->has_shadow = read_color(b->L, style->shadow_color);
+        lua_pop(b->L, 1);
+        if (!style->has_shadow) build_error(b, "shadow needs a colour%s", NULL);
+    } else if (lua_toboolean(b->L, -1)) {
+        build_error(b, "shadow must be {x, y, colour}%s", NULL);
+    } else if (lua_isboolean(b->L, -1)) {
+        /* shadow = false: an explicit "none" that hover or exit can set. */
+        style->has_shadow = true;
+        style->shadow_color[3] = 0;
+    }
+    lua_pop(b->L, 1);
+}
+
+/* animate = true | false | preset name | {stiffness = n, damping = n}.
+ * `enter`, `exit` and `hover` animate with the "smooth" preset unless
+ * `animate` says otherwise. */
+static void read_animation(struct build *b, int t, struct ui_node *node) {
+    lua_State *L = b->L;
+    lua_getfield(L, t, "enter");
+    if (lua_istable(L, -1)) {
+        node->has_enter = true;
+        read_style(b, lua_gettop(L), &node->enter);
+    }
+    lua_pop(L, 1);
+    lua_getfield(L, t, "exit");
+    if (lua_istable(L, -1)) {
+        node->has_exit = true;
+        read_style(b, lua_gettop(L), &node->exit);
+    }
+    lua_pop(L, 1);
+
+    ui_spring_preset("smooth", &node->spring);
+    node->animate = node->has_enter || node->has_exit || node->has_hover;
+    lua_getfield(L, t, "animate");
+    if (lua_type(L, -1) == LUA_TBOOLEAN) {
+        node->animate = lua_toboolean(L, -1);
+    } else if (lua_type(L, -1) == LUA_TSTRING) {
+        node->animate = true;
+        if (!ui_spring_preset(lua_tostring(L, -1), &node->spring))
+            build_error(b, "unknown animation '%s'", lua_tostring(L, -1));
+    } else if (lua_istable(L, -1)) {
+        node->animate = true;
+        node->spring.stiffness = get_number(L, lua_gettop(L), "stiffness", node->spring.stiffness);
+        node->spring.damping = get_number(L, lua_gettop(L), "damping", node->spring.damping);
+        if (node->spring.stiffness <= 0 || node->spring.damping < 0)
+            build_error(b, "animate needs stiffness > 0 and damping >= 0%s", NULL);
+    } else if (!lua_isnil(L, -1)) {
+        build_error(b, "animate must be a boolean, a preset name or a table%s", NULL);
+    }
+    lua_pop(L, 1);
 }
 
 static void read_padding(lua_State *L, int t, double out[4]) {
@@ -380,8 +466,9 @@ static struct ui_node *build_node(struct build *b, int t, int depth) {
         build_error(b, "out of memory%s", NULL);
         return NULL;
     }
-    node->on_click = LUA_NOREF;
+    node->on_click = node->on_scroll = node->on_drag = LUA_NOREF;
     if (!strcmp(kind, "box")) node->kind = UI_NODE_BOX;
+    else if (!strcmp(kind, "icon")) node->kind = UI_NODE_ICON;
     else if (!strcmp(kind, "text")) node->kind = UI_NODE_TEXT;
     else if (!strcmp(kind, "pip")) node->kind = UI_NODE_PIP;
     else if (!strcmp(kind, "image")) node->kind = UI_NODE_IMAGE;
@@ -404,7 +491,12 @@ static struct ui_node *build_node(struct build *b, int t, int depth) {
     read_padding(L, t, node->padding);
     char buf[32];
     const char *dir = field_string(L, t, "direction", buf, sizeof(buf));
-    node->direction = dir && !strcmp(dir, "column") ? UI_COLUMN : UI_ROW;
+    node->direction = dir && !strcmp(dir, "column") ? UI_COLUMN
+        : dir && !strcmp(dir, "stack") ? UI_STACK : UI_ROW;
+    node->left = get_number(L, t, "left", NAN);
+    node->top = get_number(L, t, "top", NAN);
+    node->right = get_number(L, t, "right", NAN);
+    node->bottom = get_number(L, t, "bottom", NAN);
     node->align = parse_align(field_string(L, t, "align", buf, sizeof(buf)), UI_CENTER);
     node->justify = parse_align(field_string(L, t, "justify", buf, sizeof(buf)), UI_START);
     node->clip = get_bool(L, t, "clip", false);
@@ -417,9 +509,17 @@ static struct ui_node *build_node(struct build *b, int t, int depth) {
         read_style(b, lua_gettop(L), &node->hover);
     }
     lua_pop(L, 1);
+    read_animation(b, t, node);
     node->id = get_string(L, t, "id");
+    node->key = get_string(L, t, "key");
     lua_getfield(L, t, "on_click");
     if (lua_isfunction(L, -1)) node->on_click = luaL_ref(L, LUA_REGISTRYINDEX);
+    else lua_pop(L, 1);
+    lua_getfield(L, t, "on_scroll");
+    if (lua_isfunction(L, -1)) node->on_scroll = luaL_ref(L, LUA_REGISTRYINDEX);
+    else lua_pop(L, 1);
+    lua_getfield(L, t, "on_drag");
+    if (lua_isfunction(L, -1)) node->on_drag = luaL_ref(L, LUA_REGISTRYINDEX);
     else lua_pop(L, 1);
     lua_getfield(L, t, "shader");
     if (lua_istable(L, -1)) lua_getfield(L, -1, "path");
@@ -460,6 +560,18 @@ static struct ui_node *build_node(struct build *b, int t, int depth) {
         free(path);
         break;
     }
+    case UI_NODE_ICON: {
+        node->icon = get_string(L, t, "name");
+        bool known = false;
+        for (size_t i = 0; node->icon && ui_icon_names[i]; i++)
+            if (!strcmp(node->icon, ui_icon_names[i])) known = true;
+        if (!known) build_error(b, "unknown icon '%s'", node->icon ? node->icon : "(none)");
+        double size = get_number(L, t, "size", 16);
+        if (node->width < 0) node->width = size;
+        if (node->height < 0) node->height = size;
+        node->stroke = get_number(L, t, "stroke", 2);
+        break;
+    }
     case UI_NODE_CUSTOM:
         node->widget = get_string(L, t, "widget");
         if (!node->widget) build_error(b, "plugin widget without a type%s", NULL);
@@ -491,7 +603,12 @@ void ui_free(lua_State *L, struct ui_node *node) {
     if (!node) return;
     for (size_t i = 0; i < node->child_count; i++) ui_free(L, node->children[i]);
     free(node->children);
-    if (node->on_click != LUA_NOREF && L) luaL_unref(L, LUA_REGISTRYINDEX, node->on_click);
+    if (L) {
+        luaL_unref(L, LUA_REGISTRYINDEX, node->on_click);
+        luaL_unref(L, LUA_REGISTRYINDEX, node->on_scroll);
+        luaL_unref(L, LUA_REGISTRYINDEX, node->on_drag);
+    }
+    free(node->icon);
     if (node->layout) g_object_unref(node->layout);
     if (node->image) cairo_surface_destroy(node->image);
     free(node->text);
@@ -501,6 +618,7 @@ void ui_free(lua_State *L, struct ui_node *node) {
     free(node->widget);
     ui_free_props(&node->props);
     free(node->id);
+    free(node->key);
     free(node);
 }
 
@@ -548,6 +666,7 @@ void ui_measure(cairo_t *cr, struct ui_node *node, const struct ui_defaults *def
         w = h = node->pip_radius * 2;
         break;
     case UI_NODE_CUSTOM:
+    case UI_NODE_ICON:
         break; /* sized by width/height or by its parent */
     case UI_NODE_IMAGE:
         if (node->image) {
@@ -556,6 +675,19 @@ void ui_measure(cairo_t *cr, struct ui_node *node, const struct ui_defaults *def
         }
         break;
     case UI_NODE_BOX: {
+        if (node->direction == UI_STACK) {
+            for (size_t i = 0; i < node->child_count; i++) {
+                struct ui_node *c = node->children[i];
+                ui_measure(cr, c, defaults);
+                double cw = c->nat_w + (isnan(c->left) ? 0 : c->left) + (isnan(c->right) ? 0 : c->right);
+                double ch = c->nat_h + (isnan(c->top) ? 0 : c->top) + (isnan(c->bottom) ? 0 : c->bottom);
+                if (cw > w) w = cw;
+                if (ch > h) h = ch;
+            }
+            w += node->padding[1] + node->padding[3];
+            h += node->padding[0] + node->padding[2];
+            break;
+        }
         double main = 0, cross = 0;
         size_t visible = 0;
         for (size_t i = 0; i < node->child_count; i++) {
@@ -586,7 +718,53 @@ void ui_measure(cairo_t *cr, struct ui_node *node, const struct ui_defaults *def
 
 static void set_rect(cairo_t *cr, struct ui_node *node, double x, double y, double w, double h);
 
+/* One axis of a stack child: pinned to one edge, stretched between both,
+ * or placed by `align`. */
+static void stack_axis(double start, double size, double natural, double lead, double trail,
+        enum ui_align align, double *pos, double *len) {
+    *len = natural > size ? size : natural;
+    if (!isnan(lead) && !isnan(trail)) {
+        *pos = start + lead;
+        *len = size - lead - trail;
+        if (*len < 0) *len = 0;
+    } else if (!isnan(lead)) {
+        *pos = start + lead;
+        *len = natural;
+    } else if (!isnan(trail)) {
+        *pos = start + size - trail - natural;
+        *len = natural;
+    } else if (align == UI_STRETCH) {
+        *pos = start;
+        *len = size;
+    } else if (align == UI_CENTER) {
+        *pos = start + (size - *len) / 2;
+    } else if (align == UI_END) {
+        *pos = start + size - *len;
+    } else {
+        *pos = start;
+    }
+}
+
+static void layout_stack(cairo_t *cr, struct ui_node *node) {
+    double ix = node->x + node->padding[3];
+    double iy = node->y + node->padding[0];
+    double iw = node->w - node->padding[1] - node->padding[3];
+    double ih = node->h - node->padding[0] - node->padding[2];
+    for (size_t i = 0; i < node->child_count; i++) {
+        struct ui_node *c = node->children[i];
+        double x, y, w, h;
+        /* `justify` places along x, `align` along y. */
+        stack_axis(ix, iw, c->nat_w, c->left, c->right, node->justify, &x, &w);
+        stack_axis(iy, ih, c->nat_h, c->top, c->bottom, node->align, &y, &h);
+        set_rect(cr, c, x, y, w, h);
+    }
+}
+
 static void layout_box(cairo_t *cr, struct ui_node *node) {
+    if (node->direction == UI_STACK) {
+        layout_stack(cr, node);
+        return;
+    }
     bool row = node->direction == UI_ROW;
     double ix = node->x + node->padding[3];
     double iy = node->y + node->padding[0];
@@ -713,30 +891,324 @@ static void draw_pip_node(cairo_t *cr, const struct ui_node *node, const double 
     }
 }
 
+/* ---- icons ------------------------------------------------------------ */
+
+const char *const ui_icon_names[] = {
+    "wifi", "volume", "mute", "bluetooth", "moon", "sun", "capture", "play", "pause",
+    "next", "previous", "battery", "search", "power", "grid", "plus", "close", "sliders",
+    "lock", "music", "check", NULL,
+};
+
+static double deg(double d) {
+    return d * G_PI / 180.0;
+}
+
+static void icon_speaker(cairo_t *cr) {
+    cairo_move_to(cr, 3, 9);
+    cairo_line_to(cr, 7, 9);
+    cairo_line_to(cr, 12, 5);
+    cairo_line_to(cr, 12, 19);
+    cairo_line_to(cr, 7, 15);
+    cairo_line_to(cr, 3, 15);
+    cairo_close_path(cr);
+}
+
+static void icon_triangle(cairo_t *cr, double x0, double x1) {
+    cairo_move_to(cr, x0, 5);
+    cairo_line_to(cr, x1, 12);
+    cairo_line_to(cr, x0, 19);
+    cairo_close_path(cr);
+}
+
+/* Draws icon `name` in a 24x24 box with the current source: strokes of
+ * `stroke` units with round ends, and a few filled shapes. */
+static void draw_icon(cairo_t *cr, const char *name, double stroke) {
+    if (!name) return;
+    cairo_new_path(cr);
+    cairo_set_line_width(cr, stroke);
+    cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
+    cairo_set_line_join(cr, CAIRO_LINE_JOIN_ROUND);
+    if (!strcmp(name, "wifi")) {
+        for (int i = 0; i < 3; i++) {
+            cairo_new_sub_path(cr);
+            cairo_arc(cr, 12, 20, 16 - 5 * i, deg(-135), deg(-45));
+        }
+        cairo_stroke(cr);
+        cairo_arc(cr, 12, 19.2, stroke * 0.75, 0, 2 * G_PI);
+        cairo_fill(cr);
+    } else if (!strcmp(name, "volume")) {
+        icon_speaker(cr);
+        cairo_new_sub_path(cr);
+        cairo_arc(cr, 13, 12, 4, deg(-50), deg(50));
+        cairo_new_sub_path(cr);
+        cairo_arc(cr, 13, 12, 8, deg(-50), deg(50));
+        cairo_stroke(cr);
+    } else if (!strcmp(name, "mute")) {
+        icon_speaker(cr);
+        cairo_move_to(cr, 16, 9);
+        cairo_line_to(cr, 21, 15);
+        cairo_move_to(cr, 21, 9);
+        cairo_line_to(cr, 16, 15);
+        cairo_stroke(cr);
+    } else if (!strcmp(name, "bluetooth")) {
+        cairo_move_to(cr, 7, 7);
+        cairo_line_to(cr, 17, 16.5);
+        cairo_line_to(cr, 12, 21);
+        cairo_line_to(cr, 12, 3);
+        cairo_line_to(cr, 17, 7.5);
+        cairo_line_to(cr, 7, 17);
+        cairo_stroke(cr);
+    } else if (!strcmp(name, "moon")) {
+        cairo_push_group(cr);
+        cairo_arc(cr, 12, 12, 9, 0, 2 * G_PI);
+        cairo_set_source_rgba(cr, 0, 0, 0, 1);
+        cairo_fill(cr);
+        cairo_set_operator(cr, CAIRO_OPERATOR_DEST_OUT);
+        cairo_arc(cr, 17, 7.5, 7.5, 0, 2 * G_PI);
+        cairo_fill(cr);
+        cairo_pattern_t *mask = cairo_pop_group(cr);
+        cairo_mask(cr, mask);
+        cairo_pattern_destroy(mask);
+    } else if (!strcmp(name, "sun")) {
+        cairo_arc(cr, 12, 12, 4, 0, 2 * G_PI);
+        for (int i = 0; i < 8; i++) {
+            double a = deg(45 * i);
+            cairo_move_to(cr, 12 + cos(a) * 7.5, 12 + sin(a) * 7.5);
+            cairo_line_to(cr, 12 + cos(a) * 9.5, 12 + sin(a) * 9.5);
+        }
+        cairo_stroke(cr);
+    } else if (!strcmp(name, "capture")) {
+        cairo_move_to(cr, 4, 8); cairo_line_to(cr, 4, 4); cairo_line_to(cr, 8, 4);
+        cairo_move_to(cr, 16, 4); cairo_line_to(cr, 20, 4); cairo_line_to(cr, 20, 8);
+        cairo_move_to(cr, 20, 16); cairo_line_to(cr, 20, 20); cairo_line_to(cr, 16, 20);
+        cairo_move_to(cr, 8, 20); cairo_line_to(cr, 4, 20); cairo_line_to(cr, 4, 16);
+        cairo_new_sub_path(cr);
+        cairo_arc(cr, 12, 12, 3.2, 0, 2 * G_PI);
+        cairo_stroke(cr);
+    } else if (!strcmp(name, "play")) {
+        icon_triangle(cr, 7, 19);
+        cairo_fill_preserve(cr);
+        cairo_stroke(cr);
+    } else if (!strcmp(name, "pause")) {
+        rounded_rect(cr, 6, 5, 4, 14, 1);
+        rounded_rect(cr, 14, 5, 4, 14, 1);
+        cairo_fill(cr);
+    } else if (!strcmp(name, "next") || !strcmp(name, "previous")) {
+        if (name[0] == 'p') {
+            cairo_translate(cr, 24, 0);
+            cairo_scale(cr, -1, 1);
+        }
+        icon_triangle(cr, 5, 15);
+        cairo_fill_preserve(cr);
+        cairo_stroke(cr);
+        cairo_move_to(cr, 19, 5);
+        cairo_line_to(cr, 19, 19);
+        cairo_stroke(cr);
+    } else if (!strcmp(name, "battery")) {
+        rounded_rect(cr, 2, 7, 18, 10, 2.5);
+        cairo_stroke(cr);
+        cairo_move_to(cr, 22.5, 10.5);
+        cairo_line_to(cr, 22.5, 13.5);
+        cairo_stroke(cr);
+        rounded_rect(cr, 4.5, 9.5, 11, 5, 1);
+        cairo_fill(cr);
+    } else if (!strcmp(name, "search")) {
+        cairo_arc(cr, 10.5, 10.5, 6.5, 0, 2 * G_PI);
+        cairo_move_to(cr, 15.5, 15.5);
+        cairo_line_to(cr, 21, 21);
+        cairo_stroke(cr);
+    } else if (!strcmp(name, "power")) {
+        cairo_arc(cr, 12, 13, 8, deg(-55), deg(235));
+        cairo_move_to(cr, 12, 3);
+        cairo_line_to(cr, 12, 11);
+        cairo_stroke(cr);
+    } else if (!strcmp(name, "grid")) {
+        for (int i = 0; i < 4; i++) rounded_rect(cr, 4 + (i % 2) * 9, 4 + (i / 2) * 9, 7, 7, 1.8);
+        cairo_stroke(cr);
+    } else if (!strcmp(name, "plus") || !strcmp(name, "close")) {
+        if (name[0] == 'c') {
+            cairo_translate(cr, 12, 12);
+            cairo_rotate(cr, deg(45));
+            cairo_translate(cr, -12, -12);
+        }
+        cairo_move_to(cr, 12, 4);
+        cairo_line_to(cr, 12, 20);
+        cairo_move_to(cr, 4, 12);
+        cairo_line_to(cr, 20, 12);
+        cairo_stroke(cr);
+    } else if (!strcmp(name, "sliders")) {
+        const double knob[3] = { 8, 16, 11 };
+        for (int i = 0; i < 3; i++) {
+            double y = 6 + i * 6;
+            cairo_move_to(cr, 3, y);
+            cairo_line_to(cr, 21, y);
+            cairo_stroke(cr);
+            cairo_arc(cr, knob[i], y, 2.4, 0, 2 * G_PI);
+            cairo_fill(cr);
+        }
+    } else if (!strcmp(name, "lock")) {
+        rounded_rect(cr, 5, 11, 14, 10, 2);
+        cairo_new_sub_path(cr);
+        cairo_arc(cr, 12, 9, 4, deg(180), deg(360));
+        cairo_move_to(cr, 8, 9);
+        cairo_line_to(cr, 8, 11);
+        cairo_move_to(cr, 16, 9);
+        cairo_line_to(cr, 16, 11);
+        cairo_stroke(cr);
+    } else if (!strcmp(name, "music")) {
+        cairo_move_to(cr, 9, 17);
+        cairo_line_to(cr, 9, 5);
+        cairo_line_to(cr, 20, 3);
+        cairo_line_to(cr, 20, 15);
+        cairo_stroke(cr);
+        cairo_arc(cr, 6.5, 17.5, 2.8, 0, 2 * G_PI);
+        cairo_new_sub_path(cr);
+        cairo_arc(cr, 17.5, 15.5, 2.8, 0, 2 * G_PI);
+        cairo_fill(cr);
+    } else if (!strcmp(name, "check")) {
+        cairo_move_to(cr, 4, 12.5);
+        cairo_line_to(cr, 9.5, 18);
+        cairo_line_to(cr, 20, 6);
+        cairo_stroke(cr);
+    }
+    cairo_new_path(cr);
+}
+
+void ui_merge_style(struct ui_style *out, const struct ui_style *over) {
+    if (over->has_background) { out->background = over->background; out->has_background = true; }
+    if (over->has_border) { memcpy(out->border, over->border, sizeof(out->border)); out->has_border = true; }
+    if (over->has_color) { memcpy(out->color, over->color, sizeof(out->color)); out->has_color = true; }
+    if (over->has_opacity) { out->opacity = over->opacity; out->has_opacity = true; }
+    if (over->has_scale) { out->scale = over->scale; out->has_scale = true; }
+    if (over->has_translate) {
+        memcpy(out->translate, over->translate, sizeof(out->translate));
+        out->has_translate = true;
+    }
+    if (over->has_rotate) { out->rotate = over->rotate; out->has_rotate = true; }
+    if (over->has_shadow) {
+        memcpy(out->shadow, over->shadow, sizeof(out->shadow));
+        memcpy(out->shadow_color, over->shadow_color, sizeof(out->shadow_color));
+        out->has_shadow = true;
+    }
+}
+
+void ui_resolve_style(const struct ui_node *node, const struct ui_node *hovered,
+        struct ui_style *out) {
+    *out = node->style;
+    if (node == hovered && node->has_hover) ui_merge_style(out, &node->hover);
+}
+
+/* What an animated node draws this frame: its springs' current values. */
+static void style_from_anim(const struct ui_anim *anim, struct ui_style *s) {
+    const double *v = anim->value;
+    s->opacity = v[UI_CH_OPACITY];
+    s->has_opacity = true;
+    s->scale = v[UI_CH_SCALE];
+    s->has_scale = true;
+    s->translate[0] = v[UI_CH_TX];
+    s->translate[1] = v[UI_CH_TY];
+    s->has_translate = true;
+    s->rotate = v[UI_CH_ROTATE];
+    s->has_rotate = true;
+    s->shadow[0] = v[UI_CH_SHADOW_X];
+    s->shadow[1] = v[UI_CH_SHADOW_Y];
+    memcpy(s->shadow_color, &v[UI_CH_SHADOW], sizeof(s->shadow_color));
+    s->has_shadow = s->shadow_color[3] > 0.002;
+    memcpy(s->border, &v[UI_CH_BORDER], sizeof(s->border));
+    s->has_border = s->border[3] > 0.002;
+    memcpy(s->color, &v[UI_CH_COLOR], sizeof(s->color));
+    s->has_color = true;
+
+    struct ui_paint *paint = &s->background;
+    bool uniform = true, visible = false;
+    for (int i = 0; i < UI_ANIM_STOPS; i++) {
+        const double *stop = &v[UI_CH_BACKGROUND + 4 * i];
+        if (stop[3] > 0.002) visible = true;
+        if (i > 0 && memcmp(stop, stop - 4, 4 * sizeof(double)) != 0) uniform = false;
+    }
+    s->has_background = visible;
+    paint->dir = anim->dir ? anim->dir : 'v';
+    if (uniform) {
+        paint->stops = 1;
+        memcpy(paint->rgba[0], &v[UI_CH_BACKGROUND], sizeof(paint->rgba[0]));
+    } else {
+        paint->stops = UI_ANIM_STOPS;
+    }
+}
+
+static void set_paint_anim(cairo_t *cr, const struct ui_paint *paint, const double *stops,
+        double x, double y, double w, double h) {
+    if (paint->stops == 1) {
+        set_paint(cr, paint, x, y, w, h);
+        return;
+    }
+    cairo_pattern_t *pattern = paint->dir == 'h' ? cairo_pattern_create_linear(x, 0, x + w, 0)
+        : paint->dir == 'd' ? cairo_pattern_create_linear(x, y, x + w, y + h)
+        : cairo_pattern_create_linear(0, y, 0, y + h);
+    for (int i = 0; i < UI_ANIM_STOPS; i++) {
+        const double *c = &stops[4 * i];
+        cairo_pattern_add_color_stop_rgba(pattern, (double)i / (UI_ANIM_STOPS - 1),
+            c[0], c[1], c[2], c[3]);
+    }
+    cairo_set_source(cr, pattern);
+    cairo_pattern_destroy(pattern);
+}
+
 void ui_draw(cairo_t *cr, const struct ui_node *node, const struct ui_node *hovered,
         const struct ui_defaults *defaults) {
     if (node->hidden) return;
-    struct ui_style s = node->style;
-    if (node == hovered && node->has_hover) {
-        const struct ui_style *h = &node->hover;
-        if (h->has_background) { s.background = h->background; s.has_background = true; }
-        if (h->has_border) { memcpy(s.border, h->border, sizeof(s.border)); s.has_border = true; }
-        if (h->has_color) { memcpy(s.color, h->color, sizeof(s.color)); s.has_color = true; }
-        if (h->has_opacity) { s.opacity = h->opacity; s.has_opacity = true; }
+    const struct ui_anim *anim = node->anim;
+    struct ui_style s;
+    ui_resolve_style(node, hovered, &s);
+    double x = node->x, y = node->y, w = node->w, h = node->h;
+    double dx = 0, dy = 0;
+    if (anim) {
+        style_from_anim(anim, &s);
+        /* Springs track the position relative to the parent, so the offset
+         * from the laid-out position composes with the parents'. */
+        dx = anim->value[UI_CH_X] - anim->target[UI_CH_X];
+        dy = anim->value[UI_CH_Y] - anim->target[UI_CH_Y];
+        w = fmax(0, anim->value[UI_CH_W]);
+        h = fmax(0, anim->value[UI_CH_H]);
+    }
+    if (s.has_opacity && s.opacity <= 0.002) return;
+    if (s.has_translate) {
+        dx += s.translate[0];
+        dy += s.translate[1];
+    }
+    double scale = s.has_scale ? fmax(0, s.scale) : 1.0;
+    double rotate = s.has_rotate ? s.rotate : 0;
+    bool moved = dx != 0 || dy != 0 || scale != 1.0 || rotate != 0;
+    if (moved) {
+        cairo_save(cr);
+        cairo_translate(cr, dx, dy);
+        if (scale != 1.0 || rotate != 0) {
+            cairo_translate(cr, x + w / 2, y + h / 2);
+            cairo_rotate(cr, rotate * G_PI / 180.0);
+            cairo_scale(cr, scale, scale);
+            cairo_translate(cr, -(x + w / 2), -(y + h / 2));
+        }
     }
     bool group = s.has_opacity && s.opacity < 1.0;
     if (group) cairo_push_group(cr);
 
+    if (s.has_shadow && s.shadow_color[3] > 0) {
+        rounded_rect(cr, x + s.shadow[0], y + s.shadow[1], w, h, node->radius);
+        cairo_set_source_rgba(cr, s.shadow_color[0], s.shadow_color[1], s.shadow_color[2],
+            s.shadow_color[3]);
+        cairo_fill(cr);
+    }
+
     if (s.has_background && s.background.stops > 0) {
-        rounded_rect(cr, node->x, node->y, node->w, node->h, node->radius);
-        set_paint(cr, &s.background, node->x, node->y, node->w, node->h);
+        rounded_rect(cr, x, y, w, h, node->radius);
+        if (anim) set_paint_anim(cr, &s.background, &anim->value[UI_CH_BACKGROUND], x, y, w, h);
+        else set_paint(cr, &s.background, x, y, w, h);
         cairo_fill(cr);
     }
     if (s.has_border && node->border_width > 0) {
         double bw = node->border_width;
         cairo_set_line_width(cr, bw);
-        rounded_rect(cr, node->x + bw / 2, node->y + bw / 2, node->w - bw, node->h - bw,
-            node->radius);
+        rounded_rect(cr, x + bw / 2, y + bw / 2, w - bw, h - bw, node->radius);
         cairo_set_source_rgba(cr, s.border[0], s.border[1], s.border[2], s.border[3]);
         cairo_stroke(cr);
     }
@@ -746,9 +1218,10 @@ void ui_draw(cairo_t *cr, const struct ui_node *node, const struct ui_node *hove
     case UI_NODE_TEXT:
         if (node->layout && node->text && *node->text) {
             int lw = 0, lh = 0;
+            pango_cairo_update_layout(cr, node->layout);
             pango_layout_get_pixel_size(node->layout, &lw, &lh);
-            double tx = node->x + (node->w - lw) * node->text_align;
-            double ty = node->y + (node->h - lh) / 2;
+            double tx = x + (w - lw) * node->text_align;
+            double ty = y + (h - lh) / 2;
             cairo_set_source_rgba(cr, color[0], color[1], color[2], color[3]);
             cairo_move_to(cr, tx, ty);
             pango_cairo_show_layout(cr, node->layout);
@@ -757,14 +1230,24 @@ void ui_draw(cairo_t *cr, const struct ui_node *node, const struct ui_node *hove
     case UI_NODE_PIP:
         draw_pip_node(cr, node, s.has_color ? s.color : defaults->accent, defaults->text);
         break;
-    case UI_NODE_CUSTOM:
-        if (defaults->draw_custom && node->w > 0 && node->h > 0) {
+    case UI_NODE_ICON:
+        if (w > 0 && h > 0) {
             cairo_save(cr);
-            cairo_translate(cr, node->x, node->y);
-            cairo_rectangle(cr, 0, 0, node->w, node->h);
+            cairo_translate(cr, x, y);
+            cairo_scale(cr, w / 24.0, h / 24.0);
+            cairo_set_source_rgba(cr, color[0], color[1], color[2], color[3]);
+            draw_icon(cr, node->icon, node->stroke);
+            cairo_restore(cr);
+        }
+        break;
+    case UI_NODE_CUSTOM:
+        if (defaults->draw_custom && w > 0 && h > 0) {
+            cairo_save(cr);
+            cairo_translate(cr, x, y);
+            cairo_rectangle(cr, 0, 0, w, h);
             cairo_clip(cr);
             cairo_new_path(cr);
-            defaults->draw_custom(node->widget, cr, node->w, node->h, &node->props);
+            defaults->draw_custom(node->widget, cr, w, h, &node->props);
             cairo_restore(cr);
         }
         break;
@@ -774,8 +1257,8 @@ void ui_draw(cairo_t *cr, const struct ui_node *node, const struct ui_node *hove
             double ih = cairo_image_surface_get_height(node->image);
             if (iw > 0 && ih > 0) {
                 cairo_save(cr);
-                cairo_translate(cr, node->x, node->y);
-                cairo_scale(cr, node->w / iw, node->h / ih);
+                cairo_translate(cr, x, y);
+                cairo_scale(cr, w / iw, h / ih);
                 cairo_set_source_surface(cr, node->image, 0, 0);
                 cairo_paint(cr);
                 cairo_restore(cr);
@@ -792,11 +1275,26 @@ void ui_draw(cairo_t *cr, const struct ui_node *node, const struct ui_node *hove
         cairo_pop_group_to_source(cr);
         cairo_paint_with_alpha(cr, s.opacity);
     }
+    if (moved) cairo_restore(cr);
+}
+
+struct ui_node *ui_hit_handler(struct ui_node *node, double x, double y, enum ui_handler which) {
+    if (!node || node->hidden) return NULL;
+    if (x < node->x || y < node->y || x >= node->x + node->w || y >= node->y + node->h)
+        return NULL;
+    for (size_t i = node->child_count; i > 0; i--) {
+        struct ui_node *hit = ui_hit_handler(node->children[i - 1], x, y, which);
+        if (hit) return hit;
+    }
+    int ref = which == UI_ON_CLICK ? node->on_click
+        : which == UI_ON_SCROLL ? node->on_scroll : node->on_drag;
+    return ref != LUA_NOREF ? node : NULL;
 }
 
 static bool interactive(const struct ui_node *node, bool clickable) {
     if (clickable) return node->on_click != LUA_NOREF;
-    return node->on_click != LUA_NOREF || node->id || node->has_hover;
+    return node->on_click != LUA_NOREF || node->on_drag != LUA_NOREF ||
+        node->on_scroll != LUA_NOREF || node->id || node->has_hover;
 }
 
 struct ui_node *ui_hit(struct ui_node *node, double x, double y, bool clickable) {

@@ -73,6 +73,9 @@ shell.popup {
     width = 250,                  -- omit width/height to fit the content
     keyboard = "none",            -- none | exclusive | on_demand
     persistent = false,           -- keep it open, like a bar
+    fill = false,                 -- cover the whole output (anchors and size ignored)
+    exclusive = 0,                -- pixels to reserve along its anchored edge
+    input = "all",                -- or "widgets": take the pointer only over interactive widgets
     layer = "overlay",
     view = function(ctx, args) ... end,
     on_key = function(key, text, args) ... end,
@@ -84,6 +87,18 @@ follows it as the content changes. `on_key` receives the xkb key name
 (`"Escape"`, `"Return"`, `"Up"`, `"BackSpace"`, `"a"`) and the text it
 types (`""` for none).
 
+A `fill` popup covers its output: a full-screen launcher, or with
+`layer = "background"` a wallpaper. Its view gets the output's size as
+`ctx.width` and `ctx.height`. Background and bottom layer surfaces are drawn
+behind the windows, also in spatial mode, and only take the pointer where
+no window is.
+
+With `input = "widgets"` the surface takes the pointer only over widgets
+that react to it (`on_click`, `on_drag`, `on_scroll`, `id` or `hover`);
+everywhere else clicks fall through to the windows or the desktop below.
+This makes a full-screen `fill` layer usable as a desktop with a few
+clickable things on it.
+
 A `persistent` popup is opened by the shell itself as soon as an output is
 ready, stays on one output, and moves to another when its output goes away
 (a monitor unplugged, a VT switch). The greeter's login card is one
@@ -94,7 +109,7 @@ ready, stays on one output, and moves to another when its output goes away
 | Function | |
 |---|---|
 | `shell.open(name[, args])` | Open (or reopen) a popup. `args.output` (an output name) and `args.margin` override its placement; the whole table is passed to its view. |
-| `shell.close(name)` | Close it. |
+| `shell.close(name)` | Close it. A popup with `exit` styles plays them first; meanwhile it ignores input and no longer counts as open, so it can be reopened at once. |
 | `shell.toggle(name[, args])` | Open or close it. |
 | `shell.is_open(name)` | Whether it is open. |
 | `shell.redraw()` | Repaint every surface, e.g. after changing your own state. |
@@ -106,6 +121,8 @@ Widgets are tables; these constructors fill in `type`:
 | Constructor | |
 |---|---|
 | `shell.row{...}` / `shell.column{...}` / `shell.box{...}` | Container; its array part holds children. `box` is a row unless `direction = "column"`. |
+| `shell.stack{...}` | Container whose children all lie over the same area (see Layout). |
+| `shell.icon(name, {size=, stroke=, color=})` | A built-in line icon: `wifi`, `volume`, `mute`, `bluetooth`, `moon`, `sun`, `capture`, `play`, `pause`, `next`, `previous`, `battery`, `search`, `power`, `grid`, `plus`, `close`, `sliders`, `lock`, `music`, `check`. `size` defaults to 16, `stroke` to 2 (in a 24-unit box). |
 | `shell.text(text, {...})` | A line of text. |
 | `shell.pip{radius=, lit=}` | The focus dot: a glowing dot when lit, a faint ring otherwise. |
 | `shell.image{path=, width=, height=}` | A PNG. |
@@ -131,6 +148,12 @@ Containers lay children out along one axis, like a simplified flexbox.
 | `shrink` | 1 for text, 0 otherwise | share of a deficit; text then ellipsizes |
 | `clip` | false | hide children that do not fit (e.g. a task list) |
 
+In a `stack` (`direction = "stack"`) every child gets the whole inner area
+to itself. A child with `left`, `top`, `right` or `bottom` is pinned that
+far from the edge (both of a pair: stretched between them, e.g. a full-size
+backdrop with all four 0); otherwise `justify` places it horizontally and
+`align` vertically. Later children are drawn over earlier ones.
+
 ### Style
 
 | Property | |
@@ -140,6 +163,10 @@ Containers lay children out along one axis, like a simplified flexbox.
 | `radius` | corner radius |
 | `color` | text colour (text and pip) |
 | `opacity` | 0..1 for the widget and its children |
+| `scale` | drawing scale about the widget's centre, default 1 |
+| `rotate` | drawing rotation about the widget's centre, in degrees clockwise |
+| `translate` | `{x, y}` drawing offset in pixels |
+| `shadow` | `{x, y, colour}`: a hard copy of the widget's shape, offset behind it; `false` for none |
 | `hover` | a table of style properties used while the pointer is over the widget |
 | `font` | Pango font, e.g. `"Sans SemiBold 9.5"`; default `"Sans Medium 9.5"` |
 | `letter_spacing` | points, default 0.25 |
@@ -148,14 +175,62 @@ Containers lay children out along one axis, like a simplified flexbox.
 
 Colours are `"#RGB"`, `"#RRGGBB"`, `"#RRGGBBAA"` or `{r, g, b, a}` in 0..1.
 
+`scale`, `rotate` and `translate` move only what is drawn; layout and
+hit-testing use the untransformed box.
+
+### Animation
+
+Views return a new tree on every repaint; an animated widget is matched
+with its previous self and springs from its old look to its new one.
+Position and size (relative to the parent, so children ride along with a
+moving parent), `background` (gradients included), `border`, `color`,
+`opacity`, `scale`, `rotate`, `translate` and `shadow` all animate.
+
+| Property | |
+|---|---|
+| `animate` | `true`, a preset (`"smooth"`, `"snappy"`, `"bouncy"`, `"gentle"`) or `{stiffness = n, damping = n}`; `false` turns it off |
+| `enter` | style a new widget starts from, e.g. `{opacity = 0, scale = 0.96, translate = {0, -6}}` |
+| `exit` | style a closing popup's widgets go to before the popup goes away |
+| `key` | identity for matching; by default the `id`, else the parent's key and the child's position |
+
+`enter`, `exit` and `hover` animate with `"smooth"` without `animate`.
+`key` is for widgets that need a stable identity but must not become
+`ctx.hovered` targets, such as a dot that comes and goes inside a pill.
+
+```lua
+shell.row {
+    id = "clock", animate = "snappy",
+    background = open and t.accent_deep or a(WHITE, 0.03),  -- fades
+    enter = { opacity = 0, translate = { 0, -8 } },          -- slides in
+}
+```
+
+While springs move, the shell repaints on every frame from the last tree
+without running the view; when they settle it goes back to repainting only
+on changes.
+
 ### Interaction
 
 | Property | |
 |---|---|
 | `id` | names the widget; `ctx.hovered` reports it when the pointer is over it |
-| `on_click` | `function(button, info)` with `button` = `"left"`, `"right"` or `"middle"` and `info` = `{x, y, width, height, output}` of the widget |
+| `on_click` | `function(button, info)` with `button` = `"left"`, `"right"` or `"middle"` |
+| `on_drag` | `function(info)`: called when the left button goes down on the widget, on every move while it is held (also outside the widget) and once more with `info.done = true` on release |
+| `on_scroll` | `function(dy, dx, info)`: wheel or touchpad scrolling over the widget, in pixels, positive down and right |
 
-The deepest widget with `on_click` under the pointer gets the click.
+`info` holds the widget's box (`x`, `y`, `width`, `height`), the pointer
+inside it (`px`, `py`), the same as 0..1 fractions of its size (`fx`, `fy`,
+clamped) and the `output`. The deepest widget with the handler under the
+pointer gets the event; a left press goes to `on_drag` before `on_click`.
+
+```lua
+shell.stack {
+    width = 200, height = 24,
+    on_drag = function(info) set_volume(info.fx * 100) end,
+    on_scroll = function(dy) set_volume(volume - dy / 2) end,
+    ...
+}
+```
 
 ## Compositor state and actions
 
@@ -193,6 +268,8 @@ Window arguments may also be the window tables themselves.
 | `shell.mix(a, b, t)` | blend two colours |
 | `shell.alpha(colour, a)` | multiply a colour's alpha |
 | `shell.log(...)` | write to the shell's log |
+| `shell.key(keys)` | press a compositor shortcut such as `"Super+t"` (the IPC `key` command); false when not connected |
+| `shell.fonts(dir)` | make the font files in `dir` (relative to the config file) available by family name; call it before the views use them |
 | `shell.data_dir`, `shell.config_path` | where the default UI and your config live |
 
 `shell.poll` and `shell.listen` start their command the first time a view

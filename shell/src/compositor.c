@@ -208,6 +208,19 @@ void shell_compositor_finish(void) {
     link_state.ready = false;
 }
 
+bool shell_compositor_key(const char *keys) {
+    if (!link_state.ready || link_state.fd < 0 || !keys || !*keys || strlen(keys) > 64)
+        return false;
+    /* Shortcut syntax needs no JSON escaping; refuse anything else. */
+    for (const char *c = keys; *c; c++)
+        if (!(*c >= 'a' && *c <= 'z') && !(*c >= 'A' && *c <= 'Z') && !(*c >= '0' && *c <= '9') &&
+                *c != '+' && *c != '_' && *c != '-')
+            return false;
+    char request[128];
+    int n = snprintf(request, sizeof(request), "{\"cmd\":\"key\",\"keys\":\"%s\"}\n", keys);
+    return n > 0 && send(link_state.fd, request, (size_t)n, MSG_NOSIGNAL) == n;
+}
+
 const char *shell_compositor_value(const char *key) {
     if (!link_state.ready || !key) return NULL;
     struct value *v = find(key);

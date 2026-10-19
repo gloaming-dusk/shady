@@ -183,6 +183,9 @@ wayland_client = dependency('wayland-client', required: shell_option)
 cairo = dependency('cairo', required: shell_option)
 pangocairo = dependency('pangocairo', required: shell_option)
 shell_xkbcommon = dependency('xkbcommon', required: shell_option)
+# App fonts for shell.fonts(): fontconfig, and pango's fontconfig font map.
+shell_fontconfig = dependency('fontconfig', required: shell_option)
+shell_pangoft2 = dependency('pangoft2', required: shell_option)
 # GL composition for the shell; without these it renders with wl_shm only.
 shell_egl = dependency('egl', required: false)
 shell_glesv2 = dependency('glesv2', required: false)
@@ -190,7 +193,7 @@ shell_wayland_egl = dependency('wayland-egl', required: false)
 shell_gl_deps_found = shell_egl.found() and shell_glesv2.found() and shell_wayland_egl.found()
 shell_gl_deps = shell_gl_deps_found ? [shell_egl, shell_glesv2, shell_wayland_egl] : []
 wayland_protocols = dependency('wayland-protocols', required: shell_option)
-shell_enabled = wayland_client.found() and cairo.found() and pangocairo.found() and shell_xkbcommon.found() and wayland_protocols.found()
+shell_enabled = wayland_client.found() and cairo.found() and pangocairo.found() and shell_fontconfig.found() and shell_pangoft2.found() and shell_xkbcommon.found() and wayland_protocols.found()
 
 if shell_enabled
   wayland_protocols_dir = wayland_protocols.get_variable(pkgconfig: 'pkgdatadir')
@@ -251,6 +254,7 @@ if shell_enabled
       'shell/src/theme.c',
       'shell/src/apps.c',
       'shell/src/ui.c',
+      'shell/src/anim.c',
       'shell/src/script.c',
       'shell/src/plugins.c',
       'shell/src/compositor.c',
@@ -263,7 +267,7 @@ if shell_enabled
       '-DSHADY_SHELL_PLUGIN_DIR="@0@"'.format(meson.current_build_dir()),
       '-DSHADY_SHELL_PLUGIN_INSTALL_DIR="@0@"'.format(join_paths(get_option('prefix'), get_option('libdir'), 'shady', 'shell-plugins')),
     ],
-    dependencies: [wayland_client, cairo, pangocairo, shell_xkbcommon, lua, dl, cc.find_library('m')] + shell_gl_deps,
+    dependencies: [wayland_client, cairo, pangocairo, shell_pangoft2, shell_fontconfig, shell_xkbcommon, lua, dl, cc.find_library('m')] + shell_gl_deps,
     install: true)
 
   # Native shell plugins (include/shady/shell_plugin.h).
