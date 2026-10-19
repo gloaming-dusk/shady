@@ -174,7 +174,8 @@ static void layer_configure(void *data, struct zwlr_layer_surface_v1 *layer_surf
         uint32_t serial, uint32_t width, uint32_t height) {
     struct shell_surface *surface = data;
     zwlr_layer_surface_v1_ack_configure(layer_surface, serial);
-    if ((width && width != surface->width) || (height && height != surface->height))
+    if (!surface->configured || (width && width != surface->width) ||
+            (height && height != surface->height))
         fprintf(stderr, "shady-shell: %s size %ux%u\n", surface->name,
             width ? width : surface->width, height ? height : surface->height);
     if (width) surface->width = width;
