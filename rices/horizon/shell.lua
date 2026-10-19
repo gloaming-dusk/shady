@@ -278,6 +278,7 @@ local function sync_toasts()
     end
 end
 
+-- The history outlives config reloads, so this also runs once below.
 shell.on("notifications", sync_toasts)
 
 local function activate(n)
@@ -342,6 +343,7 @@ shell.popup {
         }
     end,
 }
+sync_toasts()
 
 -- ---- status: a line of text in the top-right sky -----------------------
 

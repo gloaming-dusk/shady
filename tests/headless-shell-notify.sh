@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # The shell's notification server on a private session bus: Notify returns
 # ids and replaces in place, notifications expire and close, the history
-# reaches Lua, and dismissing or invoking an action emits the spec's
-# signals.
+# reaches Lua, dismissing or invoking an action emits the spec's signals,
+# and a config reload shows notifications that are still active.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
@@ -23,8 +23,26 @@ mkdir -m 700 "$tmp/runtime"
 log="$tmp/log"
 signals="$tmp/signals"
 config="$tmp/shell.lua"
-cat >"$config" <<'LUA'
+write_config() { # write_config <generation>
+    sed "s/@GEN@/$1/" >"$config.new" <<'LUA'
 shell.log("server " .. tostring(shell.notification_server { timeout = 400 }))
+shell.popup {
+    name = "toasts",
+    view = function()
+        shell.log("toasts shown @GEN@")
+        return shell.box { width = 10, height = 10 }
+    end,
+}
+-- The history outlives reloads: sync once now, then on every change.
+local function sync()
+    local any = false
+    for _, n in ipairs(shell.notifications()) do any = any or n.active end
+    if any ~= shell.is_open("toasts") then
+        if any then shell.open("toasts") else shell.close("toasts") end
+    end
+end
+shell.on("notifications", sync)
+sync()
 shell.on("notifications", function()
     local parts = {}
     for _, n in ipairs(shell.notifications()) do
@@ -41,6 +59,9 @@ shell.on("notifications", function()
 end)
 shell.bar { name = "notify-bar", size = 24, view = function() return shell.row {} end }
 LUA
+    mv "$config.new" "$config"
+}
+write_config 1
 
 busctl --user monitor --match "type='signal',interface='org.freedesktop.Notifications'" \
     >"$signals" 2>&1 &
@@ -75,7 +96,7 @@ wait_for() { # wait_for <file> <pattern>
 notify() { # notify <replaces> <summary> <timeout> [action key, label]
     local replaces="$1" summary="$2" timeout="$3"
     shift 3
-    busctl --user call org.freedesktop.Notifications /org/freedesktop/Notifications \
+    busctl --user -- call org.freedesktop.Notifications /org/freedesktop/Notifications \
         org.freedesktop.Notifications Notify susssasa{sv}i \
         test-app "$replaces" "" "$summary" "body text" "$#" "$@" \
         1 urgency y 2 "$timeout"
@@ -104,6 +125,13 @@ wait_for "$log" "4:dismiss me:off"
 info="$(busctl --user call org.freedesktop.Notifications /org/freedesktop/Notifications \
     org.freedesktop.Notifications GetServerInformation)"
 [[ "$info" == *shady-shell* ]] || fail "server information: $info"
+
+# A critical notification stays; after a reload its toast comes back.
+notify 0 "stays" -1 >/dev/null
+wait_for "$log" "toasts shown 1"
+write_config 2
+wait_for "$log" "shady-shell: reloaded"
+wait_for "$log" "toasts shown 2"
 
 # The spec's close reasons: expired (1), dismissed (2), closed by a call (3).
 sleep 0.3

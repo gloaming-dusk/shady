@@ -87,6 +87,9 @@ SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
   nix develop -c bash ./tests/headless-layer-transform.sh
 
 SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
+  nix develop -c bash ./tests/headless-layer-below.sh
+
+SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
   nix develop -c bash ./tests/headless-published-values.sh
 
 SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \

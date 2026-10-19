@@ -645,14 +645,16 @@ local function active_notifications(limit)
     return list
 end
 
-shell.on("notifications", function()
+-- The history outlives config reloads, so this also runs once below.
+local function sync_toasts()
     local want = #active_notifications(1) > 0
     if want and not shell.is_open("objects-toasts") then
         shell.open("objects-toasts")
     elseif not want and shell.is_open("objects-toasts") then
         shell.close("objects-toasts")
     end
-end)
+end
+shell.on("notifications", sync_toasts)
 
 local function activate(n)
     for _, action in ipairs(n.actions) do
@@ -726,6 +728,7 @@ shell.popup {
         }
     end,
 }
+sync_toasts()
 
 -- ---- dock ---------------------------------------------------------------
 
