@@ -138,8 +138,10 @@ bool shady_render_set_layer_transform(struct shady_server *server, const char *n
 }
 
 int shady_render_layer_pick(struct shady_server *server, double lx, double ly,
-		uint32_t lowest, struct wlr_surface **surface, double *sx, double *sy) {
-	(void)server; (void)lx; (void)ly; (void)lowest; (void)surface; (void)sx; (void)sy; return -1;
+		uint32_t lowest, uint32_t highest, struct wlr_surface **surface, double *sx, double *sy) {
+	(void)server; (void)lx; (void)ly; (void)lowest; (void)highest;
+	(void)surface; (void)sx; (void)sy;
+	return -1;
 }
 
 bool shady_render_layer_is_transformed(struct shady_server *server, struct wlr_surface *surface) {

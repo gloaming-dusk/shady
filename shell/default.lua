@@ -329,15 +329,17 @@ local function active_notifications(limit)
     return list
 end
 
--- The toast popup is open exactly while something is on screen.
-shell.on("notifications", function()
+-- The toast popup is open exactly while something is on screen. The
+-- history outlives config reloads, so sync once now as well.
+local function sync_toasts()
     local any = #active_notifications(1) > 0
     if any and not shell.is_open("toasts") then
         shell.open("toasts")
     elseif not any and shell.is_open("toasts") then
         shell.close("toasts")
     end
-end)
+end
+shell.on("notifications", sync_toasts)
 
 -- A click runs the "default" action if there is one, else dismisses.
 local function activate(n)
@@ -408,6 +410,7 @@ shell.popup {
         }
     end,
 }
+sync_toasts()
 
 -- ---- bar ---------------------------------------------------------------
 

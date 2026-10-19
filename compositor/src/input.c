@@ -180,7 +180,7 @@ static bool overlay_surface_at(struct shady_server *server,
 	/* The spatial renderer may draw layer surfaces in 3D: hit-test them all
 	 * in stacking order where they are drawn. */
 	int picked = shady_render_layer_pick(server, lx, ly, ZWLR_LAYER_SHELL_V1_LAYER_TOP,
-		surface, sx, sy);
+		ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY, surface, sx, sy);
 	if (picked >= 0) return picked == 1;
 	if (!scene_hit) return false;
 	*surface = scene_hit;
@@ -202,9 +202,21 @@ static struct shady_toplevel *toplevel_at_cursor(struct shady_server *server,
 	if (overlay_surface_at(server, lx, ly, surface, sx, sy)) return NULL;
 
 	struct shady_toplevel *toplevel = NULL;
-	if (!shady_desktop_state(server)->session_locked && shady_modules_pick_surface(server, lx, ly,
-			surface, sx, sy, &toplevel)) {
-		return toplevel;
+	bool locked = shady_desktop_state(server)->session_locked;
+	/* A spatial pick module answers for the whole world, also with "nothing
+	 * here" (claimed, but no window and no surface). */
+	bool claimed = !locked && shady_modules_pick_surface(server, lx, ly,
+		surface, sx, sy, &toplevel);
+	if (claimed && (toplevel || *surface)) return toplevel;
+	/* Background and bottom layers lie behind the windows: they take the
+	 * pointer where no window is, transformed ones where they are drawn. */
+	if (!locked && shady_render_layer_pick(server, lx, ly, ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND,
+			ZWLR_LAYER_SHELL_V1_LAYER_BOTTOM, surface, sx, sy) == 1) {
+		return NULL;
+	}
+	if (claimed) {
+		*surface = NULL;
+		return NULL;
 	}
 	return desktop_toplevel_at(server, lx, ly, surface, sx, sy);
 }

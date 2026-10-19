@@ -1787,12 +1787,12 @@ static bool layer_plane_for(struct shady_server *server, struct shady_layer_surf
 }
 
 int shady_render_layer_pick(struct shady_server *server, double lx, double ly,
-		uint32_t lowest, struct wlr_surface **surface, double *sx, double *sy) {
+		uint32_t lowest, uint32_t highest, struct wlr_surface **surface, double *sx, double *sy) {
 	struct shady_desktop_state *desktop = shady_desktop_state(server);
 	if (!desktop || !server->config.spatial_mode || desktop->session_locked) return -1;
 	/* The reverse of the drawing order: overlay down to background, and
 	 * newest first within a layer (the list's head). */
-	for (int z = ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY; z >= (int)lowest; z--) {
+	for (int z = (int)highest; z >= (int)lowest; z--) {
 		struct shady_layer_surface *layer;
 		wl_list_for_each(layer, &desktop->layer_surfaces, link) {
 			struct wlr_layer_surface_v1 *ls = layer->layer_surface;
@@ -2240,20 +2240,6 @@ void shady_render_output_frame(
 	plugin_render_hooks_run(server, SHADY_RENDER_STAGE_AFTER_BACKGROUND,
 		output, buf_w, buf_h, logical_w, logical_h, time_seconds);
 
-	/* Background and bottom layer surfaces (a wallpaper, desktop widgets)
-	 * lie flat behind the world, without touching its depth. */
-	{
-		double bx = 0, by = 0;
-		wlr_output_layout_output_coords(server->output_layout, wlr_output, &bx, &by);
-		glDisable(GL_DEPTH_TEST);
-		glDepthMask(GL_FALSE);
-		render_spatial_overlays(server, pass, wlr_output, bx, by, scale,
-			ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND, ZWLR_LAYER_SHELL_V1_LAYER_BOTTOM, false);
-		glDepthMask(GL_TRUE);
-		glEnable(GL_DEPTH_TEST);
-		glDepthFunc(GL_LEQUAL);
-	}
-
 	float view[16];
 	float proj[16];
 	float vp[16];
@@ -2274,6 +2260,21 @@ void shady_render_output_frame(
 
 	shady_environment_sync(server);
 	shady_environment_draw_sky(server);
+
+	/* Background and bottom layer surfaces (a wallpaper, desktop widgets)
+	 * lie flat in front of the sky and behind the world, without touching
+	 * its depth. */
+	{
+		double bx = 0, by = 0;
+		wlr_output_layout_output_coords(server->output_layout, wlr_output, &bx, &by);
+		glDisable(GL_DEPTH_TEST);
+		glDepthMask(GL_FALSE);
+		render_spatial_overlays(server, pass, wlr_output, bx, by, scale,
+			ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND, ZWLR_LAYER_SHELL_V1_LAYER_BOTTOM, false);
+		glDepthMask(GL_TRUE);
+		glEnable(GL_DEPTH_TEST);
+		glDepthFunc(GL_LEQUAL);
+	}
 
 	/*
 	 * Draw a world-space reference plane before windows. Because it shares
