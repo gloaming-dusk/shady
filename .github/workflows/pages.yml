@@ -1,15 +1,21 @@
 name: Deploy website to GitHub Pages
 
+# The site's source is gloaming-dusk/shady-website; it renders this
+# repository's docs/ and rice images. It deploys from here so it stays at
+# https://gloaming-dusk.github.io/shady/. A docs or preview change deploys on
+# push; a shady-website change deploys on the daily run or by running this
+# workflow by hand.
 on:
   push:
     branches: [main]
     paths:
       - ".github/workflows/pages.yml"
-      - "website/**"
       - "docs/**"
       - "rices/afterglow/*.jpg"
       - "rices/afterglow/hero.*"
       - "rices/neon-transit/preview.jpg"
+  schedule:
+    - cron: "17 3 * * *"
   workflow_dispatch:
 
 permissions:
@@ -25,8 +31,15 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout the website
         uses: actions/checkout@v4
+        with:
+          repository: gloaming-dusk/shady-website
+
+      - name: Checkout Shady
+        uses: actions/checkout@v4
+        with:
+          path: shady
 
       - name: Configure Pages
         id: pages
@@ -37,18 +50,15 @@ jobs:
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: website/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - name: Install dependencies
-        working-directory: website
         run: npm ci
 
       - name: Check Astro site
-        working-directory: website
         run: npm run check
 
       - name: Build static site
-        working-directory: website
         env:
           SITE_URL: ${{ steps.pages.outputs.base_url }}
         run: npm run build
@@ -63,7 +73,7 @@ jobs:
           from pathlib import Path
 
           base = os.environ["BASE_PATH"].rstrip("/")
-          root = Path("website/dist")
+          root = Path("dist")
 
           for path in root.rglob("*"):
               if not path.is_file():
@@ -84,7 +94,7 @@ jobs:
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v4
         with:
-          path: website/dist
+          path: dist
 
   deploy:
     environment:

@@ -23,21 +23,15 @@ The project is intentionally experimental. The imported TinyWL example is CC0; s
 - [Shell design](docs/SHELL_DESIGN.md)
 - [Greeter](docs/GREETER.md)
 
-## Website
+## Related repositories
 
-The project website lives in `website/` and is built with Astro. Its documentation
-routes read the existing `docs/*.md` files directly, so the repository and website
-share one documentation source.
-
-```sh
-nix develop
-cd website
-npm ci
-npm run dev
-```
-
-Use `npm run check` for Astro diagnostics and `npm run build` for the static
-production output in `website/dist/`.
+- [shady-website](https://github.com/gloaming-dusk/shady-website): the project
+  site at <https://gloaming-dusk.github.io/shady/>, built with Astro. It renders
+  the `docs/*.md` files of this repository directly, so the repository and the
+  site share one documentation source. `.github/workflows/pages.yml` here
+  builds and deploys it.
+- [gloam](https://github.com/gloaming-dusk/gloam): Gloam, the NixOS-based
+  distribution (live ISO) built on this flake's NixOS module.
 
 ## Highlights
 
@@ -548,11 +542,10 @@ rices/                complete looks: Afterglow, Neon Transit; archive/
 examples/             small plugins and configs to start from
 data/                 session and greeter launchers, wayland-sessions entries
 nix/                  Nix package, NixOS module and VM tests
-distro/               Gloam, the NixOS-based distribution (live ISO)
 tests/                unit and headless tests
 tools/                build, run and regression scripts
 assets/               development environments, sky images, media
-docs/, website/       documentation and the project site
+docs/                 documentation, also rendered by the project site
 ```
 
 Installed data under `share/shady` mirrors this tree (`compositor/shaders`,

@@ -1,7 +1,7 @@
 {
   description = "Shady, an experimental 3D Wayland compositor";
 
-  # Gloam follows the latest NixOS stable release.
+  # Shady follows the latest NixOS stable release; Gloam follows this input.
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
 
   outputs = { self, nixpkgs, ... }:
@@ -25,11 +25,6 @@
         default = shady;
       };
 
-      nixosConfigurations.gloam-live = nixpkgs.lib.nixosSystem {
-        system = "x86_64-linux";
-        modules = [ (import ./distro/iso.nix self) ];
-      };
-
       checks = nixpkgs.lib.genAttrs [ "x86_64-linux" ] (system: {
         session = nixpkgs.legacyPackages.${system}.testers.runNixOSTest (import ./nix/tests/session.nix self);
         greeter = nixpkgs.legacyPackages.${system}.testers.runNixOSTest (import ./nix/tests/greeter.nix self);
@@ -46,7 +41,7 @@
             mesa libglvnd libffi libxau libxdmcp lua5_4
             cairo cairo.dev pango pango.dev
           ]);
-          packages = with pkgs; [ stdenv.cc gdb foot seatd wlr-randr grim wtype nodejs ];
+          packages = with pkgs; [ stdenv.cc gdb foot seatd wlr-randr grim wtype ];
           shellHook = ''
             export PKG_CONFIG_PATH=${pkgs.cairo.dev}/lib/pkgconfig:${pkgs.pango.dev}/lib/pkgconfig:${pkgs.wlr-protocols}/share/pkgconfig:$PKG_CONFIG_PATH
           '';
