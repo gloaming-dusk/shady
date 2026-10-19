@@ -13,6 +13,7 @@
 
 #include "shady-shell-v1-client-protocol.h"
 #include "compositor.h"
+#include "notify.h"
 #include "plugins.h"
 #include "script.h"
 #include "shell.h"
@@ -202,6 +203,7 @@ int main(void) {
     status = shell_core_run(&shell.core) < 0 ? 1 : 0;
 
 out:
+    shell_notify_finish();
     shell_lua_finish(&shell);
     shell_plugins_finish();
     shell_compositor_finish();

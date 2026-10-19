@@ -24,6 +24,7 @@
 #include "shady-shell-v1-client-protocol.h"
 #include "anim.h"
 #include "compositor.h"
+#include "notify.h"
 #include "plugins.h"
 #include "render.h"
 #include "shell.h"
@@ -1374,6 +1375,75 @@ static int l_fonts(lua_State *L) {
     return 1;
 }
 
+/* ---- notifications ---------------------------------------------------- */
+
+/* shell.notification_server{timeout = ms}: serve org.freedesktop.Notifications. */
+static int l_notification_server(lua_State *L) {
+    int timeout = 0;
+    if (lua_istable(L, 1)) {
+        lua_getfield(L, 1, "timeout");
+        timeout = (int)luaL_optinteger(L, -1, 0);
+        lua_pop(L, 1);
+    }
+    lua_pushboolean(L, shell_notify_serve(lua_of(L)->shell, timeout));
+    return 1;
+}
+
+static int l_notifications(lua_State *L) {
+    static const char *const urgency[] = { "low", "normal", "critical" };
+    size_t count = shell_notify_count();
+    lua_createtable(L, (int)count, 0);
+    for (size_t i = 0; i < count; i++) {
+        const struct shell_notification *n = shell_notify_at(i);
+        lua_createtable(L, 0, 10);
+        lua_pushinteger(L, n->id);
+        lua_setfield(L, -2, "id");
+        lua_pushstring(L, n->app);
+        lua_setfield(L, -2, "app");
+        lua_pushstring(L, n->summary);
+        lua_setfield(L, -2, "summary");
+        lua_pushstring(L, n->body);
+        lua_setfield(L, -2, "body");
+        lua_pushstring(L, n->icon);
+        lua_setfield(L, -2, "icon");
+        lua_pushstring(L, urgency[n->urgency]);
+        lua_setfield(L, -2, "urgency");
+        lua_pushinteger(L, n->time);
+        lua_setfield(L, -2, "time");
+        lua_pushboolean(L, n->active);
+        lua_setfield(L, -2, "active");
+        lua_createtable(L, (int)n->action_count, 0);
+        for (size_t a = 0; a < n->action_count; a++) {
+            lua_createtable(L, 0, 2);
+            lua_pushstring(L, n->action_keys[a]);
+            lua_setfield(L, -2, "key");
+            lua_pushstring(L, n->action_labels[a]);
+            lua_setfield(L, -2, "label");
+            lua_rawseti(L, -2, (lua_Integer)a + 1);
+        }
+        lua_setfield(L, -2, "actions");
+        lua_rawseti(L, -2, (lua_Integer)i + 1);
+    }
+    return 1;
+}
+
+static int l_dismiss_notification(lua_State *L) {
+    lua_pushboolean(L, shell_notify_dismiss((uint32_t)luaL_checkinteger(L, 1)));
+    return 1;
+}
+
+static int l_invoke_notification(lua_State *L) {
+    lua_pushboolean(L, shell_notify_invoke((uint32_t)luaL_checkinteger(L, 1),
+        luaL_checkstring(L, 2)));
+    return 1;
+}
+
+static int l_clear_notifications(lua_State *L) {
+    (void)L;
+    shell_notify_clear();
+    return 0;
+}
+
 static int l_key(lua_State *L) {
     lua_pushboolean(L, shell_compositor_key(luaL_checkstring(L, 1)));
     return 1;
@@ -1491,6 +1561,11 @@ static const luaL_Reg api[] = {
     { "redraw", l_redraw },
     { "fonts", l_fonts },
     { "key", l_key },
+    { "notification_server", l_notification_server },
+    { "notifications", l_notifications },
+    { "dismiss_notification", l_dismiss_notification },
+    { "invoke_notification", l_invoke_notification },
+    { "clear_notifications", l_clear_notifications },
     { "on", l_on },
     { "workspaces", l_workspaces },
     { "active_workspace", l_active_workspace },

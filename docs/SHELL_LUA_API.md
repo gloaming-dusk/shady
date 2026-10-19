@@ -129,7 +129,7 @@ Widgets are tables; these constructors fill in `type`:
 |---|---|
 | `shell.row{...}` / `shell.column{...}` / `shell.box{...}` | Container; its array part holds children. `box` is a row unless `direction = "column"`. |
 | `shell.stack{...}` | Container whose children all lie over the same area (see Layout). |
-| `shell.icon(name, {size=, stroke=, color=})` | A built-in line icon: `wifi`, `volume`, `mute`, `bluetooth`, `moon`, `sun`, `capture`, `play`, `pause`, `next`, `previous`, `battery`, `search`, `power`, `grid`, `plus`, `close`, `sliders`, `lock`, `music`, `check`. `size` defaults to 16, `stroke` to 2 (in a 24-unit box). |
+| `shell.icon(name, {size=, stroke=, color=})` | A built-in line icon: `wifi`, `volume`, `mute`, `bluetooth`, `moon`, `sun`, `capture`, `play`, `pause`, `next`, `previous`, `battery`, `search`, `power`, `grid`, `plus`, `close`, `sliders`, `lock`, `music`, `check`, `bell`. `size` defaults to 16, `stroke` to 2 (in a 24-unit box). |
 | `shell.text(text, {...})` | A line of text. |
 | `shell.pip{radius=, lit=}` | The focus dot: a glowing dot when lit, a faint ring otherwise. |
 | `shell.image{path=, width=, height=}` | A PNG. |
@@ -290,6 +290,37 @@ local volume = shell.poll("wpctl get-volume @DEFAULT_AUDIO_SINK@", 2000)
 local battery = shell.poll("cat /sys/class/power_supply/BAT0/capacity", 30000)
 ```
 
+## Notifications
+
+The shell can be the desktop's notification server
+(`org.freedesktop.Notifications`, spec 1.2, over sd-bus). A config asks for
+it; it keeps running across reloads. If another daemon owns the name, it
+returns false and the shell leaves that daemon alone.
+
+| Function | |
+|---|---|
+| `shell.notification_server{timeout = ms}` | serve notifications; `timeout` (default 5000) applies when a client asks for the server's default. Critical ones without a timeout stay until dismissed. |
+| `shell.notifications()` | the history, newest first (at most 50): `{id, app, summary, body, icon, urgency, time, active, actions}`, `urgency` being `"low"`, `"normal"` or `"critical"`, `time` seconds since the epoch, `actions` a list of `{key, label}` |
+| `shell.dismiss_notification(id)` | close it as dismissed by the user |
+| `shell.invoke_notification(id, key)` | tell its client the action was chosen, then dismiss it; by convention `"default"` is a click on the notification itself |
+| `shell.clear_notifications()` | forget the history, closing the active ones |
+
+Every change (one arrives, expires, closes or is replaced) emits the
+`notifications` event and repaints the views. Active notifications are the
+ones to show as toasts; the default UI opens a `toasts` popup while there
+are any:
+
+```lua
+shell.notification_server()
+shell.on("notifications", function()
+    local any = false
+    for _, n in ipairs(shell.notifications()) do any = any or n.active end
+    if any ~= shell.is_open("toasts") then
+        if any then shell.open("toasts") else shell.close("toasts") end
+    end
+end)
+```
+
 ## Events
 
 `shell.on(name, fn)` registers a handler:
@@ -298,6 +329,7 @@ local battery = shell.poll("cat /sys/class/power_supply/BAT0/capacity", 30000)
 |---|---|
 | `"launcher"` | the compositor asked for the launcher (`shady.toggle_launcher()`), or the shell started with `SHADY_SHELL_OPEN_LAUNCHER=1` |
 | `"change"` | the compositor's workspaces or windows changed |
+| `"notifications"` | a notification arrived, expired, closed or was replaced (see Notifications) |
 
 ## Shader effects
 
