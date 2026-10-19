@@ -50,6 +50,13 @@ local function hash(s)
     return h
 end
 
+local function ago(seconds)
+    if seconds < 60 then return "now" end
+    if seconds < 3600 then return (seconds // 60) .. "m" end
+    if seconds < 86400 then return (seconds // 3600) .. "h" end
+    return (seconds // 86400) .. "d"
+end
+
 local function initial(s)
     return ((s or ""):match("^[%z\1-\127\194-\244][\128-\191]*") or "?"):upper()
 end
@@ -448,6 +455,37 @@ local function media_card()
     }
 end
 
+-- The last few notifications, newest first, with a button to clear them.
+local function notification_shelf()
+    local list = shell.notifications()
+    if #list == 0 then return false end
+    local rows = {}
+    for i = 1, math.min(3, #list) do
+        local n = list[i]
+        rows[#rows + 1] = shell.row {
+            gap = 10, align = "center", opacity = n.active and 1 or 0.7,
+            shell.icon("bell", { size = 16, color = INK, stroke = 2.4 }),
+            text(n.summary ~= "" and n.summary or n.app, { font = font("Bold", 13), max_width = 230 }),
+            shell.spacer(),
+            text(ago(os.time() - n.time), { font = font("Medium", 11), color = a(INK, 0.6) }),
+        }
+    end
+    return shell.column {
+        gap = 8, align = "stretch",
+        shell.row {
+            align = "center",
+            text("Notifications", { font = font("ExtraBold", 14) }),
+            shell.spacer(),
+            shell.row(lift({
+                id = "c:clear", radius = 10, padding = { 4, 10 }, background = BUTTER,
+                on_click = function() shell.clear_notifications() end,
+                text("Clear", { font = font("Bold", 12) }),
+            }, 3)),
+        },
+        rows,
+    }
+end
+
 local control_output
 
 local function toggle_control(output)
@@ -514,6 +552,7 @@ shell.popup {
                     end),
                 },
                 media_card(),
+                notification_shelf(),
                 shell.row {
                     gap = 10, align = "center",
                     battery and shell.row(chunky({
@@ -590,6 +629,100 @@ shell.popup {
                 exit = { translate = { 0, 30 }, opacity = 0, scale = 0.94 },
                 rows,
             }, 6)),
+        }
+    end,
+}
+
+-- ---- notifications: stickers slapped on the top-right corner ------------
+
+shell.notification_server()
+
+local function active_notifications(limit)
+    local list = {}
+    for _, n in ipairs(shell.notifications()) do
+        if n.active and #list < limit then list[#list + 1] = n end
+    end
+    return list
+end
+
+shell.on("notifications", function()
+    local want = #active_notifications(1) > 0
+    if want and not shell.is_open("objects-toasts") then
+        shell.open("objects-toasts")
+    elseif not want and shell.is_open("objects-toasts") then
+        shell.close("objects-toasts")
+    end
+end)
+
+local function activate(n)
+    for _, action in ipairs(n.actions) do
+        if action.key == "default" then
+            shell.invoke_notification(n.id, "default")
+            return
+        end
+    end
+    shell.dismiss_notification(n.id)
+end
+
+local function sticker(n, index)
+    local critical = n.urgency == "critical"
+    local name = n.app ~= "" and n.app or "?"
+    local tilt = index % 2 == 1 and -1.5 or 1.5
+    local actions = {}
+    for _, action in ipairs(n.actions) do
+        if action.key ~= "default" and action.label ~= "" then
+            actions[#actions + 1] = shell.row(lift({
+                id = "toast:" .. n.id .. ":" .. action.key, radius = 10, padding = { 5, 12 },
+                background = critical and CREAM or BUTTER,
+                on_click = function() shell.invoke_notification(n.id, action.key) end,
+                text(action.label, { font = font("Bold", 12) }),
+            }, 3))
+        end
+    end
+    return shell.column(chunky({
+        key = "toast:" .. n.id, id = "toast:" .. n.id, width = 330, radius = 20,
+        padding = { 14, 14, 14, 14 }, gap = 10, align = "stretch",
+        background = critical and ORANGE or CREAM, rotate = tilt,
+        animate = "bouncy", enter = { translate = { 120, -20 }, rotate = 14, opacity = 0 },
+        hover = { rotate = 0, translate = { -2, -2 }, shadow = { 8, 8, INK } },
+        on_click = function() activate(n) end,
+        shell.row {
+            gap = 12, align = "start",
+            shell.row {
+                width = 40, height = 40, radius = 20, justify = "center",
+                background = CARDS[hash(name) % #CARDS + 1], border = INK, border_width = 3,
+                text(initial(name), { font = font("ExtraBold", 17) }),
+            },
+            shell.column {
+                grow = 1, shrink = 1, align = "start", gap = 2,
+                text(name, { font = font("Bold", 11), color = a(INK, 0.65) }),
+                text(n.summary, { font = font("ExtraBold", 15), max_width = 220 }),
+                n.body ~= "" and text(n.body, { font = font("Medium", 12), max_width = 220 }) or false,
+            },
+            shell.row {
+                id = "toast:" .. n.id .. ":close", width = 26, height = 26, radius = 13, justify = "center",
+                background = INK, animate = "snappy", hover = { scale = 1.12 },
+                on_click = function() shell.dismiss_notification(n.id) end,
+                shell.icon("close", { size = 12, color = CREAM, stroke = 3 }),
+            },
+        },
+        #actions > 0 and shell.row { gap = 8, padding = { 0, 0, 0, 52 }, actions } or false,
+    }, 6))
+end
+
+shell.popup {
+    name = "objects-toasts",
+    anchor = { "top", "right" },
+    margin = { top = 20, right = 18 },
+    view = function()
+        -- The control center lists them itself; step out of its way.
+        if shell.is_open("control") then return shell.box { width = 1, height = 1 } end
+        local cards = {}
+        for i, n in ipairs(active_notifications(4)) do cards[#cards + 1] = sticker(n, i) end
+        return shell.column {
+            gap = 14, align = "end", padding = { 10, 18, 18, 10 },
+            exit = { opacity = 0, translate = { 80, 0 } }, animate = "snappy",
+            cards,
         }
     end,
 }

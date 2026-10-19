@@ -13,6 +13,8 @@ object with a thick ink outline and a hard offset shadow:
 - a launcher that fans the matching applications out like a hand of cards,
   the best match in the middle (type to filter, ← → to choose, ↵ to launch),
 - a window menu on right-clicking an avatar (middle-click closes).
+- notifications as stickers slapped on the top-right corner (critical ones
+  in tangerine), with their actions; the control center keeps the last few.
 
 ```bash
 nix develop -c ./tools/build.sh

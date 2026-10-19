@@ -316,6 +316,99 @@ local function open_menu(window, info)
         window = window.id })
 end
 
+-- ---- notifications -----------------------------------------------------
+
+-- Serve org.freedesktop.Notifications unless another daemon already does.
+shell.notification_server()
+
+local function active_notifications(limit)
+    local list = {}
+    for _, n in ipairs(shell.notifications()) do
+        if n.active and #list < limit then list[#list + 1] = n end
+    end
+    return list
+end
+
+-- The toast popup is open exactly while something is on screen.
+shell.on("notifications", function()
+    local any = #active_notifications(1) > 0
+    if any and not shell.is_open("toasts") then
+        shell.open("toasts")
+    elseif not any and shell.is_open("toasts") then
+        shell.close("toasts")
+    end
+end)
+
+-- A click runs the "default" action if there is one, else dismisses.
+local function activate(n)
+    for _, action in ipairs(n.actions) do
+        if action.key == "default" then
+            shell.invoke_notification(n.id, "default")
+            return
+        end
+    end
+    shell.dismiss_notification(n.id)
+end
+
+local function toast(ctx, n)
+    local id = "toast:" .. n.id
+    local critical = n.urgency == "critical"
+    local buttons = {}
+    for _, action in ipairs(n.actions) do
+        if action.key ~= "default" and action.label ~= "" then
+            local bid = id .. ":" .. action.key
+            buttons[#buttons + 1] = shell.row {
+                id = bid, height = 24, radius = 7, padding = { 0, 10 }, animate = "snappy",
+                background = ctx.hovered == bid and t.accent_deep or a(WHITE, 0.06),
+                border = a(t.accent, ctx.hovered == bid and 0.4 or 0.15),
+                on_click = function() shell.invoke_notification(n.id, action.key) end,
+                shell.text(action.label, { font = "Sans SemiBold 8.5" }),
+            }
+        end
+    end
+    local card = panel(12, {
+        key = id, width = 340, padding = { 0, 0, 12, 0 },
+        shell.row {
+            id = id, padding = { 10, 12, 0, 14 }, gap = 11, align = "start",
+            on_click = function() activate(n) end,
+            badge(30, 9, 11),
+            shell.column {
+                grow = 1, shrink = 1, align = "start", gap = 3,
+                shell.text(n.app ~= "" and n.app or "Notification",
+                    { font = "Sans 8", color = a(t.text_dim, 0.9) }),
+                shell.text(n.summary, { font = "Sans SemiBold 10", max_width = 250 }),
+                n.body ~= "" and shell.text(n.body,
+                    { font = "Sans 9", color = a(t.text, 0.78), max_width = 250 }) or false,
+            },
+            shell.row {
+                id = id .. ":close", width = 20, height = 20, radius = 6, justify = "center",
+                background = ctx.hovered == id .. ":close" and a(WHITE, 0.1) or nil,
+                on_click = function() shell.dismiss_notification(n.id) end,
+                shell.text("×", { font = "Sans 11", color = t.text_dim }),
+            },
+        },
+        #buttons > 0 and shell.row { padding = { 8, 14, 0, 55 }, gap = 6, buttons } or false,
+    })
+    card.enter, card.exit = { opacity = 0, translate = { 24, 0 } }, nil
+    if critical then card.border = a(t.danger, 0.6) end
+    return card
+end
+
+shell.popup {
+    name = "toasts",
+    anchor = { "top", "right" },
+    margin = { top = BAR + 6, right = 8 },
+    view = function(ctx)
+        local cards = {}
+        for _, n in ipairs(active_notifications(4)) do cards[#cards + 1] = toast(ctx, n) end
+        return shell.column {
+            gap = 8, align = "stretch", padding = { 0, 0, 4, 0 },
+            exit = { opacity = 0, translate = { 24, 0 } }, animate = "snappy",
+            cards,
+        }
+    end,
+}
+
 -- ---- bar ---------------------------------------------------------------
 
 local function workspaces(ctx)
