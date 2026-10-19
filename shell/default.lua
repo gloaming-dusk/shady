@@ -101,6 +101,7 @@ shell.popup {
     name = "launcher",
     width = 680, height = 580,
     keyboard = "exclusive",
+    text_input = true, -- input methods (e.g. Hangul) type into the search
     view = function(ctx)
         local apps = matches()
         if launcher.selected > #apps then launcher.selected = math.max(#apps, 1) end
@@ -140,11 +141,17 @@ shell.popup {
             }
         end
 
-        local query = launcher.search ~= "" and shell.row {
+        -- What an input method is still composing shows in the accent colour.
+        local preedit = ctx.preedit or ""
+        local query = (launcher.search ~= "" or preedit ~= "") and shell.row {
             gap = 2,
             shell.text(launcher.search, { font = "Sans SemiBold 10" }),
-            shell.box { width = 1.5, height = 20, background = a(t.accent, 0.9) },
-        } or shell.text("Search applications…", { font = "Sans 10", color = a(t.text_dim, 0.75) })
+            preedit ~= "" and shell.text(preedit, { font = "Sans SemiBold 10", color = t.accent }) or false,
+            shell.box { width = 1.5, height = 20, background = a(t.accent, 0.9), caret = true },
+        } or shell.row {
+            shell.box { width = 0, height = 20, caret = true },
+            shell.text("Search applications…", { font = "Sans 10", color = a(t.text_dim, 0.75) }),
+        }
 
         return panel(18, {
             width = 680, height = 580,
@@ -379,8 +386,8 @@ local function toast(ctx, n)
                 shell.text(n.app ~= "" and n.app or "Notification",
                     { font = "Sans 8", color = a(t.text_dim, 0.9) }),
                 shell.text(n.summary, { font = "Sans SemiBold 10", max_width = 250 }),
-                n.body ~= "" and shell.text(n.body,
-                    { font = "Sans 9", color = a(t.text, 0.78), max_width = 250 }) or false,
+                n.body ~= "" and shell.text(n.body, { font = "Sans 9", color = a(t.text, 0.78),
+                    max_width = 250, wrap = true, max_lines = 3 }) or false,
             },
             shell.row {
                 id = id .. ":close", width = 20, height = 20, radius = 6, justify = "center",
