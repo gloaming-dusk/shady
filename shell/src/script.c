@@ -387,13 +387,15 @@ static void view_draw(void *data, struct shell_surface *surface, cairo_t *cr,
             return;
         }
         ui_measure(cr, tree, &defaults);
+        /* Text narrowed by layout may wrap onto more lines and measure again,
+         * so popups size themselves from the result. */
+        ui_arrange(cr, tree, &defaults, 0, 0, width, height);
         if (view->def->popup && !view->def->fill) {
             /* Popups without a fixed size follow their content. */
             uint32_t want_w = view->def->width ? view->def->width : (uint32_t)ceil(tree->nat_w);
             uint32_t want_h = view->def->height ? view->def->height : (uint32_t)ceil(tree->nat_h);
             if (want_w && want_h) shell_surface_set_size(surface, want_w, want_h);
         }
-        ui_layout(cr, tree, 0, 0, width, height);
         view->tree = tree;
         if (view->pointer_in) view->hovered = ui_hit(tree, view->px, view->py, false);
     }

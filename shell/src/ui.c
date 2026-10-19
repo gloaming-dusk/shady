@@ -656,6 +656,8 @@ void ui_measure(cairo_t *cr, struct ui_node *node, const struct ui_defaults *def
         }
         pango_layout_set_text(node->layout, node->text ? node->text : "", -1);
         double wrap_at = node->width >= 0 ? node->width : node->max_width;
+        if (node->wrap_limit > 0 && (wrap_at <= 0 || node->wrap_limit < wrap_at))
+            wrap_at = node->wrap_limit;
         node->wrap_width = 0;
         if (node->wrap && wrap_at > 0) {
             pango_layout_set_alignment(node->layout, node->text_align < 0.25 ? PANGO_ALIGN_LEFT
@@ -735,6 +737,7 @@ void ui_measure(cairo_t *cr, struct ui_node *node, const struct ui_defaults *def
 }
 
 static void set_rect(cairo_t *cr, struct ui_node *node, double x, double y, double w, double h);
+static bool layout_fits; /* see ui_layout */
 
 /* One axis of a stack child: pinned to one edge, stretched between both,
  * or placed by `align`. */
@@ -855,8 +858,17 @@ static void set_rect(cairo_t *cr, struct ui_node *node, double x, double y, doub
     node->h = h;
     node->hidden = false;
     if (node->kind == UI_NODE_TEXT && node->layout && node->wrap_width > 0) {
-        /* Narrower than asked: wrap at the width there is. */
-        if (w + 0.5 < node->wrap_width) pango_layout_set_width(node->layout, (int)(w * PANGO_SCALE));
+        /* Narrower than measured: wrap at the width there is, and ask for
+         * another pass if that takes more lines than the height holds. */
+        if (w + 0.5 < node->wrap_width) {
+            pango_layout_set_width(node->layout, (int)(w * PANGO_SCALE));
+            int pw = 0, ph = 0;
+            pango_layout_get_pixel_size(node->layout, &pw, &ph);
+            if (ph > h + 0.5) {
+                node->wrap_limit = w;
+                layout_fits = false;
+            }
+        }
     } else if (node->kind == UI_NODE_TEXT && node->layout && node->ellipsize && w + 0.5 < node->nat_w) {
         pango_layout_set_ellipsize(node->layout, PANGO_ELLIPSIZE_END);
         pango_layout_set_width(node->layout, (int)(w * PANGO_SCALE));
@@ -864,8 +876,20 @@ static void set_rect(cairo_t *cr, struct ui_node *node, double x, double y, doub
     if (node->kind == UI_NODE_BOX) layout_box(cr, node);
 }
 
-void ui_layout(cairo_t *cr, struct ui_node *node, double x, double y, double w, double h) {
+bool ui_layout(cairo_t *cr, struct ui_node *node, double x, double y, double w, double h) {
+    layout_fits = true;
     set_rect(cr, node, x, y, w, h);
+    return layout_fits;
+}
+
+void ui_arrange(cairo_t *cr, struct ui_node *node, const struct ui_defaults *defaults,
+        double x, double y, double w, double h) {
+    /* Each extra pass only narrows wrapped text further; three settle any
+     * realistic nesting. */
+    for (int pass = 0; pass < 3; pass++) {
+        if (pass > 0) ui_measure(cr, node, defaults);
+        if (ui_layout(cr, node, x, y, w, h)) return;
+    }
 }
 
 /* ---- drawing ---------------------------------------------------------- */

@@ -120,6 +120,7 @@ struct ui_node {
     bool wrap; /* break into lines at max_width (or width) */
     int max_lines; /* with wrap: ellipsize after this many; 0 for no limit */
     double wrap_width; /* the width the text wraps at; 0 when it is one line */
+    double wrap_limit; /* narrower width layout gave it; the next measure wraps there */
     PangoLayout *layout;
 
     double pip_radius;
@@ -164,9 +165,14 @@ struct ui_defaults {
 struct ui_node *ui_build(lua_State *L, int index, char *error, size_t error_size);
 void ui_free(lua_State *L, struct ui_node *node);
 
-/* Natural size of the tree, then positions within (x, y, w, h). */
+/* Natural size of the tree, then positions within (x, y, w, h). ui_layout
+ * returns false when wrapped text got narrower than it was measured at and
+ * needs more lines than its height holds: measure and lay out again (the
+ * nodes remember the narrower width). ui_arrange does both, a few times. */
 void ui_measure(cairo_t *cr, struct ui_node *node, const struct ui_defaults *defaults);
-void ui_layout(cairo_t *cr, struct ui_node *node, double x, double y, double w, double h);
+bool ui_layout(cairo_t *cr, struct ui_node *node, double x, double y, double w, double h);
+void ui_arrange(cairo_t *cr, struct ui_node *node, const struct ui_defaults *defaults,
+    double x, double y, double w, double h);
 /* The node's style with `hover` applied when it is the hovered node. */
 void ui_resolve_style(const struct ui_node *node, const struct ui_node *hovered,
     struct ui_style *out);
