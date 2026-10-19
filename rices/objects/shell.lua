@@ -125,6 +125,7 @@ shell.popup {
     layer = "background",
     fill = true,
     persistent = true,
+    outputs = "all",
     view = function(ctx)
         local w, h = ctx.width, ctx.height
         local sun = math.floor(h * 0.47)
@@ -164,6 +165,7 @@ shell.popup {
     anchor = { "top", "left" },
     margin = { top = 40, left = 44 },
     persistent = true,
+    outputs = "all",
     view = function()
         return shell.column {
             padding = { 4, 14, 16, 4 }, gap = 16, align = "start",
@@ -684,6 +686,7 @@ shell.popup {
     margin = { bottom = 14 },
     layer = "top",
     persistent = true,
+    outputs = "all",
     exclusive = 84,
     view = function(ctx)
         return shell.row {
