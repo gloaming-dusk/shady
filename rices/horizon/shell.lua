@@ -322,6 +322,7 @@ local function sky_note(ctx, n)
         text(n.summary, { font = serif(22), max_width = 300, text_align = 1 }),
         n.body ~= "" and text(n.body, {
             font = sans("Medium", 9.5), color = a(c.text, 0.8), max_width = 300, text_align = 1,
+            wrap = true, max_lines = 3,
         }) or false,
         #actions > 0 and shell.row { gap = 8, padding = { 6, 0, 0, 0 }, actions } or false,
     }
@@ -676,6 +677,7 @@ shell.popup {
     name = "horizon-launcher",
     fill = true,
     keyboard = "exclusive",
+    text_input = true,
     view = function(ctx)
         local w, h = ctx.width, ctx.height
         local hy = math.floor(h * HORIZON)
@@ -727,7 +729,8 @@ shell.popup {
             shell.row {
                 gap = 4, align = "center", height = 64,
                 text(sky.query, { font = serif(54) }),
-                shell.box { width = 2, height = 50, background = c.accent },
+                ctx.preedit and text(ctx.preedit, { font = SERIF_ITALIC .. " 54", color = c.accent }) or false,
+                shell.box { width = 2, height = 50, background = c.accent, caret = true },
             },
         }
         local hints = {}

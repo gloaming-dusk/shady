@@ -278,6 +278,7 @@ shell.popup {
     name = "launcher",
     fill = true,
     keyboard = "exclusive",
+    text_input = true,
     view = function(ctx)
         local apps = deck_apps()
         if rank_of(deck.slot) > #apps then deck.slot = 0 end
@@ -295,11 +296,15 @@ shell.popup {
                 animate = "bouncy", enter = { translate = { 0, -200 }, rotate = -15 },
                 exit = { translate = { 0, -200 }, opacity = 0 },
                 shell.icon("search", { size = 26, color = INK, stroke = 2.8 }),
-                deck.query ~= "" and shell.row {
+                (deck.query ~= "" or ctx.preedit) and shell.row {
                     gap = 3, align = "center",
                     text(deck.query, { font = font("ExtraBold", 34) }),
-                    shell.box { width = 4, height = 34, radius = 2, background = ORANGE },
-                } or text("Pick a card", { font = font("Bold", 26), color = a(INK, 0.6) }),
+                    ctx.preedit and text(ctx.preedit, { font = font("ExtraBold", 34), color = ORANGE }) or false,
+                    shell.box { width = 4, height = 34, radius = 2, background = ORANGE, caret = true },
+                } or shell.row {
+                    shell.box { width = 0, height = 30, caret = true },
+                    text("Pick a card", { font = font("Bold", 26), color = a(INK, 0.6) }),
+                },
             }, 6)),
         }
         if #apps == 0 then
@@ -699,7 +704,9 @@ local function sticker(n, index)
                 grow = 1, shrink = 1, align = "start", gap = 2,
                 text(name, { font = font("Bold", 11), color = a(INK, 0.65) }),
                 text(n.summary, { font = font("ExtraBold", 15), max_width = 220 }),
-                n.body ~= "" and text(n.body, { font = font("Medium", 12), max_width = 220 }) or false,
+                n.body ~= "" and text(n.body, {
+                    font = font("Medium", 12), max_width = 220, wrap = true, max_lines = 3,
+                }) or false,
             },
             shell.row {
                 id = "toast:" .. n.id .. ":close", width = 26, height = 26, radius = 13, justify = "center",
