@@ -11,9 +11,9 @@ on:
     paths:
       - ".github/workflows/pages.yml"
       - "docs/**"
+      - "rices/*/preview.jpg"
       - "rices/afterglow/*.jpg"
       - "rices/afterglow/hero.*"
-      - "rices/neon-transit/preview.jpg"
   schedule:
     - cron: "17 3 * * *"
   workflow_dispatch:

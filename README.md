@@ -23,15 +23,25 @@ The project is intentionally experimental. The imported TinyWL example is CC0; s
 - [Shell design](docs/SHELL_DESIGN.md)
 - [Greeter](docs/GREETER.md)
 
-## Related repositories
+## What this repository holds
 
-- [shady-website](https://github.com/gloaming-dusk/shady-website): the project
-  site at <https://gloaming-dusk.github.io/shady/>, built with Astro. It renders
-  the `docs/*.md` files of this repository directly, so the repository and the
-  site share one documentation source. `.github/workflows/pages.yml` here
-  builds and deploys it.
-- [gloam](https://github.com/gloaming-dusk/gloam): Gloam, the NixOS-based
-  distribution (live ISO) built on this flake's NixOS module.
+Two programs and what they need to make a desktop:
+
+- `shady`, the compositor (`compositor/`, `plugins/`, `include/shady/`),
+- `shady-shell`, the standalone layer-shell desktop shell (`shell/`),
+- the rices that pair them (`rices/`), the greetd greeter built from both
+  (`greeter/`), and the flake with the package, the NixOS module and its VM
+  tests (`flake.nix`, `nix/`).
+
+Nothing here is tied to a distribution: any NixOS system can use the module
+(see [Using the NixOS module](#using-the-nixos-module)), and other systems can
+build with Meson.
+
+The project site, <https://gloaming-dusk.github.io/shady/>, is built from
+[shady-website](https://github.com/gloaming-dusk/shady-website). It renders
+the `docs/*.md` files of this repository directly, so the repository and the
+site share one documentation source. `.github/workflows/pages.yml` here
+builds and deploys it.
 
 ## Highlights
 
@@ -176,6 +186,36 @@ ninja -C build-minimal
 
 The minimal build uses the wlroots scene renderer directly and does not require
 the GLES2 renderer, so it can run with `WLR_RENDERER=pixman` as well.
+
+### Using the NixOS module
+
+The flake provides `nixosModules.default`. Add Shady as an input and enable it
+to get a Shady login session on any NixOS system:
+
+```nix
+{
+  inputs.shady.url = "github:gloaming-dusk/shady";
+
+  outputs = { nixpkgs, shady, ... }: {
+    nixosConfigurations.my-machine = nixpkgs.lib.nixosSystem {
+      system = "x86_64-linux";
+      modules = [
+        ./configuration.nix
+        shady.nixosModules.default
+        {
+          programs.shady.enable = true;
+          programs.shady.rice = "horizon";       # or "objects", "afterglow", "neon-transit"
+          programs.shady.greeter.enable = true;  # optional: log in through the Shady greeter
+        }
+      ];
+    };
+  };
+}
+```
+
+`programs.shady.softwareCursor` helps on virtual GPUs whose cursor planes are
+unreliable, and `programs.shady.extraPackages` replaces the tools installed
+alongside the session. See [docs/GREETER.md](docs/GREETER.md) for the greeter.
 
 ### Standalone shell
 

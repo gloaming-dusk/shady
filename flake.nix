@@ -1,7 +1,7 @@
 {
   description = "Shady, an experimental 3D Wayland compositor";
 
-  # Shady follows the latest NixOS stable release; Gloam follows this input.
+  # Shady follows the latest NixOS stable release.
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
 
   outputs = { self, nixpkgs, ... }:

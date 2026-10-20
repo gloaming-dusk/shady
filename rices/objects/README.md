@@ -1,5 +1,7 @@
 # Objects
 
+![Objects: a two-tile desk clock and a floating dock on a paper sunset, around a terminal framed as a card](preview.jpg)
+
 Chunky, tactile cards on a flat paper sunset. Everything is a physical-looking
 object with a thick ink outline and a hard offset shadow:
 
