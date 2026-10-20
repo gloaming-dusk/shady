@@ -39,6 +39,15 @@ same optional ones as in the Objects rice: `wpctl`, `brightnessctl`,
 The desk (clock, horizon, reflections) is a background-level layer, so
 windows cover it; the status line stays above them.
 
+The screenshots, the four hours and the website's hero loop come from
+`capture.sh`, which runs the rice headless on a private session bus with
+stand-ins for the system tools and a fixed set of applications
+(`capture/`):
+
+```bash
+nix develop -c bash rices/horizon/capture.sh
+```
+
 Typefaces: [Instrument Serif](https://github.com/Instrument/instrument-serif)
 and [Manrope](https://github.com/googlefonts/manrope), both under the SIL Open
 Font License 1.1 (`fonts/OFL-*.txt`).

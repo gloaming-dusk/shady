@@ -1,0 +1,4 @@
+#!/bin/sh
+# capture.sh stub: Bluetooth powered on.
+[ "$1" = show ] && printf 'Controller 00:00:00:00:00:00\n\tPowered: yes\n'
+exit 0

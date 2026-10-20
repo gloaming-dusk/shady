@@ -1,0 +1,4 @@
+#!/bin/sh
+# capture.sh stub: a record playing.
+[ "$1" = metadata ] && printf 'Playing\tSlow Tide\tThe Low Sun\n'
+exit 0

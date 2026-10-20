@@ -1,0 +1,4 @@
+#!/bin/sh
+# capture.sh stub: the backlight at 78%.
+[ "$1" = -m ] && echo "backlight,backlight,780,78%,1000"
+exit 0

@@ -1,0 +1,6 @@
+#!/bin/sh
+# capture.sh stub: a Wi-Fi network named Terrace.
+case "$*" in
+    *general*) echo enabled ;;
+    *device\ wifi*) echo "yes:Terrace" ;;
+esac
