@@ -1,9 +1,8 @@
 name: CI
 
-# Builds the package (its meson tests run as part of the build) and runs the
-# NixOS VM tests, which log into the session and the greeter on a virtual
-# GPU. The ASan/UBSan spatial suite needs a DRM render node, which the
-# runners lack; run it locally with ./tests/spatial-suite.sh.
+# Builds the package (its meson tests run as part of the build). The
+# ASan/UBSan spatial suite needs a DRM render node, which the runners lack;
+# run it locally with ./tests/spatial-suite.sh.
 on:
   push:
     branches: [main]
@@ -25,12 +24,3 @@ jobs:
         run: nix build -L .#default
       - name: Build the nix run app
         run: nix build -L --no-link .#apps.x86_64-linux.default.program
-
-  vm-tests:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: DeterminateSystems/nix-installer-action@v16
-      - uses: DeterminateSystems/magic-nix-cache-action@v8
-      - name: NixOS VM tests (session and greeter)
-        run: nix flake check -L

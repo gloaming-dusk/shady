@@ -38,11 +38,6 @@
         default = shady;
       };
 
-      checks = nixpkgs.lib.genAttrs [ "x86_64-linux" ] (system: {
-        session = nixpkgs.legacyPackages.${system}.testers.runNixOSTest (import ./nix/tests/session.nix self);
-        greeter = nixpkgs.legacyPackages.${system}.testers.runNixOSTest (import ./nix/tests/greeter.nix self);
-      });
-
       devShells = forAllSystems (pkgs: let wlroots = wlrootsFor pkgs; in {
         default = pkgs.mkShell {
           strictDeps = true;

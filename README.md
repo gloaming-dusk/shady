@@ -42,7 +42,7 @@ A rice pairs the compositor with a shell and a look. Pick one with
 - Lua 5.4 for configuration (`config.lua`), runtime scripting (`init.lua`) and headless UI automation
 - A public C plugin API with hot reload and state migration, and an IPC socket with the `shadyctl` CLI for scripts and other bars
 - Input methods, fractional scaling, session lock, screencopy and the standard toplevel and workspace protocols ([Desktop integration](docs/DESKTOP.md))
-- ASan/UBSan regression suites for the 2D and 3D paths, and NixOS VM tests of the session and greeter
+- ASan/UBSan regression suites for the 2D and 3D paths
 
 ## Plugins
 

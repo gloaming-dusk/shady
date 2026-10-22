@@ -36,7 +36,7 @@ greeter/              the greetd login screen (see GREETER.md)
 rices/                complete looks: Horizon, Objects, Afterglow, Neon Transit; archive/
 examples/             small plugins and configs to start from
 data/                 session and greeter launchers, wayland-sessions entries
-nix/                  Nix package, NixOS module and VM tests
+nix/                  Nix package and NixOS module
 tests/                unit and headless tests
 tools/                build, run and regression scripts
 assets/               development environments, sky images, media
@@ -138,11 +138,10 @@ finishes first. `examples/plugins/counter.c` is the reference V2 plugin.
 | `meson test -C build` | unit tests: math, physics collision, config, module resolver, plugin contracts |
 | `./tests/spatial-suite.sh` | the 3D stack under ASan/UBSan with software GLES2: FPS mode, plugins, IPC, shortcuts, layer effects, the shell, Neon Transit and Afterglow |
 | `./tools/daily-driver.sh all` | the 2D path under ASan/UBSan: two headless outputs, output removal with a live window, window churn, an idle-render check |
-| `nix flake check` | NixOS VM tests: the session and the greeter start and show their UI |
 
-CI runs the package build (with the unit tests) and the VM tests on every
-push. The runners have no DRM render node, which the spatial suite's GLES2
-path needs, so run that suite locally before a release.
+CI runs the package build (with the unit tests) on every push. The
+runners have no DRM render node, which the spatial suite's GLES2 path
+needs, so run that suite locally before a release.
 
 The spatial suite builds `build-spatial-asan/`; single headless tests run
 on their own, e.g. `SHADY_SPATIAL_TEST_BUILD_DIR=build-spatial-asan
