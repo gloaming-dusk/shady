@@ -568,6 +568,14 @@ shared_module('shady-plugin-spatial-overview',
   install: true,
   install_dir: plugin_install_dir)
 
+shared_module('shady-plugin-rewind',
+  'plugins/rewind.c',
+  include_directories: include_directories('include'),
+  dependencies: [dependency('xkbcommon'), cc.find_library('m')],
+  build_by_default: true,
+  install: true,
+  install_dir: plugin_install_dir)
+
 shared_module('shady-plugin-water-windows',
   'plugins/water_windows.c',
   include_directories: include_directories('include'),

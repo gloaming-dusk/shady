@@ -3,6 +3,17 @@
 Shady is experimental: the Lua, IPC and plugin interfaces may still change
 between releases. Breaking changes are called out here.
 
+## Unreleased
+
+- `rewind`, a new plugin loaded by Afterglow and Horizon: every layout the
+  desktop settles into (positions, depth, workspaces, maximized and
+  fullscreen) is kept as a keyframe. `Super+BackSpace` opens a timeline and
+  slides the windows back through them; windows that did not exist yet
+  drift up out of view and the world fades toward an old photograph. Return
+  restores the moment, Escape returns to now, and a restore can itself be
+  rewound. `rewind.*` published values let a shell show where you are.
+- The NixOS VM tests are gone; CI builds the package with its unit tests.
+
 ## 0.1.0 (2026-10-22)
 
 The first release, five weeks after the first commit. Everything below is

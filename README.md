@@ -38,6 +38,7 @@ A rice pairs the compositor with a shell and a look. Pick one with
 - Windows with physics: gravity, wobble, collision with authored OBJ environments, first-person navigation, picking up and throwing
 - Window bodies defined by plugins: cubes, jelly, folded paper and origami share one shape for drawing, picking and collision
 - `shady-shell`, a separate shell whose bars, panels, launcher and notifications are a hot-reloaded Lua config, with GLSL effects, frosted glass and 3D-placed layer surfaces
+- Rewind: the desktop records each layout it settles into; `Super+BackSpace` scrubs back through them, the world fading like an old photograph, and `Return` restores that moment
 - A shortcut overlay (`Super+Shift+/`) listing every key of the session: the compositor's, the rice's and each plugin's
 - Lua 5.4 for configuration (`config.lua`), runtime scripting (`init.lua`) and headless UI automation
 - A public C plugin API with hot reload and state migration, and an IPC socket with the `shadyctl` CLI for scripts and other bars
@@ -51,6 +52,7 @@ rices load several.
 
 | Plugin | Keys | |
 |---|---|---|
+| `rewind` | `Super+BackSpace` | scrub back through earlier layouts of the desktop and restore one (Afterglow, Horizon) |
 | `spatial-overview` | `Super+O` | 3D overview of the workspace's windows |
 | `water-windows` | `Super+W` | windows turn to water: waves, refraction, caustics |
 | `frozen-window` | `Super+Z`, `Super+Shift+Z` | frost grows over a window, or the whole workspace, and melts away |

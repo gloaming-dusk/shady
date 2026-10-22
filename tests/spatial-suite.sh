@@ -28,6 +28,7 @@ nix develop -c ninja -C "$BUILD_DIR" \
   libshady-plugin-motion-contract.so \
   libshady-plugin-focus-depth.so \
   libshady-plugin-spatial-overview.so \
+  libshady-plugin-rewind.so \
   libshady-plugin-water-windows.so \
   libshady-plugin-close-slide-fade.so \
   libshady-plugin-afterglow.so \
@@ -121,5 +122,8 @@ SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
 
 SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
   nix develop -c bash ./tests/headless-afterglow.sh
+
+SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
+  nix develop -c bash ./tests/headless-rewind.sh
 
 echo "spatial-suite: PASS"

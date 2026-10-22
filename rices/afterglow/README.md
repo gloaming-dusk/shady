@@ -30,6 +30,7 @@ default `foot`). Pass `-s '<command>'` to start something else.
 | `Super+Return` | Terminal |
 | `Super+D` | Launcher |
 | `Super+O` | 3D overview |
+| `Super+BackSpace` | Rewind the layout: Left/Right through time, Return restores, Escape returns to now |
 | `Super+Tab` | Cycle windows |
 | `Super+Q` | Close (the window sinks into the sea) |
 | `Super+1..3` | Workspaces `shore`, `studio`, `harbor` |
