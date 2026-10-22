@@ -195,12 +195,35 @@ bool shady_input_pointer_on_overlay(struct shady_server *server) {
 		&surface, &sx, &sy);
 }
 
+/* The spatial renderer draws xdg popups flat, above everything but the
+ * session lock, at their scene-graph place: hit-test them there, newest
+ * (topmost) first. The spatial pick only knows the windows beneath. */
+static bool popup_surface_at(struct shady_server *server,
+		double lx, double ly, struct wlr_surface **surface, double *sx, double *sy) {
+	if (!server->config.spatial_mode || shady_desktop_state(server)->session_locked)
+		return false;
+	struct shady_popup *popup;
+	wl_list_for_each(popup, &server->popups, link) {
+		if (!popup->xdg_popup->base->surface->mapped) continue;
+		struct wlr_scene_node *node = wlr_scene_node_at(&popup->scene_tree->node,
+			lx, ly, sx, sy);
+		if (!node || node->type != WLR_SCENE_NODE_BUFFER) continue;
+		struct wlr_scene_surface *scene_surface =
+			wlr_scene_surface_try_from_buffer(wlr_scene_buffer_from_node(node));
+		if (!scene_surface) continue;
+		*surface = scene_surface->surface;
+		return true;
+	}
+	return false;
+}
+
 static struct shady_toplevel *toplevel_at_cursor(struct shady_server *server,
 		double lx, double ly, struct wlr_surface **surface, double *sx, double *sy) {
 	*surface = NULL;
 	*sx = *sy = 0.0;
 	/* Critical 2D shell/session-lock UI always wins over spatial picking. */
 	if (overlay_surface_at(server, lx, ly, surface, sx, sy)) return NULL;
+	if (popup_surface_at(server, lx, ly, surface, sx, sy)) return NULL;
 
 	struct shady_toplevel *toplevel = NULL;
 	bool locked = shady_desktop_state(server)->session_locked;

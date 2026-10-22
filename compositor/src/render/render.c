@@ -2061,12 +2061,25 @@ static void render_spatial_overlays(struct shady_server *server,
 		ctx.plane = NULL;
 	}
 
-	/* XDG popups remain readable/interactive while their parent is spatial. */
+	/* XDG popups remain readable/interactive while their parent is spatial.
+	 * The buffer iterator reports coordinates relative to the popup tree's
+	 * parent, the toplevel, so add where that sits. A nested popup lives in
+	 * its parent popup's tree and is drawn with it. Oldest first: the
+	 * list keeps the newest at its head. */
 	struct shady_popup *popup;
-	if (popups) wl_list_for_each(popup, &server->popups, link) {
+	if (popups) wl_list_for_each_reverse(popup, &server->popups, link) {
+		if (wlr_xdg_popup_try_from_wlr_surface(popup->xdg_popup->parent))
+			continue;
+		struct wlr_scene_tree *parent = popup->scene_tree->node.parent;
+		int px = 0, py = 0;
+		if (parent) wlr_scene_node_coords(&parent->node, &px, &py);
+		ctx.ox = ox - px;
+		ctx.oy = oy - py;
 		wlr_scene_node_for_each_buffer(&popup->scene_tree->node,
 			render_scene_overlay_buffer, &ctx);
 	}
+	ctx.ox = ox;
+	ctx.oy = oy;
 	/* Animated effects (u_time) need the next frame too. */
 	if (layer_effects_animating) {
 		layer_effects_animating = false;
