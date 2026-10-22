@@ -18,6 +18,6 @@ if [[ $# -eq 0 ]]; then
   set -- -s "${SHADY_STARTUP:-$default_startup}"
 fi
 
-exec "$ROOT/run-native.sh" \
+exec "$ROOT/tools/run-native.sh" \
   -c "$ROOT/rices/neon-transit/config.lua" \
   "$@"

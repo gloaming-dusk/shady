@@ -20,7 +20,8 @@ object with a thick ink outline and a hard offset shadow:
 
 ```bash
 nix develop -c ./tools/build.sh
-nix develop -c ./rices/objects/run.sh
+nix develop -c ./rices/objects/run.sh          # nested in a Wayland session
+nix develop -c ./rices/objects/run-native.sh   # directly on a VT (DRM + libinput)
 ```
 
 | Keys | |

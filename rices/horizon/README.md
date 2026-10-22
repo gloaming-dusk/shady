@@ -27,7 +27,8 @@ cross-fades with `Super+T`.
 
 ```bash
 nix develop -c ./tools/build.sh
-nix develop -c ./rices/horizon/run.sh
+nix develop -c ./rices/horizon/run.sh          # nested in a Wayland session
+nix develop -c ./rices/horizon/run-native.sh   # directly on a VT (DRM + libinput)
 ```
 
 Horizon is the default rice. Its `config.lua` and `init.lua` load
