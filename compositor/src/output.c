@@ -24,6 +24,40 @@ static void output_frame(struct wl_listener *listener, void *data) {
 	shady_session_lock_output_committed(output, previous_commit_seq);
 }
 
+/* Commits of any client surface (toplevels, popups, subsurfaces, layer and
+ * cursor surfaces) ask for a frame; the spatial renderer draws only then. */
+struct surface_watch {
+	struct shady_server *server;
+	struct wl_listener commit;
+	struct wl_listener destroy;
+};
+
+static void surface_watch_commit(struct wl_listener *listener, void *data) {
+	(void)data;
+	struct surface_watch *watch = wl_container_of(listener, watch, commit);
+	shady_render_schedule_all_outputs(watch->server);
+}
+
+static void surface_watch_destroy(struct wl_listener *listener, void *data) {
+	(void)data;
+	struct surface_watch *watch = wl_container_of(listener, watch, destroy);
+	wl_list_remove(&watch->commit.link);
+	wl_list_remove(&watch->destroy.link);
+	free(watch);
+}
+
+void server_new_surface(struct wl_listener *listener, void *data) {
+	struct shady_server *server = wl_container_of(listener, server, new_surface);
+	struct wlr_surface *surface = data;
+	struct surface_watch *watch = calloc(1, sizeof(*watch));
+	if (!watch) return;
+	watch->server = server;
+	watch->commit.notify = surface_watch_commit;
+	wl_signal_add(&surface->events.commit, &watch->commit);
+	watch->destroy.notify = surface_watch_destroy;
+	wl_signal_add(&surface->events.destroy, &watch->destroy);
+}
+
 static void output_present(struct wl_listener *listener, void *data) {
 	struct shady_output *output = wl_container_of(listener, output, present);
 	shady_session_lock_output_presented(output, data);
@@ -32,8 +66,10 @@ static void output_present(struct wl_listener *listener, void *data) {
 static void output_request_state(struct wl_listener *listener, void *data) {
 	struct shady_output *output = wl_container_of(listener, output, request_state);
 	const struct wlr_output_event_request_state *event = data;
-	if (wlr_output_commit_state(output->wlr_output, event->state))
+	if (wlr_output_commit_state(output->wlr_output, event->state)) {
 		shady_session_lock_output_state_changed(output);
+		shady_render_schedule_output(output);
+	}
 }
 
 static bool point_on_managed_output(struct shady_server *server,
@@ -167,6 +203,7 @@ void server_new_output(struct wl_listener *listener, void *data) {
 	struct shady_output *output = calloc(1, sizeof(*output));
 	output->wlr_output = wlr_output;
 	output->server = server;
+	output->render_requested = true;
 
 	output->frame.notify = output_frame;
 	wl_signal_add(&wlr_output->events.frame, &output->frame);

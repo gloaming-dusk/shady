@@ -170,6 +170,8 @@ struct shady_server {
 	struct wlr_output_layout *output_layout;
 	struct wl_list outputs;
 	struct wl_listener new_output;
+	/* Every client surface commit wakes the spatial renderer. */
+	struct wl_listener new_surface;
 
 	struct shady_config config;
 	struct shady_module_manager modules;
@@ -189,6 +191,10 @@ struct shady_output {
 	struct shady_server *server;
 	struct wlr_output *wlr_output;
 	bool frame_scheduled;
+	/* Something changed since the last spatial frame. wlroots emits a frame
+	 * event after every commit, so without this the renderer would redraw
+	 * at the refresh rate forever. */
+	bool render_requested;
 	uint64_t frame_schedule_requests;
 	uint64_t frame_schedule_coalesced;
 	uint64_t frame_callbacks;
@@ -368,6 +374,7 @@ void shady_input_automation_pointer_axis(struct shady_server *server,
 
 /* output.c */
 void server_new_output(struct wl_listener *listener, void *data);
+void server_new_surface(struct wl_listener *listener, void *data);
 void shady_recover_toplevels_to_outputs(struct shady_server *server);
 void shady_output_manager_publish(struct shady_server *server);
 void shady_output_manager_apply(struct wl_listener *listener, void *data);

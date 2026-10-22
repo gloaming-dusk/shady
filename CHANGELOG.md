@@ -13,6 +13,16 @@ between releases. Breaking changes are called out here.
   restores the moment, Escape returns to now, and a restore can itself be
   rewound. `rewind.*` published values let a shell show where you are.
 - The NixOS VM tests are gone; CI builds the package with its unit tests.
+- The 3D renderer is idle again when nothing changes. wlroots sends a frame
+  event after every commit, and Shady redrew on each one, so the desktop
+  was redrawn at the refresh rate forever. It now draws only when asked: a
+  client commits (any surface, popups and subsurfaces included), something
+  moves, or wlroots needs a frame. Representation providers (the
+  `fps-*` window bodies) no longer keep it awake outside first-person
+  mode, where they are not drawn. An idle Horizon desktop went from 60
+  frames a second to a handful.
+- Afterglow's sky skips cloud noise where it would be multiplied by zero:
+  the same picture for less GPU time on every frame.
 
 ## 0.1.0 (2026-10-22)
 

@@ -85,6 +85,7 @@ static void cleanup_server_after_setup(struct shady_server *server,
 	wl_list_remove(&server->request_set_selection.link);
 	wl_list_remove(&server->request_set_primary_selection.link);
 	wl_list_remove(&server->new_output.link);
+	wl_list_remove(&server->new_surface.link);
 
 	if (sigint) wl_event_source_remove(sigint);
 	if (sigterm) wl_event_source_remove(sigterm);
@@ -283,7 +284,10 @@ int main(int argc, char *argv[]) {
 		return 1;
 	}
 
-	wlr_compositor_create(server.wl_display, 5, server.renderer);
+	struct wlr_compositor *compositor =
+		wlr_compositor_create(server.wl_display, 5, server.renderer);
+	server.new_surface.notify = server_new_surface;
+	wl_signal_add(&compositor->events.new_surface, &server.new_surface);
 	wlr_subcompositor_create(server.wl_display);
 	wlr_data_device_manager_create(server.wl_display);
 
@@ -416,6 +420,7 @@ int main(int argc, char *argv[]) {
 	wl_list_remove(&server.request_set_primary_selection.link);
 
 	wl_list_remove(&server.new_output.link);
+	wl_list_remove(&server.new_surface.link);
 
 	shady_modules_destroy_all(&server);
 	shady_values_finish();

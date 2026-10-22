@@ -6,6 +6,8 @@
 #include "../shady.h"
 #include "../render/render.h"
 #include "../render/math3d.h"
+#include "../modules/spatial/state.h"
+#include "../modules/fps/fps.h"
 #define HOST(h) ((struct shady_server *)(h))
 #define WINDOW(w) ((struct shady_toplevel *)(w))
 #define SHADY_MAX_REPRESENTATION_STATE (1024u * 1024u)
@@ -106,6 +108,11 @@ void shady_plugin_window_cleanup(struct shady_toplevel *toplevel) {
 
 void shady_plugin_representation_tick(struct shady_server *server, float dt) {
 	if (!server || dt <= 0.f) return;
+	/* Representations are drawn only for folded windows in first-person
+	 * mode. Elsewhere a provider's animation is invisible, so its request
+	 * for another frame must not keep the desktop redrawing. */
+	const struct shady_spatial_state *spatial = shady_spatial_state_const(server);
+	bool first_person = spatial && spatial->runtime.camera.first_person;
 	bool needs_render = false;
 	struct shady_toplevel *toplevel;
 	wl_list_for_each(toplevel, &server->all_toplevels, all_link) {
@@ -118,7 +125,8 @@ void shady_plugin_representation_tick(struct shady_server *server, float dt) {
 			continue;
 		if (callback((shady_host)server, (shady_window)toplevel, dt,
 				toplevel->representation->state,
-				toplevel->representation->provider.user_data))
+				toplevel->representation->provider.user_data) &&
+				first_person && !shady_fps_is_expanded(server, toplevel))
 			needs_render = true;
 	}
 	if (needs_render && server->renderer)

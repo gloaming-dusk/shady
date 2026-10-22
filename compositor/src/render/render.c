@@ -1031,6 +1031,7 @@ static enum shady_continuous_reason spatial_continuous_reason(
 void shady_render_schedule_output(struct shady_output *output) {
 	if (!output || !output->wlr_output) return;
 	output->frame_schedule_requests++;
+	output->render_requested = true;
 	if (!output->wlr_output->enabled) {
 		output->frame_scheduled = false;
 		return;
@@ -2124,6 +2125,13 @@ void shady_render_output_frame(
 	if (!pipeline_ready) {
 		return;
 	}
+
+	/* wlroots emits a frame event after every commit. Draw only when
+	 * something asked for it (or wlroots itself needs one, e.g. a moved
+	 * software cursor); otherwise stay idle until the next request. */
+	if (!output->render_requested && !wlr_output->needs_frame)
+		return;
+	output->render_requested = false;
 
 	bool profile = render_stats_enabled();
 	struct timespec profile_frame_start = {0};
