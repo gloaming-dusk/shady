@@ -43,13 +43,13 @@ end)
 shady.bind("F6", function()
   shady.toggle_gravity()
   shady.log("gravity toggled from Lua")
-end)
+end, "Toggle gravity from Lua")
 
 local all_expanded = false
 shady.bind("F7", function()
   all_expanded = not all_expanded
   if all_expanded then shady.expand_all() else shady.fold_all() end
-end)
+end, "Unfold or fold every window")
 
 shady.bind("F8", function()
   local windows = shady.windows()
@@ -57,13 +57,13 @@ shady.bind("F8", function()
   for i, window in ipairs(windows) do
     shady.log(string.format("[%d] %s / %s  z=%.2f", i, window.app_id, window.title, window.z))
   end
-end)
+end, "Log every live window")
 
 shady.bind("F9", function()
   shady.respawn_all()
   shady.log("all windows respawned")
-end)
+end, "Bring back every window")
 
 shady.bind("Ctrl+Alt+q", function()
   shady.quit()
-end)
+end, "Quit from Lua")

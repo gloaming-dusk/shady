@@ -16,6 +16,19 @@
         default = shady;
       });
 
+      # `nix run github:gloaming-dusk/shady`: try the default rice in a window
+      # of the current Wayland session (or on a VT), with a terminal open.
+      apps = forAllSystems (pkgs: let
+        shady = shadyFor pkgs;
+        try = pkgs.writeShellScript "shady-try" ''
+          export SHADY_SESSION_LOG=stderr
+          export SHADY_STARTUP="${shady}/bin/shady-shell & exec ${pkgs.foot}/bin/foot"
+          exec ${shady}/bin/shady-session "$@"
+        '';
+      in {
+        default = { type = "app"; program = "${try}"; };
+      });
+
       overlays.default = final: prev: {
         shady = shadyFor final;
       };

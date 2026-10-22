@@ -21,6 +21,20 @@ For DRM/libinput on a VT:
 
 Both launchers start `shady-shell` plus one terminal when no extra Shady arguments are supplied.
 
+Magnetic Windows and Window Portal are opt-in too:
+
+```sh
+SHADY_NEON_MAGNETIC=1 ./rices/neon-transit/run.sh
+SHADY_NEON_PORTAL=1 ./rices/neon-transit/run.sh
+```
+
+With magnetic docking, Neon Transit skips its default overview position writer so
+the plugin can own window motion; `Super+M` toggles docking. To combine it with a
+depth plugin anyway, set `SHADY_NEON_DEPTH_MODE=focus` (or `overview`). In portal
+mode `Super+P` opens or cycles the focused window's live source and
+`Super+Shift+P` closes it; it takes precedence over the water shader, since both
+own the per-window shader slot.
+
 ## Controls
 
 | Binding | Action |

@@ -87,7 +87,9 @@ shady.rule({
 })
 ```
 
-The first matching rule is applied.
+The first matching rule is applied, while the window maps and before it is focused.
+Each workspace also remembers its last focused window and focuses it again when you
+switch back.
 
 ### `shady.spawn(command) -> boolean`
 
@@ -306,6 +308,9 @@ Event names currently include:
 - `workspace.changed`
 
 Window events receive a Window object, output events an Output, module events a Module, and workspace changes receive the workspace name.
+A window normally goes `created -> mapped -> focused` and ends `unmapped -> destroyed`.
+Window handles check that the window is still alive, so a stale reference reads as
+`nil`/`false` instead of touching freed state.
 
 ```lua
 local id = shady.on("window.mapped", function(window)

@@ -1,0 +1,35 @@
+name: CI
+
+# Builds the package (its meson tests run as part of the build) and runs the
+# ASan/UBSan spatial suite, which drives the compositor, plugins, IPC and
+# shell headless with software GLES2.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/nix-installer-action@v16
+      - uses: DeterminateSystems/magic-nix-cache-action@v8
+      - name: Build and unit-test the package
+        run: nix build -L .#default
+      - name: Build the nix run app
+        run: nix build -L --no-link .#apps.x86_64-linux.default.program
+
+  spatial-suite:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/nix-installer-action@v16
+      - uses: DeterminateSystems/magic-nix-cache-action@v8
+      - name: Spatial sanitizer suite
+        run: ./tests/spatial-suite.sh

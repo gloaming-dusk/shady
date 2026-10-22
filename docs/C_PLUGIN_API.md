@@ -145,6 +145,42 @@ The public API exposes compositor-managed window effect controls:
 
 These setters change compositor-owned state; they do not expose raw internal structs.
 
+A close effect picks one of the built-in close animations with its timing,
+strength and direction for one window; `window_close()` then plays it
+instead of the default crumple. `plugins/close_slide_fade.c` uses it, and
+`window_reset_close_effect()` (or unloading the plugin) returns the window
+to the default:
+
+```c
+struct shady_close_effect effect = {
+    .style = SHADY_CLOSE_EFFECT_SLIDE_FADE,
+    .duration = 0.52f,
+    .strength = 1.0f,
+    .direction_x = 0.95f,
+    .direction_y = 0.22f,
+};
+api->window_set_close_effect(host, window, &effect);
+```
+
+## Shortcuts
+
+`declare_shortcut(host, keys, description)` lists a key the plugin reacts to
+in the shortcut overlay (Super+Shift+/) and the IPC `shortcuts` query, under
+the plugin's name. It binds nothing: the plugin still handles the key in its
+`key` hook. Declare from the entry function, which runs again on every
+reload; the shortcuts are listed while the plugin's module is active and
+removed when it unloads. `keys` uses the `shady.bind` syntax or a free label
+(`"Arrows"`), and `NULL` as description removes it. Append-only
+(`SHADY_API_HAS(api, declare_shortcut)`).
+
+```c
+if (SHADY_API_HAS(api, declare_shortcut)) {
+	api->declare_shortcut(host, "Super+Z", "Freeze or thaw the focused window");
+	api->declare_shortcut(host, "Super+Shift+Z", "Freeze or thaw the whole workspace");
+}
+```
+
+
 ## Render and shader API
 
 Shader and render APIs are host-owned. Plugins receive numeric handles rather than raw OpenGL object ownership.
@@ -207,24 +243,6 @@ them with the plugin's name. Values are at most 4096 bytes, and `NULL`
 removes the key. The values a plugin published are removed when it unloads.
 `published_value(host, key)` reads any published value. Both are
 append-only (`SHADY_API_HAS(api, published_value)`).
-
-#### Shortcuts
-
-`declare_shortcut(host, keys, description)` lists a key the plugin reacts to
-in the shortcut overlay (Super+Shift+/) and the IPC `shortcuts` query, under
-the plugin's name. It binds nothing: the plugin still handles the key in its
-`key` hook. Declare from the entry function, which runs again on every
-reload; the shortcuts are listed while the plugin's module is active and
-removed when it unloads. `keys` uses the `shady.bind` syntax or a free label
-(`"Arrows"`), and `NULL` as description removes it. Append-only
-(`SHADY_API_HAS(api, declare_shortcut)`).
-
-```c
-if (SHADY_API_HAS(api, declare_shortcut)) {
-	api->declare_shortcut(host, "Super+Z", "Freeze or thaw the focused window");
-	api->declare_shortcut(host, "Super+Shift+Z", "Freeze or thaw the whole workspace");
-}
-```
 
 #### Camera-aware hooks
 
