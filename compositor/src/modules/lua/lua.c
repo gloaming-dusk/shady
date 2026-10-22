@@ -15,6 +15,8 @@
 #include <wlr/util/log.h>
 #include "../../shady.h"
 #include "../../render/render.h"
+#include "../../ipc/ipc.h"
+#include "../../ipc/shortcuts.h"
 #include "../../ipc/values.h"
 #include "../../event/event.h"
 #include "../../plugin/plugin.h"
@@ -106,10 +108,24 @@ static bool parse_lua_bind(const char *spec,xkb_keysym_t *sym,uint32_t *mods){
 	*sym = xkb_keysym_from_name(key, XKB_KEYSYM_CASE_INSENSITIVE);
 	return *sym != XKB_KEY_NoSymbol;
 }
+/* Lua's shortcuts in the shortcut list belong to this, and go with the state. */
+#define LUA_SHORTCUT_OWNER ((void *)lua_binds)
+#define LUA_SHORTCUT_GROUP "Desktop"
+
+/* shady.bind(keys, fn[, description | {description=, group=}]) */
 static int l_shady_bind(lua_State *L){
 	const char *spec=luaL_checkstring(L,1);luaL_checktype(L,2,LUA_TFUNCTION);
+	const char *description=NULL,*group=LUA_SHORTCUT_GROUP;
+	if(lua_type(L,3)==LUA_TSTRING)description=lua_tostring(L,3);
+	else if(lua_istable(L,3)){
+		lua_getfield(L,3,"description");if(lua_type(L,-1)==LUA_TSTRING)description=lua_tostring(L,-1);
+		lua_getfield(L,3,"group");if(lua_type(L,-1)==LUA_TSTRING)group=lua_tostring(L,-1);
+		lua_pop(L,2); /* both strings stay referenced by the table */
+	}else if(!lua_isnoneornil(L,3))return luaL_argerror(L,3,"expected a description or a table");
 	if(lua_bind_count>=SHADY_LUA_MAX_BINDS)return luaL_error(L,"too many Lua key bindings");
 	struct lua_bind *b=&lua_binds[lua_bind_count];if(!parse_lua_bind(spec,&b->sym,&b->modifiers))return luaL_error(L,"invalid key binding: %s",spec);
+	if(description&&!shady_shortcuts_declare(LUA_SHORTCUT_OWNER,group,spec,description))
+		return luaL_error(L,"invalid shortcut description for %s",spec);
 	lua_pushvalue(L,2);b->ref=luaL_ref(L,LUA_REGISTRYINDEX);lua_bind_count++;return 0;
 }
 
@@ -343,6 +359,34 @@ static int l_shady_value(lua_State *L) {
 }
 
 static int l_shady_toggle_launcher(lua_State *L){(void)L;shady_shell_protocol_toggle_launcher(lua_server);return 0;}
+/* shady.describe(keys, description[, group]): list a shortcut handled
+ * elsewhere (by the shell, or several bindings under one line such as
+ * "Super+1…3"); description nil removes it. */
+static int l_shady_describe(lua_State *L){
+	const char *keys=luaL_checkstring(L,1);
+	const char *description=luaL_optstring(L,2,NULL);
+	const char *group=luaL_optstring(L,3,LUA_SHORTCUT_GROUP);
+	if(!shady_shortcuts_declare(LUA_SHORTCUT_OWNER,group,keys,description))
+		return luaL_error(L,"invalid shortcut: %s",keys);
+	return 0;
+}
+static int l_shady_toggle_shortcuts(lua_State *L){(void)L;shady_ipc_shortcuts_toggle(lua_server);return 0;}
+
+static void push_shortcut(const struct shady_shortcut *shortcut, void *data) {
+	lua_State *L = data;
+	lua_createtable(L, 0, 3);
+	lua_pushstring(L, shortcut->keys); lua_setfield(L, -2, "keys");
+	lua_pushstring(L, shortcut->group); lua_setfield(L, -2, "group");
+	lua_pushstring(L, shortcut->description); lua_setfield(L, -2, "description");
+	lua_rawseti(L, -2, (lua_Integer)lua_rawlen(L, -2) + 1);
+}
+
+/* shady.shortcuts(): {keys, group, description} for every listed shortcut. */
+static int l_shady_shortcuts(lua_State *L) {
+	lua_newtable(L);
+	shady_shortcuts_for_each(lua_server, push_shortcut, L);
+	return 1;
+}
 static int l_shady_spawn(lua_State *L){
 	const char *command=luaL_checkstring(L,1);
 	pid_t pid=fork();
@@ -699,6 +743,9 @@ static void install_api(lua_State *L){
 	lua_pushcfunction(L,l_shady_quit);lua_setfield(L,-2,"quit");
 	lua_pushcfunction(L,l_shady_spawn);lua_setfield(L,-2,"spawn");
 	lua_pushcfunction(L,l_shady_toggle_launcher);lua_setfield(L,-2,"toggle_launcher");
+	lua_pushcfunction(L,l_shady_toggle_shortcuts);lua_setfield(L,-2,"toggle_shortcuts");
+	lua_pushcfunction(L,l_shady_shortcuts);lua_setfield(L,-2,"shortcuts");
+	lua_pushcfunction(L,l_shady_describe);lua_setfield(L,-2,"describe");
 	lua_pushcfunction(L,l_shady_layer_effect);lua_setfield(L,-2,"layer_effect");
 	lua_pushcfunction(L,l_shady_layer_transform);lua_setfield(L,-2,"layer_transform");
 	lua_pushcfunction(L,l_shady_publish);lua_setfield(L,-2,"publish");
@@ -793,4 +840,5 @@ void shady_lua_fini(struct shady_server *server){
 		free(watch);
 	}
 	if(L){lua_close(L);shady_lua_state_for(server)->L=NULL;}lua_bind_count=0;lua_rule_count=0;lua_next_handler_id=1;
+	shady_shortcuts_forget_owner(LUA_SHORTCUT_OWNER);
 }

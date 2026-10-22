@@ -40,6 +40,7 @@
 #include "module/module.h"
 #include "config_lua.h"
 #include "ipc/ipc.h"
+#include "ipc/shortcuts.h"
 #include "ipc/values.h"
 #if SHADY_HAS_SPATIAL
 #include "modules/environment/environment.h"
@@ -418,6 +419,7 @@ int main(int argc, char *argv[]) {
 
 	shady_modules_destroy_all(&server);
 	shady_values_finish();
+	shady_shortcuts_finish();
 
 	wl_event_source_remove(sigint);
 	wl_event_source_remove(sigterm);

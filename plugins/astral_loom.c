@@ -322,6 +322,14 @@ static const struct shady_plugin_v2 plugin = {
     .restore_module_state = restore_module, .window_snapshot_size = window_size,
     .save_window_state = save_window, .restore_window_state = restore_window,
 };
+/* Listed in the shortcut overlay (Super+Shift+/). */
+static void declare_shortcuts(void) {
+    if (!SHADY_API_HAS(api, declare_shortcut)) return;
+    api->declare_shortcut(host, "Super+J", "Weave the windows into the loom");
+    api->declare_shortcut(host, "Super+Shift+J", "Twist the loom into a helix");
+    api->declare_shortcut(host, "Super+B", "Pause or resume the loom");
+}
+
 const struct shady_plugin_v2 *shady_plugin_entry_v2(uint32_t abi,
         const struct shady_plugin_api_v1 *table, shady_host h) {
     if (abi != SHADY_PLUGIN_ABI_V2 || !table || table->abi_version != SHADY_PLUGIN_ABI_V1 ||
@@ -330,5 +338,6 @@ const struct shady_plugin_v2 *shady_plugin_entry_v2(uint32_t abi,
     rep = table->query_api(h, SHADY_REPRESENTATION_API, SHADY_REPRESENTATION_API_VERSION);
     if (!rep || rep->struct_size < sizeof(*rep) || !rep->attach_provider || !rep->detach_provider) return NULL;
     api = table; host = h;
+    declare_shortcuts();
     return &plugin;
 }

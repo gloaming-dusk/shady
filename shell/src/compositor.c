@@ -34,6 +34,12 @@ static struct {
     struct wl_list values;
     bool ready;
     bool connected_once;
+    /* The shortcut list being received, then the last complete one. */
+    struct shell_shortcut *incoming;
+    size_t incoming_count, incoming_expected;
+    bool receiving;
+    struct shell_shortcut *shortcuts;
+    size_t shortcut_count;
 } link_state = { .fd = -1 };
 
 static void connect_later(void);
@@ -71,11 +77,74 @@ static void set_value(const char *key, const char *value) {
     shell_lua_model_changed(link_state.shell);
 }
 
+static void shortcuts_free(struct shell_shortcut *list, size_t count) {
+    for (size_t i = 0; i < count; i++) {
+        free(list[i].keys);
+        free(list[i].group);
+        free(list[i].description);
+    }
+    free(list);
+}
+
+static void shortcuts_drop_incoming(void) {
+    shortcuts_free(link_state.incoming, link_state.incoming_count);
+    link_state.incoming = NULL;
+    link_state.incoming_count = link_state.incoming_expected = 0;
+    link_state.receiving = false;
+}
+
+/* The list is complete: it replaces the last one and the config hears of it. */
+static void shortcuts_received(void) {
+    shortcuts_free(link_state.shortcuts, link_state.shortcut_count);
+    link_state.shortcuts = link_state.incoming;
+    link_state.shortcut_count = link_state.incoming_count;
+    link_state.incoming = NULL;
+    link_state.incoming_count = link_state.incoming_expected = 0;
+    link_state.receiving = false;
+    shell_lua_emit(link_state.shell, "shortcuts");
+}
+
+static void shortcut_line(const struct json_object *object) {
+    if (!link_state.receiving) return;
+    const char *keys = json_get_string(object, "keys");
+    const char *group = json_get_string(object, "group");
+    const char *description = json_get_string(object, "description");
+    struct shell_shortcut *grown = realloc(link_state.incoming,
+        (link_state.incoming_count + 1) * sizeof(*grown));
+    if (!keys || !group || !description || !grown) {
+        if (grown) link_state.incoming = grown;
+        shortcuts_drop_incoming();
+        return;
+    }
+    link_state.incoming = grown;
+    struct shell_shortcut *s = &grown[link_state.incoming_count];
+    *s = (struct shell_shortcut){ strdup(keys), strdup(group), strdup(description) };
+    if (!s->keys || !s->group || !s->description) {
+        link_state.incoming_count++;
+        shortcuts_drop_incoming();
+        return;
+    }
+    if (++link_state.incoming_count == link_state.incoming_expected) shortcuts_received();
+}
+
 static void handle_line(char *line) {
     struct json_object object;
     const char *error = NULL;
     if (!json_parse_object(line, &object, &error)) return;
     const char *event = json_get_string(&object, "event");
+    if (event && !strcmp(event, "shortcuts.toggle")) {
+        const struct json_value *count = json_get(&object, "count");
+        shortcuts_drop_incoming();
+        if (!count || count->type != JSON_NUMBER || count->number < 0 || count->number > 4096) return;
+        link_state.incoming_expected = (size_t)count->number;
+        link_state.receiving = true;
+        if (link_state.incoming_expected == 0) shortcuts_received();
+        return;
+    }
+    if (event && !strcmp(event, "shortcut")) {
+        shortcut_line(&object);
+        return;
+    }
     if (event && !strcmp(event, "value.changed")) {
         const char *key = json_get_string(&object, "key");
         const struct json_value *value = json_get(&object, "value");
@@ -90,6 +159,7 @@ static void handle_line(char *line) {
 }
 
 static void disconnect(void) {
+    shortcuts_drop_incoming();
     if (link_state.watch) shell_watch_remove(link_state.watch);
     link_state.watch = NULL;
     if (link_state.fd >= 0) close(link_state.fd);
@@ -152,7 +222,8 @@ static bool try_connect(void) {
         if (fd >= 0) close(fd);
         return false;
     }
-    static const char request[] = "{\"cmd\":\"subscribe\",\"events\":[\"value.changed\"]}\n";
+    static const char request[] =
+        "{\"cmd\":\"subscribe\",\"events\":[\"value.changed\",\"shortcuts.toggle\"]}\n";
     if (send(fd, request, sizeof(request) - 1, MSG_NOSIGNAL) != (ssize_t)(sizeof(request) - 1)) {
         close(fd);
         return false;
@@ -205,6 +276,9 @@ void shell_compositor_finish(void) {
         free(v);
     }
     json_buf_free(&link_state.in);
+    shortcuts_free(link_state.shortcuts, link_state.shortcut_count);
+    link_state.shortcuts = NULL;
+    link_state.shortcut_count = 0;
     link_state.ready = false;
 }
 
@@ -219,6 +293,21 @@ bool shell_compositor_key(const char *keys) {
     char request[128];
     int n = snprintf(request, sizeof(request), "{\"cmd\":\"key\",\"keys\":\"%s\"}\n", keys);
     return n > 0 && send(link_state.fd, request, (size_t)n, MSG_NOSIGNAL) == n;
+}
+
+bool shell_compositor_toggle_shortcuts(void) {
+    if (!link_state.ready || link_state.fd < 0) return false;
+    static const char request[] = "{\"cmd\":\"shortcuts.toggle\"}\n";
+    return send(link_state.fd, request, sizeof(request) - 1, MSG_NOSIGNAL) ==
+        (ssize_t)(sizeof(request) - 1);
+}
+
+size_t shell_compositor_shortcut_count(void) {
+    return link_state.shortcut_count;
+}
+
+const struct shell_shortcut *shell_compositor_shortcut_at(size_t index) {
+    return index < link_state.shortcut_count ? &link_state.shortcuts[index] : NULL;
 }
 
 const char *shell_compositor_value(const char *key) {

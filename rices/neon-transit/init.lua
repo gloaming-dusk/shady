@@ -27,12 +27,14 @@ end)
 
 shady.bind("Super+Return", function()
     shady.spawn(terminal)
-end)
+end, "Open a terminal")
 
 shady.bind("Super+d", function()
     shady.toggle_launcher()
-end)
+end, "Open the launcher")
 
+shady.describe("Super+1…" .. #workspaces, "Go to workspace")
+shady.describe("Super+Shift+1…" .. #workspaces, "Move window to workspace")
 for i, name in ipairs(workspaces) do
     shady.bind("Super+" .. i, function()
         shady.workspace(name)
@@ -50,30 +52,30 @@ end
 shady.bind("Super+m", function()
     local window = shady.focused_window()
     if window then window:maximize() end
-end)
+end, "Maximize the window")
 
 shady.bind("Super+Shift+m", function()
     local window = shady.focused_window()
     if window then window:set_fullscreen() end
-end)
+end, "Make the window fullscreen")
 
 shady.bind("Super+Space", function()
     shady.expand_all()
-end)
+end, "Unfold windows")
 
 shady.bind("Super+Shift+Space", function()
     shady.fold_all()
-end)
+end, "Fold windows into cubes")
 
 shady.bind("Super+r", function()
     shady.respawn_all()
-end)
+end, "Bring back every window")
 
 shady.bind("Super+i", function()
     shady.log(string.format(
         "transit status: workspace=%s windows=%d outputs=%d",
         shady.current_workspace(), #shady.windows(), #shady.outputs()))
-end)
+end, "Log the transit status")
 
 shady.on("window.mapped", function(window)
     shady.log("arrival: " .. (window.title ~= "" and window.title or window.app_id))

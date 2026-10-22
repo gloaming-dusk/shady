@@ -773,3 +773,33 @@ shell.popup {
         shell.redraw()
     end,
 }
+
+-- ---- shortcuts (Super+Shift+/) -----------------------------------------
+-- Another slab of the control center's glass, standing in the middle of the
+-- sky.
+
+require("shortcut_overlay").install {
+    name = "horizon-shortcuts",
+    palette = c,
+    title = "Shortcuts",
+    title_font = serif(30),
+    font = sans("Medium", 9.5),
+    bold = sans("Bold", 9.5),
+    cap = function(p)
+        return {
+            radius = 8, font = sans("Bold", 8.5), color = p.text,
+            background = a(p.surface, 0.35), border = a(p.text, 0.30),
+        }
+    end,
+    frame = function(body)
+        return shell.column {
+            radius = 24, padding = 26, align = "stretch",
+            background = shell.gradient("diagonal", a(c.text, 0.20), a(c.surface, 0.42), a(c.surface, 0.58)),
+            border = a(c.text, 0.38),
+            animate = "smooth",
+            enter = { opacity = 0, translate = { 0, 24 }, scale = 0.97 },
+            exit = { opacity = 0, translate = { 0, 24 }, scale = 0.97 },
+            body,
+        }
+    end,
+}

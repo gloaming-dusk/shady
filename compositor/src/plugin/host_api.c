@@ -18,6 +18,7 @@
 
 #include "../module/module.h"
 #include "../event/event.h"
+#include "../ipc/shortcuts.h"
 #include "../ipc/values.h"
 #include "../render/render.h"
 #if SHADY_HAS_SPATIAL
@@ -558,6 +559,12 @@ static bool host_publish_value(shady_host host, const char *key, const char *val
 	return owner && shady_values_set(HOST(host), owner, key, value);
 }
 
+static bool host_declare_shortcut(shady_host host, const char *keys, const char *description) {
+	(void)host;
+	void *owner = shady_plugin_owner_from_address(__builtin_return_address(0));
+	return owner && shady_shortcuts_declare(owner, NULL, keys, description);
+}
+
 static const char *host_published_value(shady_host host, const char *key) {
 	(void)host;
 	return shady_values_get(key);
@@ -762,5 +769,6 @@ const struct shady_plugin_api_v1 shady_plugin_api = {
 	.shader_draw_fullscreen_scene = host_shader_draw_fullscreen_scene,
 	.publish_value = host_publish_value,
 	.published_value = host_published_value,
+	.declare_shortcut = host_declare_shortcut,
 };
 

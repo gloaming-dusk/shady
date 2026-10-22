@@ -27,6 +27,7 @@
 #include "../plugin/manager.h"
 #include "../plugin/plugin.h"
 #include "json.h"
+#include "shortcuts.h"
 #include "values.h"
 
 /* A request line longer than this is refused and the client dropped. */
@@ -36,7 +37,11 @@
 /* Subscription bit for published values, after the compositor events. */
 #define IPC_VALUE_EVENT SHADY_EVENT_COUNT
 #define IPC_VALUE_EVENT_NAME "value.changed"
-#define IPC_ALL_EVENTS ((1u << (IPC_VALUE_EVENT + 1)) - 1)
+/* Subscription bit for the shortcut overlay's toggle and list. */
+#define IPC_SHORTCUTS_EVENT (SHADY_EVENT_COUNT + 1)
+#define IPC_SHORTCUTS_EVENT_NAME "shortcuts.toggle"
+#define IPC_LAST_EVENT IPC_SHORTCUTS_EVENT
+#define IPC_ALL_EVENTS ((1u << (IPC_LAST_EVENT + 1)) - 1)
 
 struct shady_ipc {
 	struct shady_server *server;
@@ -253,11 +258,14 @@ static int event_type_from_name(const char *name) {
 	for (int type = 0; type < SHADY_EVENT_COUNT; type++)
 		if (!strcmp(shady_event_name(type), name)) return type;
 	if (!strcmp(name, IPC_VALUE_EVENT_NAME)) return IPC_VALUE_EVENT;
+	if (!strcmp(name, IPC_SHORTCUTS_EVENT_NAME)) return IPC_SHORTCUTS_EVENT;
 	return -1;
 }
 
 static const char *event_name(int type) {
-	return type == IPC_VALUE_EVENT ? IPC_VALUE_EVENT_NAME : shady_event_name(type);
+	if (type == IPC_VALUE_EVENT) return IPC_VALUE_EVENT_NAME;
+	if (type == IPC_SHORTCUTS_EVENT) return IPC_SHORTCUTS_EVENT_NAME;
+	return shady_event_name(type);
 }
 
 static void write_value_event(struct json_buf *line, const char *key, const char *value) {
@@ -277,6 +285,45 @@ void shady_ipc_value_changed(struct shady_server *server, const char *key, const
 	struct ipc_client *client;
 	wl_list_for_each(client, &ipc->clients, link)
 		if (client->subscriptions & (1u << IPC_VALUE_EVENT)) send_line(client, &line);
+	json_buf_free(&line);
+}
+
+static void write_shortcut_fields(struct json_buf *b, const struct shady_shortcut *shortcut) {
+	json_puts(b, "\"keys\":");
+	json_string(b, shortcut->keys);
+	json_puts(b, ",\"group\":");
+	json_string(b, shortcut->group);
+	json_puts(b, ",\"description\":");
+	json_string(b, shortcut->description);
+}
+
+static void count_shortcut(const struct shady_shortcut *shortcut, void *data) {
+	(void)shortcut;
+	(*(size_t *)data)++;
+}
+
+static void write_shortcut_event(const struct shady_shortcut *shortcut, void *data) {
+	struct json_buf *b = data;
+	json_puts(b, "{\"event\":\"shortcut\",");
+	write_shortcut_fields(b, shortcut);
+	json_puts(b, "}\n");
+}
+
+void shady_ipc_shortcuts_toggle(struct shady_server *server) {
+	struct shady_ipc *ipc = server ? server->ipc : NULL;
+	if (!ipc) return;
+	/* The list follows the toggle, one line per shortcut, so a client
+	 * whose JSON stays flat can still read it. */
+	size_t count = 0;
+	shady_shortcuts_for_each(server, count_shortcut, &count);
+	struct json_buf line = {0};
+	json_printf(&line, "{\"event\":\"" IPC_SHORTCUTS_EVENT_NAME "\",\"count\":%zu}\n", count);
+	shady_shortcuts_for_each(server, write_shortcut_event, &line);
+	/* send_line adds the final newline. */
+	if (line.len) line.len--;
+	struct ipc_client *client;
+	wl_list_for_each(client, &ipc->clients, link)
+		if (client->subscriptions & (1u << IPC_SHORTCUTS_EVENT)) send_line(client, &line);
 	json_buf_free(&line);
 }
 
@@ -509,7 +556,7 @@ static bool cmd_subscribe(struct request *r) {
 	r->client->subscriptions |= mask;
 	json_puts(r->data, "[");
 	bool first = true;
-	for (int type = 0; type <= IPC_VALUE_EVENT; type++) {
+	for (int type = 0; type <= IPC_LAST_EVENT; type++) {
 		if (!(r->client->subscriptions & (1u << type))) continue;
 		if (!first) json_puts(r->data, ",");
 		first = false;
@@ -545,6 +592,27 @@ static bool cmd_value(struct request *r) {
 	return true;
 }
 
+static void write_shortcut_item(const struct shady_shortcut *shortcut, void *data) {
+	struct json_buf *b = data;
+	if (b->len > 1) json_puts(b, ",");
+	json_puts(b, "{");
+	write_shortcut_fields(b, shortcut);
+	json_puts(b, "}");
+}
+
+/* shortcuts: every shortcut the overlay would list. */
+static bool cmd_shortcuts(struct request *r) {
+	json_puts(r->data, "[");
+	shady_shortcuts_for_each(r->ipc->server, write_shortcut_item, r->data);
+	json_puts(r->data, "]");
+	return true;
+}
+
+static bool cmd_shortcuts_toggle(struct request *r) {
+	shady_ipc_shortcuts_toggle(r->ipc->server);
+	return true;
+}
+
 static bool cmd_quit(struct request *r) {
 	wl_display_terminate(r->ipc->server->wl_display);
 	return true;
@@ -562,6 +630,8 @@ static const struct {
 	{ "plugins", cmd_plugins },
 	{ "values", cmd_values },
 	{ "value", cmd_value },
+	{ "shortcuts", cmd_shortcuts },
+	{ "shortcuts.toggle", cmd_shortcuts_toggle },
 	{ "window.focus", cmd_window_focus },
 	{ "window.close", cmd_window_close },
 	{ "window.maximize", cmd_window_maximize },

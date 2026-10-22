@@ -394,6 +394,12 @@ static const struct shady_plugin_v2 plugin_v2 = {
     .restore_window_state = restore_window_state,
 };
 
+/* Listed in the shortcut overlay (Super+Shift+/). */
+static void declare_shortcuts(void) {
+    if (!SHADY_API_HAS(api, declare_shortcut)) return;
+    api->declare_shortcut(host, "Super+C", "Orbit the windows around the focused one");
+}
+
 const struct shady_plugin_v2 *shady_plugin_entry_v2(
         uint32_t host_abi,
         const struct shady_plugin_api_v1 *host_api,
@@ -409,6 +415,7 @@ const struct shady_plugin_v2 *shady_plugin_entry_v2(
 
     api = host_api;
     host = host_handle;
+    declare_shortcuts();
 
     api->subscribe_event(host, SHADY_EVENT_WINDOW_MAPPED, on_event, NULL);
     api->subscribe_event(host, SHADY_EVENT_WINDOW_UNMAPPED, on_event, NULL);

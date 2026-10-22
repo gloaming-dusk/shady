@@ -210,6 +210,12 @@ static const struct shady_module module = {
 	.key = key,
 };
 
+/* Listed in the shortcut overlay (Super+Shift+/). */
+static void declare_shortcuts(void) {
+	if (!SHADY_API_HAS(api, declare_shortcut)) return;
+	api->declare_shortcut(host, "Super+W", "Turn windows to water");
+}
+
 const struct shady_module *shady_plugin_entry_v1(
 		uint32_t host_abi,
 		const struct shady_plugin_api_v1 *host_api,
@@ -230,6 +236,7 @@ const struct shady_module *shady_plugin_entry_v1(
 
 	api = host_api;
 	host = host_handle;
+	declare_shortcuts();
 
 	api->subscribe_event(host, SHADY_EVENT_WINDOW_MAPPED, on_event, NULL);
 	api->subscribe_event(host, SHADY_EVENT_WINDOW_FOCUSED, on_event, NULL);

@@ -69,6 +69,12 @@ builds and deploys it.
 
 ## Controls
 
+Press **Super+Shift+/** to see every shortcut of the running session: the
+compositor's own, the rice's and each loaded plugin's, grouped and drawn by
+the shell. Press it again or Escape to close it. The key is the
+`show_shortcuts` binding (`shady.bind("show_shortcuts", ...)` in
+`config.lua`).
+
 ### First-person mode
 
 | Input | Action |
@@ -422,8 +428,11 @@ end)
 
 shady.bind("Ctrl+Alt+q", function()
     shady.quit()
-end)
+end, "Quit")
 ```
+
+A description as the third argument lists the binding in the shortcut
+overlay (Super+Shift+/); see [Lua API](docs/LUA_API.md#shortcut-overlay).
 
 Supported modifier names are `Alt`, `Shift`, `Ctrl`/`Control`, and `Super`/`Logo`. Compositor bindings are matched against the keymap's unmodified base keysym plus a separate modifier mask, so combinations such as `Super+Shift+1` and `Super+Shift+Q` do not depend on the shifted printable symbol (`!`, `Q`, etc.).
 

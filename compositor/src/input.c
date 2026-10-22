@@ -27,6 +27,7 @@
 #include <xkbcommon/xkbcommon.h>
 
 #include "shady.h"
+#include "ipc/ipc.h"
 #include "module/module.h"
 #include "modules/desktop/ime.h"
 #include "modules/desktop/state.h"
@@ -276,6 +277,10 @@ static bool handle_keybinding(struct shady_server *server,
 	struct shady_config *c = &server->config;
 	if (bind_matches(&c->bind_quit, sym, modifiers)) {
 		wl_display_terminate(server->wl_display);
+		return true;
+	}
+	if (bind_matches(&c->bind_show_shortcuts, sym, modifiers)) {
+		shady_ipc_shortcuts_toggle(server);
 		return true;
 	}
 	if (bind_matches(&c->bind_cycle_windows, sym, modifiers)) {

@@ -1499,6 +1499,30 @@ static int l_key(lua_State *L) {
     return 1;
 }
 
+/* shell.shortcuts(): the compositor's shortcut list as of its last
+ * `shortcuts` event, {keys, group, description} each. */
+static int l_shortcuts(lua_State *L) {
+    size_t count = shell_compositor_shortcut_count();
+    lua_createtable(L, (int)count, 0);
+    for (size_t i = 0; i < count; i++) {
+        const struct shell_shortcut *s = shell_compositor_shortcut_at(i);
+        lua_createtable(L, 0, 3);
+        lua_pushstring(L, s->keys);
+        lua_setfield(L, -2, "keys");
+        lua_pushstring(L, s->group);
+        lua_setfield(L, -2, "group");
+        lua_pushstring(L, s->description);
+        lua_setfield(L, -2, "description");
+        lua_rawseti(L, -2, (lua_Integer)i + 1);
+    }
+    return 1;
+}
+
+static int l_toggle_shortcuts(lua_State *L) {
+    lua_pushboolean(L, shell_compositor_toggle_shortcuts());
+    return 1;
+}
+
 static int l_shader(lua_State *L) {
     const char *name = luaL_checkstring(L, 1);
     char path[2 * PATH_MAX];
@@ -1611,6 +1635,8 @@ static const luaL_Reg api[] = {
     { "redraw", l_redraw },
     { "fonts", l_fonts },
     { "key", l_key },
+    { "shortcuts", l_shortcuts },
+    { "toggle_shortcuts", l_toggle_shortcuts },
     { "notification_server", l_notification_server },
     { "notifications", l_notifications },
     { "dismiss_notification", l_dismiss_notification },

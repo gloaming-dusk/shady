@@ -532,3 +532,11 @@ shell.bar {
         }
     end,
 }
+
+-- ---- shortcut overlay (Super+Shift+/) ----------------------------------
+
+require("shortcut_overlay").install {
+    frame = function(body)
+        return panel(18, { shell.column { padding = { 20, 26, 24, 26 }, align = "stretch", body } })
+    end,
+}

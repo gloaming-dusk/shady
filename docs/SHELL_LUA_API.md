@@ -284,6 +284,8 @@ Window arguments may also be the window tables themselves.
 | `shell.alpha(colour, a)` | multiply a colour's alpha |
 | `shell.log(...)` | write to the shell's log |
 | `shell.key(keys)` | press a compositor shortcut such as `"Super+t"` (the IPC `key` command); false when not connected |
+| `shell.shortcuts()` | the compositor's shortcut list as of its last `shortcuts` event: `{keys, group, description}` each (see Shortcut overlay) |
+| `shell.toggle_shortcuts()` | ask the compositor to toggle the shortcut overlay; false when not connected |
 | `shell.fonts(dir)` | make the font files in `dir` (relative to the config file) available by family name; call it before the views use them |
 | `shell.data_dir`, `shell.config_path` | where the default UI and your config live |
 
@@ -338,6 +340,32 @@ end)
 | `"launcher"` | the compositor asked for the launcher (`shady.toggle_launcher()`), or the shell started with `SHADY_SHELL_OPEN_LAUNCHER=1` |
 | `"change"` | the compositor's workspaces or windows changed |
 | `"notifications"` | a notification arrived, expired, closed or was replaced (see Notifications) |
+| `"shortcuts"` | the compositor asked for the shortcut overlay (Super+Shift+/) and sent its list |
+
+## Shortcut overlay
+
+On `Super+Shift+/` the compositor sends every shortcut of the session (its
+own, the rice's described `shady.bind`s, each plugin's) and the shell emits
+`shortcuts`. The data directory has a ready overlay that handles it:
+
+```lua
+require("shortcut_overlay").install()            -- the default look
+require("shortcut_overlay").install {
+    name = "my-shortcuts",                       -- popup name, for shady.layer_effect
+    palette = shell.theme,                       -- text, text_dim, accent, surface; read per repaint
+    font = "Sans 9.5", bold = "Sans SemiBold 9.5", title_font = "Sans SemiBold 13",
+    cap = function(p) return { radius = 6, background = p.surface } end, -- key cap style
+    frame = function(body) return shell.column { padding = 24, body } end, -- the card
+    columns = 2,                                 -- fewest columns; more if it does not fit
+    order = { "Shady", "Desktop" },              -- groups shown first
+}
+```
+
+It covers the output, dims what is behind, flows the groups into columns
+that fit the screen and closes on Escape, Enter or a click. The default
+UI, Horizon and Objects each install it with their own
+look ([`shell/shortcut_overlay.lua`](../shell/shortcut_overlay.lua)). A
+config can also draw its own from `shell.shortcuts()`.
 
 ## Shader effects
 

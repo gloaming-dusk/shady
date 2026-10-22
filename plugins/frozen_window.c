@@ -281,6 +281,13 @@ static const struct shady_module module = {
 	.tick = tick,
 };
 
+/* Listed in the shortcut overlay (Super+Shift+/). */
+static void declare_shortcuts(void) {
+	if (!SHADY_API_HAS(api, declare_shortcut)) return;
+	api->declare_shortcut(host, "Super+Z", "Freeze or thaw the focused window");
+	api->declare_shortcut(host, "Super+Shift+Z", "Freeze or thaw the whole workspace");
+}
+
 const struct shady_module *shady_plugin_entry_v1(uint32_t host_abi,
 		const struct shady_plugin_api_v1 *host_api, shady_host host_handle) {
 	if (host_abi != SHADY_PLUGIN_ABI_V1 || !host_api ||
@@ -294,6 +301,7 @@ const struct shady_module *shady_plugin_entry_v1(uint32_t host_abi,
 		return NULL;
 	api = host_api;
 	host = host_handle;
+	declare_shortcuts();
 	frozen_count = 0;
 	next_seed = 0;
 	api->subscribe_event(host, SHADY_EVENT_WINDOW_DESTROYED, on_event, NULL);

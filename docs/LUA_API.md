@@ -37,11 +37,12 @@ shady.set("environment_path", os.getenv("HOME") .. "/rooms/test-room.obj")
 
 ### `shady.bind(action, shortcut)`
 
-Register a compositor key binding.
+In `config.lua`: set the key of a compositor binding.
 
 ```lua
 shady.bind("quit", "Super+Shift+Escape")
 shady.bind("cycle_windows", "Super+Tab")
+shady.bind("show_shortcuts", "Super+F1")
 ```
 
 Available action names are compositor-defined. `"none"` removes a binding, including a
@@ -49,6 +50,29 @@ built-in default such as `quit` on Escape:
 
 ```lua
 shady.bind("quit", "none")
+```
+
+| Action | Default | |
+|---|---|---|
+| `show_shortcuts` | `Super+Shift+slash` | show or hide the shortcut overlay |
+| `quit` | `Escape` | end the session |
+| `cycle_windows` | `Alt+Tab` | focus the next window |
+| `close_window` | `Alt+F11` | close the focused window |
+| `fps_toggle`, `fps_capture`, `gravity_toggle`, `debug_ray` | `F2`..`F5` | first-person mode |
+| `camera_left`, `camera_right`, `camera_up`, `camera_down` | `Alt+arrows` | pan the camera |
+| `camera_yaw_left`, `camera_yaw_right` | `Alt+Q`, `Alt+E` | turn the camera |
+| `camera_zoom_in`, `camera_zoom_out`, `camera_reset` | `Alt+=`, `Alt+-`, `Alt+0` | zoom and reset |
+
+### `shady.bind(keys, fn[, description])`
+
+At runtime (`init.lua`): call `fn` when the key combination is pressed.
+With a description, the binding is listed in the shortcut overlay under
+"Desktop"; a table also chooses the group.
+
+```lua
+shady.bind("Super+Return", function() shady.spawn("foot") end, "Open a terminal")
+shady.bind("Super+n", toggle_notes, { description = "Show notes", group = "Notes" })
+shady.bind("F6", debug_dump) -- not listed
 ```
 
 ### `shady.rule(table)`
@@ -76,6 +100,34 @@ Terminate the compositor from the event loop.
 ### `shady.toggle_launcher()`
 
 Ask `shady-shell` to toggle its launcher through the shell protocol.
+
+### Shortcut overlay
+
+`Super+Shift+/` (the `show_shortcuts` binding) sends every listed shortcut to
+the shell, which shows them grouped in an overlay. The list holds:
+
+- the compositor's own bindings, as currently configured, under "Shady",
+  "Camera" and "First person" (only while those modules are active);
+- runtime bindings given a description, under "Desktop" or their group;
+- what native plugins declare (`declare_shortcut` in
+  [C_PLUGIN_API.md](C_PLUGIN_API.md)), under the plugin's name while it is
+  active.
+
+| Function | |
+|---|---|
+| `shady.describe(keys, description[, group])` | List a shortcut without binding it: keys the shell handles, or one line for several bindings. `keys` may be a free label. `nil` removes it. |
+| `shady.shortcuts()` | The list: `{keys, group, description}` each, `keys` spelled as in `"Super+Shift+Z"` |
+| `shady.toggle_shortcuts()` | Show or hide the overlay, like the key |
+
+```lua
+shady.describe("Super+1…3", "Go to workspace")
+for i, name in ipairs({ "main", "web", "chat" }) do
+    shady.bind("Super+" .. i, function() shady.workspace(name) end)
+end
+```
+
+Bindings set up from Lua are forgotten with the Lua state, so a reloaded
+`init.lua` lists only what it binds again.
 
 ### `shady.layer_effect(namespace, options | nil) -> boolean`
 

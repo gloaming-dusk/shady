@@ -32,9 +32,11 @@ if shady.has_capability("spatial") then
 end
 
 shady.bind("Super+Shift+Escape", function() shady.quit() end)
-shady.bind("Super+Return", function() shady.spawn(terminal) end)
-shady.bind("Super+d", function() shady.toggle_launcher() end)
+shady.bind("Super+Return", function() shady.spawn(terminal) end, "Open a terminal")
+shady.bind("Super+d", function() shady.toggle_launcher() end, "Open the launcher")
 
+shady.describe("Super+1…" .. #workspaces, "Go to workspace")
+shady.describe("Super+Shift+1…" .. #workspaces, "Move window to workspace")
 for i, name in ipairs(workspaces) do
     shady.bind("Super+" .. i, function() shady.workspace(name) end)
     shady.bind("Super+Shift+" .. i, function()
@@ -49,13 +51,13 @@ end
 shady.bind("Super+m", function()
     local window = shady.focused_window()
     if window then window:maximize() end
-end)
+end, "Maximize the window")
 shady.bind("Super+Shift+m", function()
     local window = shady.focused_window()
     if window then window:set_fullscreen() end
-end)
-shady.bind("Super+Space", function() shady.expand_all() end)
-shady.bind("Super+Shift+Space", function() shady.fold_all() end)
+end, "Make the window fullscreen")
+shady.bind("Super+Space", function() shady.expand_all() end, "Unfold windows")
+shady.bind("Super+Shift+Space", function() shady.fold_all() end, "Fold windows into cubes")
 
 shady.on("window.mapped", function(window)
     shady.log("Afterglow: " .. (window.title ~= "" and window.title or window.app_id) ..

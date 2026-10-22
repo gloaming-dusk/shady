@@ -208,6 +208,24 @@ removes the key. The values a plugin published are removed when it unloads.
 `published_value(host, key)` reads any published value. Both are
 append-only (`SHADY_API_HAS(api, published_value)`).
 
+#### Shortcuts
+
+`declare_shortcut(host, keys, description)` lists a key the plugin reacts to
+in the shortcut overlay (Super+Shift+/) and the IPC `shortcuts` query, under
+the plugin's name. It binds nothing: the plugin still handles the key in its
+`key` hook. Declare from the entry function, which runs again on every
+reload; the shortcuts are listed while the plugin's module is active and
+removed when it unloads. `keys` uses the `shady.bind` syntax or a free label
+(`"Arrows"`), and `NULL` as description removes it. Append-only
+(`SHADY_API_HAS(api, declare_shortcut)`).
+
+```c
+if (SHADY_API_HAS(api, declare_shortcut)) {
+	api->declare_shortcut(host, "Super+Z", "Freeze or thaw the focused window");
+	api->declare_shortcut(host, "Super+Shift+Z", "Freeze or thaw the whole workspace");
+}
+```
+
 #### Camera-aware hooks
 
 The render context also describes the spatial camera, so a hook can build a

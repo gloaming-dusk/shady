@@ -378,6 +378,13 @@ static const struct shady_module module = {
 	.key = key, .tick = tick,
 };
 
+/* Listed in the shortcut overlay (Super+Shift+/). */
+static void declare_shortcuts(void) {
+	if (!SHADY_API_HAS(api, declare_shortcut)) return;
+	api->declare_shortcut(host, "Super+T", "Move the sky to the next hour");
+	api->declare_shortcut(host, "Super+Shift+T", "Move the sky back an hour");
+}
+
 const struct shady_module *shady_plugin_entry_v1(uint32_t abi,
 		const struct shady_plugin_api_v1 *table, shady_host h) {
 	if (abi != SHADY_PLUGIN_ABI_V1 || !table ||
@@ -387,5 +394,6 @@ const struct shady_module *shady_plugin_entry_v1(uint32_t abi,
 		return NULL;
 	api = table;
 	host = h;
+	declare_shortcuts();
 	return &module;
 }

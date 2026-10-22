@@ -2,6 +2,10 @@
 -- drive the compositor through shadyctl. The script ends the session with
 -- `shadyctl quit`; the timer is only a safety net.
 local probe = assert(os.getenv("SHADY_AUTOMATION_PROBE"))
+-- Listed in the shortcut overlay; an undescribed binding is not.
+shady.bind("Super+F9", function() end, "Probe binding")
+shady.bind("Super+F10", function() end, { description = "Grouped probe", group = "Probes" })
+shady.bind("Super+F11", function() end)
 local announced = false
 shady.on("window.mapped", function(window)
     if announced or window.app_id ~= "ipc-probe" then return end

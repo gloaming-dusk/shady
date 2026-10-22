@@ -69,6 +69,12 @@ static const struct shady_module module = {
     .start = start,
 };
 
+/* Listed in the shortcut overlay (Super+Shift+/). */
+static void declare_shortcuts(void) {
+    if (!SHADY_API_HAS(api, declare_shortcut)) return;
+    api->declare_shortcut(host, "Super+B", "Accent the focused window's border");
+}
+
 const struct shady_module *shady_plugin_entry_v1(
         uint32_t host_abi,
         const struct shady_plugin_api_v1 *host_api,
@@ -84,5 +90,6 @@ const struct shady_module *shady_plugin_entry_v1(
 
     api = host_api;
     host = host_handle;
+    declare_shortcuts();
     return &module;
 }

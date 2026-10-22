@@ -413,7 +413,7 @@ local function slider(id, icon, value, color, set)
             shell.box { key = id .. ":fill", left = 0, top = 4, width = math.max(22, knob + 4), height = 22,
                 radius = 11, background = color, border = INK, border_width = 3, animate = "snappy" },
             shell.box { key = id .. ":knob", left = knob - 15, top = 0, width = 30, height = 30, radius = 15,
-                background = BUTTER, border = INK, border_width = 3, animate = "snappy" },
+                background = BUTTER, border = INK, border_width = 2, border_width = 3, animate = "snappy" },
         },
         text(value and tostring(value) or "—", { font = font("Bold", 14), width = 30, text_align = 1 }),
     }
@@ -849,5 +849,32 @@ shell.popup {
                 status(ctx),
             }, 6)),
         }
+    end,
+}
+
+-- ---- shortcuts (Super+Shift+/) -----------------------------------------
+-- A cream card on the table, every key a little chunky key cap.
+
+require("shortcut_overlay").install {
+    name = "objects-shortcuts",
+    palette = { text = INK, text_dim = a(INK, 0.6), accent = ORANGE, surface = CREAM },
+    title = "Shortcuts",
+    title_font = font("ExtraBold", 18),
+    font = font("Medium", 10),
+    bold = font("Bold", 10),
+    cap = function()
+        return {
+            radius = 7, font = font("Bold", 9), color = INK,
+            background = BUTTER, border = INK, border_width = 2,
+        }
+    end,
+    frame = function(body)
+        return shell.column(chunky({
+            radius = 22, padding = 26, align = "stretch", background = CREAM,
+            rotate = -1, animate = "bouncy",
+            enter = { translate = { 0, 160 }, rotate = 6, opacity = 0 },
+            exit = { translate = { 0, 160 }, opacity = 0 },
+            body,
+        }, 6))
     end,
 }

@@ -249,6 +249,16 @@ struct shady_plugin_api_v1 {
 	 * SHADY_API_HAS. */
 	bool (*publish_value)(shady_host host, const char *key, const char *value);
 	const char *(*published_value)(shady_host host, const char *key);
+	/* List a shortcut the plugin answers to in the shortcut overlay
+	 * (Super+Shift+/) and the IPC `shortcuts` query, under the plugin's
+	 * name, e.g. declare_shortcut(host, "Super+W", "Turn windows to water").
+	 * `keys` is the shady.bind syntax or a free label of up to 63
+	 * characters ("Arrows"); description NULL removes it. Declaring does not
+	 * bind anything: the plugin still reacts in its key hook. Shortcuts are
+	 * listed while the plugin's module is active and removed when it
+	 * unloads, so declare them from the entry function. Check with
+	 * SHADY_API_HAS. */
+	bool (*declare_shortcut)(shady_host host, const char *keys, const char *description);
 };
 
 typedef const struct shady_module *(*shady_plugin_entry_v1_fn)(

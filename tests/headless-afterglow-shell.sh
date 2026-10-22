@@ -86,6 +86,16 @@ badge_after="$(pixel 21 20)"
 [[ "$badge_before" != "$badge_after" ]] || fail "the bar did not follow the sky ($badge_before)"
 shot blue-hour
 
+# Super+Shift+/ has the compositor send its shortcut list to the shell,
+# which opens the overlay over the screen.
+before="$(pixel 640 400)"
+[[ "$(ctl key keys=Super+Shift+slash)" == *'"handled":true'* ]] || fail "the shortcut key was not handled"
+wait_for "shady-shell: shortcuts size"
+sleep 0.6
+[[ "$(pixel 640 400)" != "$before" ]] || fail "the shortcut overlay did not show ($before)"
+shot shortcuts
+ctl key keys=Super+Shift+slash >/dev/null
+
 echo DONE >>"$status"
 wait "$comp" || fail "compositor exited with an error"
 grep -q "afterglow-shell: timed out" "$log" && fail "timed out"

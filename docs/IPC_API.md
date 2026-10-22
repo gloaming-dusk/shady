@@ -73,6 +73,7 @@ answered with an error and the connection stays open.
 | `plugins` | array of `{"name", "spec", "state", "builtin"}`, as `shady.plugins.list()` |
 | `values` | every published value, as `{"key": "value", ...}` |
 | `value` | `{"key": ...}` -> that value, or `null` |
+| `shortcuts` | array of `{"keys", "group", "description"}`: the shortcut overlay's list (see [LUA_API.md](LUA_API.md#shortcut-overlay)) |
 
 ## Commands
 
@@ -85,6 +86,7 @@ answered with an error and the connection stays open.
 | `window.move` | `window`, `workspace` | Move to a workspace, creating it if needed |
 | `workspace.switch` | `name` | Switch workspace, creating it if needed |
 | `key` | `keys` | Press and release a shortcut such as `"Super+Shift+z"`; data is `{"handled": bool}` |
+| `shortcuts.toggle` | | Ask shells to show or hide the shortcut overlay (the `shortcuts.toggle` event) |
 | `plugin.reload` | `name` | Hot-reload a loaded plugin |
 | `plugin.unload` | `name` | Hot-unload a loaded plugin |
 | `subscribe` | `events`? | Start receiving events; data lists the active subscriptions |
@@ -134,6 +136,24 @@ event:
 published it unloaded. Subscribing to `value.changed` first replays every
 current value as an event, so a client needs no separate snapshot.
 `value.changed` is included when `subscribe` is sent without `events`.
+
+### Shortcut overlay
+
+`Super+Shift+/`, `shady.toggle_shortcuts()` or the `shortcuts.toggle`
+command asks shells to show or hide the overlay. Subscribers to
+`shortcuts.toggle` receive the event with the number of shortcuts, then the
+list itself as one `shortcut` event per entry, so a client that only reads
+flat objects can collect it:
+
+```json
+{"event": "shortcuts.toggle", "count": 2}
+{"event": "shortcut", "keys": "Super+Shift+slash", "group": "Shady", "description": "Show these shortcuts"}
+{"event": "shortcut", "keys": "Super+Z", "group": "frozen-window", "description": "Freeze or thaw the focused window"}
+```
+
+`keys` is the binding syntax with canonical spelling (`Super+Ctrl+Alt+Shift+Key`),
+several keys sharing modifiers as `Alt+Left/Right/Up/Down`, or a free label
+such as `W A S D`.
 
 A subscriber that stops reading is disconnected once 4 MiB of output is
 queued for it.

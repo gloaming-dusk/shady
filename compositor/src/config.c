@@ -49,6 +49,7 @@ void shady_config_defaults(struct shady_config *c) {
 		.environment = false,
 		.environment_path = "",
 		.bind_quit = { XKB_KEY_Escape, 0 },
+		.bind_show_shortcuts = { XKB_KEY_slash, WLR_MODIFIER_LOGO | WLR_MODIFIER_SHIFT },
 		.bind_cycle_windows = { XKB_KEY_Tab, WLR_MODIFIER_ALT },
 		.bind_close_window = { XKB_KEY_F11, WLR_MODIFIER_ALT },
 		.bind_fps_toggle = { XKB_KEY_F2, 0 },
@@ -176,7 +177,8 @@ bool shady_config_set(struct shady_config *c,const char *key,const char *value){
 	/* environment_obj* are the pre-loader-plugin spellings, kept as aliases. */
 	if(!strcmp(key,"environment_path")||!strcmp(key,"environment_obj_path")){snprintf(c->environment_path,sizeof(c->environment_path),"%s",value);return true;}
 #define BIND_SET(name,field) if(!strcmp(key,"bind." name))return parse_keybind(value,&c->field);
-	BIND_SET("quit",bind_quit) BIND_SET("cycle_windows",bind_cycle_windows)
+	BIND_SET("quit",bind_quit) BIND_SET("show_shortcuts",bind_show_shortcuts)
+	BIND_SET("cycle_windows",bind_cycle_windows)
 	BIND_SET("close_window",bind_close_window) BIND_SET("fps_toggle",bind_fps_toggle)
 	BIND_SET("fps_capture",bind_fps_capture) BIND_SET("gravity_toggle",bind_gravity_toggle)
 	BIND_SET("debug_ray",bind_debug_ray) BIND_SET("camera_left",bind_camera_left)
@@ -220,6 +222,7 @@ bool shady_config_load(struct shady_config *c, const char *path) {
 			continue; \
 		}
 		BIND("quit", bind_quit)
+		BIND("show_shortcuts", bind_show_shortcuts)
 		BIND("cycle_windows", bind_cycle_windows)
 		BIND("close_window", bind_close_window)
 		BIND("fps_toggle", bind_fps_toggle)

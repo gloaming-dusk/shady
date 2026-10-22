@@ -79,13 +79,41 @@ done
 grep -q '"event":"workspace.changed","workspace":"two"' "$tmp/events" || fail "no workspace event: $(cat "$tmp/events")"
 grep -q '"event":"window.focused","window":{"id":'"$id" "$tmp/events" || fail "no focus event: $(cat "$tmp/events")"
 
+# The shortcut list gathers the compositor's bindings, Lua's and plugins'.
+shortcuts="$(ctl shortcuts)"
+expect '{"keys":"Super+Shift+slash","group":"Shady","description":"Show these shortcuts"}' "$shortcuts"
+expect '{"keys":"Alt+Left/Right/Up/Down","group":"Camera","description":"Pan the camera"}' "$shortcuts"
+expect '{"keys":"Super+Z","group":"frozen-window","description":"Freeze or thaw the focused window"}' "$shortcuts"
+expect '{"keys":"Super+F9","group":"Desktop","description":"Probe binding"}' "$shortcuts"
+expect '{"keys":"Super+F10","group":"Probes","description":"Grouped probe"}' "$shortcuts"
+[[ "$shortcuts" != *'Super+F11'* ]] || fail "undescribed binding listed: $shortcuts"
+[[ "$shortcuts" != *'"First person"'* ]] || fail "inactive fps module listed: $shortcuts"
+ctl subscribe events=shortcuts.toggle >"$tmp/shortcut-events" &
+shortcut_sub=$!
+for _ in $(seq 1 100); do [[ -s "$tmp/shortcut-events" ]] && break; sleep 0.02; done
+expect '"handled":true' "$(ctl key keys=Super+Shift+slash)"
+for _ in $(seq 1 100); do grep -q '"event":"shortcut",' "$tmp/shortcut-events" && break; sleep 0.02; done
+count="$(sed -n 's/.*"event":"shortcuts.toggle","count":\([0-9]*\).*/\1/p' "$tmp/shortcut-events")"
+[[ -n "$count" ]] || fail "no toggle event: $(cat "$tmp/shortcut-events")"
+for _ in $(seq 1 100); do
+    [[ "$(grep -c '"event":"shortcut",' "$tmp/shortcut-events")" == "$count" ]] && break
+    sleep 0.02
+done
+[[ "$(grep -c '"event":"shortcut",' "$tmp/shortcut-events")" == "$count" ]] ||
+    fail "toggle announced $count shortcuts: $(cat "$tmp/shortcut-events")"
+grep -q '"event":"shortcut","keys":"Super+Z","group":"frozen-window"' "$tmp/shortcut-events" ||
+    fail "plugin shortcut missing from the toggle: $(cat "$tmp/shortcut-events")"
+kill "$shortcut_sub" 2>/dev/null || true
+
 # Plugins and keys go through the same paths as Lua and real input.
 expect '"name":"frozen-window","spec":"frozen-window","state":"active"' "$(ctl plugins)"
 expect '"handled":true' "$(ctl key keys=Super+z)"
 expect '"handled":false' "$(ctl key keys=Super+F12)"
 ctl plugin.reload name=frozen-window >/dev/null
+expect '"keys":"Super+Z","group":"frozen-window"' "$(ctl shortcuts)"
 ctl plugin.unload name=frozen-window >/dev/null
 expect '"handled":false' "$(ctl key keys=Super+z)"
+[[ "$(ctl shortcuts)" != *'"frozen-window"'* ]] || fail "unloaded plugin's shortcuts still listed"
 expect '"error":"unload failed"' "$(ctl plugin.unload name=frozen-window || true)"
 
 # Errors are reported, and a bad request does not end the connection.

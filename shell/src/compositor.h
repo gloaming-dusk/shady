@@ -11,6 +11,7 @@
  */
 
 #include <stdbool.h>
+#include <stddef.h>
 
 struct shell;
 
@@ -20,5 +21,18 @@ const char *shell_compositor_value(const char *key);
 /* Press a shortcut through the compositor (the IPC `key` command), e.g.
  * "Super+t". False when not connected or the keys look malformed. */
 bool shell_compositor_key(const char *keys);
+
+/* The compositor's shortcut list, as of its last `shortcuts.toggle` event
+ * (Super+Shift+/ by default). Each one arriving in full emits the shell's
+ * `shortcuts` event. */
+struct shell_shortcut {
+    char *keys;
+    char *group;
+    char *description;
+};
+size_t shell_compositor_shortcut_count(void);
+const struct shell_shortcut *shell_compositor_shortcut_at(size_t index);
+/* Ask the compositor to toggle the overlay: it answers with the event. */
+bool shell_compositor_toggle_shortcuts(void);
 
 #endif

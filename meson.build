@@ -89,6 +89,7 @@ shady_sources = [
   'compositor/src/ipc/ipc.c',
   'compositor/src/ipc/json.c',
   'compositor/src/ipc/values.c',
+  'compositor/src/ipc/shortcuts.c',
   shady_shell_server_header,
   shady_shell_protocol_code,
   'compositor/src/modules/desktop/module.c',
