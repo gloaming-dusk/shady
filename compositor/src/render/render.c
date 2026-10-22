@@ -1834,6 +1834,32 @@ bool shady_render_layer_is_transformed(struct shady_server *server, struct wlr_s
 	return ls && layer_transform_for(ls->namespace) != NULL;
 }
 
+/* How a window's pixels are shaded. The focused window shows exactly what
+ * its client drew: no tint, exposure, glass effect or translucency, since
+ * that is the one being read and worked in. The rice's glass look belongs
+ * to the windows behind it (unless window_focused_exact is off). */
+struct window_look {
+	float tint[4]; /* rgb tint, opacity */
+	float effect_strength;
+	float brightness;
+};
+
+static struct window_look window_look_for(const struct shady_server *server, bool focused) {
+	const struct shady_config *c = &server->config;
+	if (focused && c->window_focused_exact)
+		return (struct window_look){ {1.f, 1.f, 1.f, 1.f}, 0.f, 1.f };
+	return (struct window_look){
+		{
+			c->window_tint[0] * (focused ? 0.92f : 1.0f),
+			c->window_tint[1] * (focused ? 1.06f : 1.0f),
+			c->window_tint[2] * (focused ? 1.16f : 1.0f),
+			c->window_opacity,
+		},
+		c->window_effect_strength,
+		c->window_brightness * (focused ? 1.08f : 1.0f),
+	};
+}
+
 struct shady_overlay_render_data {
 	struct wlr_render_pass *pass;
 	struct wlr_output *output;
@@ -1980,12 +2006,7 @@ static void render_spatial_subsurface_buffer(struct wlr_scene_buffer *buffer,
 	struct shady_server *server = ctx->toplevel->server;
 	bool focused = !wl_list_empty(&server->toplevels) &&
 		server->toplevels.next == &ctx->toplevel->link;
-	const float tint[4] = {
-		server->config.window_tint[0] * (focused ? 0.92f : 1.0f),
-		server->config.window_tint[1] * (focused ? 1.06f : 1.0f),
-		server->config.window_tint[2] * (focused ? 1.16f : 1.0f),
-		server->config.window_opacity,
-	};
+	const struct window_look look = window_look_for(server, focused);
 
 	float water[4] = {
 		ctx->toplevel->fullscreen ? 0.f : ctx->toplevel->water_amplitude,
@@ -2021,8 +2042,7 @@ static void render_spatial_subsurface_buffer(struct wlr_scene_buffer *buffer,
 		no_border_width,
 		shady_close_state_for_const(ctx->toplevel)->progress,
 		close_effect,
-		tint, server->config.window_effect_strength,
-		server->config.window_brightness * (focused ? 1.08f : 1.0f));
+		look.tint, look.effect_strength, look.brightness);
 }
 
 /* Layer surfaces from layer `lowest` to `highest`, then (with `popups`)
@@ -2593,12 +2613,7 @@ void shady_render_output_frame(
 		}
 
 		if (screen_space) glDisable(GL_DEPTH_TEST);
-		float focused_tint[4] = {
-			window_tint[0] * (focused ? 0.92f : 1.0f),
-			window_tint[1] * (focused ? 1.06f : 1.0f),
-			window_tint[2] * (focused ? 1.16f : 1.0f),
-			server->config.window_opacity,
-		};
+		const struct window_look look = window_look_for(server, focused);
 		float water[4] = {
 			toplevel->fullscreen ? 0.f : toplevel->water_amplitude,
 			toplevel->water_frequency,
@@ -2639,8 +2654,7 @@ void shady_render_output_frame(
 				(float)buf_w, (float)buf_h, tw, th, wobble_x, wobble_y,
 				water, water_surface, border_color, border_width,
 				shady_close_state_for_const(toplevel)->progress, close_effect,
-				focused_tint, server->config.window_effect_strength,
-				server->config.window_brightness * (focused ? 1.08f : 1.0f),
+				look.tint, look.effect_strength, look.brightness,
 				mesh_representation ? (const float *)representation_mesh.vertices : NULL,
 				mesh_representation ? representation_mesh.vertex_count : 0,
 				mesh_representation ? representation_mesh.indices : NULL,
@@ -2654,8 +2668,7 @@ void shady_render_output_frame(
 				wobble_x, wobble_y, water, water_surface,
 				border_color, border_width,
 				shady_close_state_for_const(toplevel)->progress, close_effect,
-				focused_tint, server->config.window_effect_strength,
-				server->config.window_brightness * (focused ? 1.08f : 1.0f),
+				look.tint, look.effect_strength, look.brightness,
 				(const float *)representation_mesh.vertices,
 				representation_mesh.vertex_count,
 				representation_mesh.indices,
@@ -2680,9 +2693,9 @@ void shady_render_output_frame(
 				border_width,
 				shady_close_state_for_const(toplevel)->progress,
 				close_effect,
-				focused_tint,
-				server->config.window_effect_strength,
-				server->config.window_brightness * (focused ? 1.08f : 1.0f)
+				look.tint,
+				look.effect_strength,
+				look.brightness
 			);
 		}
 

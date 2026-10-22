@@ -16,6 +16,7 @@ void shady_config_defaults(struct shady_config *c) {
 		.window_gravity = false,
 		.window_wobble = true,
 		.window_sides = true,
+		.window_focused_exact = true,
 		.shadows = true,
 		.floor = true,
 		.close_animation = true,
@@ -191,6 +192,7 @@ bool shady_config_set(struct shady_config *c,const char *key,const char *value){
 #define BOOL_SET(name,field) if(!strcmp(key,name)){c->field=v;return true;}
 	BOOL_SET("spatial_mode",spatial_mode) BOOL_SET("physics_enabled",physics_enabled) BOOL_SET("window_gravity",window_gravity)
 	BOOL_SET("window_wobble",window_wobble) BOOL_SET("window_sides",window_sides)
+	BOOL_SET("window_focused_exact",window_focused_exact)
 	BOOL_SET("shadows",shadows) BOOL_SET("floor",floor) BOOL_SET("close_animation",close_animation)
 	BOOL_SET("fps_mode",fps_mode) BOOL_SET("sky",sky) BOOL_SET("environment",environment) BOOL_SET("environment_obj",environment)
 	BOOL_SET("window_titlebar",window_titlebar)
@@ -247,6 +249,7 @@ bool shady_config_load(struct shady_config *c, const char *path) {
 		KEY("window_gravity",window_gravity)
 		KEY("window_wobble",window_wobble)
 		KEY("window_sides",window_sides)
+		KEY("window_focused_exact",window_focused_exact)
 		KEY("shadows",shadows)
 		KEY("floor",floor)
 		KEY("close_animation",close_animation)

@@ -68,6 +68,7 @@ struct shady_config {
 	bool window_gravity;
 	bool window_wobble;
 	bool window_sides;
+	bool window_focused_exact;
 	bool shadows;
 	bool floor;
 	bool close_animation;

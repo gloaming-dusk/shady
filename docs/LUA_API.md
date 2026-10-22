@@ -26,6 +26,12 @@ shady.set("window_titlebar_height", 28)
 shady.set("window_opacity", 0.92)
 ```
 
+Window glass (`window_opacity`, `window_tint`, `window_brightness`,
+`window_effect_strength`) shades the windows behind the focused one. The
+focused window shows exactly what its client drew, so text and colours in
+the window you work in stay true; `shady.set("window_focused_exact", false)`
+applies the glass to it too.
+
 The spatial environment is configured the same way. `environment_path` is
 dispatched to the loader plugin registered for its extension, and can be
 changed at runtime. See [Environment API](ENVIRONMENT_API.md).
