@@ -86,6 +86,7 @@ answered with an error and the connection stays open.
 | `window.move` | `window`, `workspace` | Move to a workspace, creating it if needed |
 | `workspace.switch` | `name` | Switch workspace, creating it if needed |
 | `key` | `keys` | Press and release a shortcut such as `"Super+Shift+z"`; data is `{"handled": bool}` |
+| `screenshot` | `path`?, `delay`? | Save the next frame as a PNG (default `~/Pictures/shady-<time>.png`) after `delay` ms; data is `{"path": …}`, and the value `screenshot.saved` (or `screenshot.failed`) names the file once written |
 | `shortcuts.toggle` | | Ask shells to show or hide the shortcut overlay (the `shortcuts.toggle` event) |
 | `plugin.reload` | `name` | Hot-reload a loaded plugin |
 | `plugin.unload` | `name` | Hot-unload a loaded plugin |

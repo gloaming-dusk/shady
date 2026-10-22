@@ -1,4 +1,5 @@
 #define _GNU_SOURCE
+#include "../capture.h"
 #include "ipc.h"
 
 #include <errno.h>
@@ -613,6 +614,27 @@ static bool cmd_shortcuts_toggle(struct request *r) {
 	return true;
 }
 
+/* screenshot: capture the next frame to "path" (default: a timestamped file
+ * in ~/Pictures) after "delay" ms. Replies with the path; the file is
+ * there once the value screenshot.saved names it. */
+static bool cmd_screenshot(struct request *r) {
+	const char *path = json_get_string(r->args, "path");
+	const struct json_value *delay = json_get(r->args, "delay");
+	int delay_ms = 0;
+	if (delay) {
+		if (delay->type != JSON_NUMBER || delay->number < 0 || delay->number > 10000)
+			return error(r, "delay must be 0-10000 ms");
+		delay_ms = (int)delay->number;
+	}
+	char chosen[4096];
+	if (!shady_capture_request(r->ipc->server, path, delay_ms, chosen, sizeof(chosen)))
+		return error(r, "a screenshot is already pending");
+	json_puts(r->data, "{\"path\":");
+	json_string(r->data, chosen);
+	json_puts(r->data, "}");
+	return true;
+}
+
 static bool cmd_quit(struct request *r) {
 	wl_display_terminate(r->ipc->server->wl_display);
 	return true;
@@ -639,6 +661,7 @@ static const struct {
 	{ "window.move", cmd_window_move },
 	{ "workspace.switch", cmd_workspace_switch },
 	{ "key", cmd_key },
+	{ "screenshot", cmd_screenshot },
 	{ "plugin.unload", cmd_plugin_unload },
 	{ "plugin.reload", cmd_plugin_reload },
 	{ "subscribe", cmd_subscribe },

@@ -1,3 +1,4 @@
+#include "../capture.h"
 #include "render.h"
 
 #include <time.h>
@@ -106,7 +107,7 @@ void shady_render_output_frame(struct shady_output *output) {
 	if (!scene_output) {
 		return;
 	}
-	if (!wlr_scene_output_commit(scene_output, NULL)) {
+	if (!shady_capture_scene_output_commit(server, scene_output)) {
 		wlr_log(WLR_ERROR, "failed to commit desktop scene output");
 		return;
 	}

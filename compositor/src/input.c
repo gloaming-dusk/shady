@@ -100,9 +100,7 @@ static void process_cursor_resize(struct shady_server *server) {
 		}
 	}
 
-	struct wlr_box *geo_box = &toplevel->xdg_toplevel->base->geometry;
-	wlr_scene_node_set_position(&toplevel->scene_tree->node,
-		new_left - geo_box->x, new_top - geo_box->y);
+	wlr_scene_node_set_position(&toplevel->scene_tree->node, new_left, new_top);
 
 	int new_width = new_right - new_left;
 	int new_height = new_bottom - new_top;

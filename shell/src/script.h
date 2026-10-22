@@ -21,5 +21,8 @@ void shell_lua_output_removed(struct shell *shell, struct shell_output *output);
 void shell_lua_model_changed(struct shell *shell);
 /* Run the handlers registered with shell.on(name, fn). */
 void shell_lua_emit(struct shell *shell, const char *event);
+/* The same, passing up to two strings to each handler (NULL ends them). */
+void shell_lua_emit_strings(struct shell *shell, const char *event,
+    const char *a, const char *b);
 
 #endif

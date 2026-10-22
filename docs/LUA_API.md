@@ -32,6 +32,13 @@ focused window shows exactly what its client drew, so text and colours in
 the window you work in stay true; `shady.set("window_focused_exact", false)`
 applies the glass to it too.
 
+`output_scale` sets the scale of every output (0.5-4). Left at 0, each
+output gets one from its panel's physical size, so text comes out about as
+large as on a ~120 DPI screen: a 13.6" 2880x1800 laptop panel gets 2,
+monitors around 100 DPI get 1. `SHADY_OUTPUT_SCALE` overrides both, and
+outputs can still be changed at runtime with wlr-output-management tools
+(`wlr-randr`).
+
 The spatial environment is configured the same way. `environment_path` is
 dispatched to the loader plugin registered for its extension, and can be
 changed at runtime. See [Environment API](ENVIRONMENT_API.md).
@@ -163,6 +170,20 @@ shady.layer_effect("quick", { shader = "/path/to/refract.frag", uniforms = { str
 The effect is masked by the surface's own alpha, so rounded or shaped
 panels get glass only where they draw. It needs spatial mode and returns
 false elsewhere, or when the shader fails to compile.
+
+### `shady.screenshot([path[, delay_ms]]) -> path | nil`
+
+Save the next frame the compositor draws as a PNG, exactly as shown (3D
+scene included), without grim. `path` defaults to
+`~/Pictures/shady-<time>.png` (`$XDG_PICTURES_DIR` when set). It returns
+the path, or `nil` while another capture is pending; once the file is
+written the published value `screenshot.saved` holds it
+(`screenshot.failed` if writing failed). The Afterglow, Horizon and
+Objects rices bind it to `Print`.
+
+```lua
+shady.bind("Print", function() shady.screenshot() end, "Save a screenshot")
+```
 
 ### `shady.publish(key, value | nil) -> boolean` / `shady.value(key) -> string | nil`
 

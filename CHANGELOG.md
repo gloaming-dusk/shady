@@ -41,6 +41,29 @@ was the test):
   shadow margin such clients keep around themselves, and a buffer cropped
   with wp_viewporter (Chromium when maximized) is drawn cropped instead of
   squeezed.
+- Windows are shown at their real size and square-on. Afterglow, Horizon
+  and Neon Transit pulled the camera in and turned it, which enlarged every
+  window about 1.4 times (too big for the screen) and skewed it.
+- HiDPI: each output gets a scale from its panel's physical size (2 on a
+  13.6" 2880x1800 laptop; `output_scale` or `SHADY_OUTPUT_SCALE` to choose).
+  Shady used to leave every output at scale 1.
+- New windows are told how much room there is (xdg configure_bounds), are
+  asked to shrink when they open larger than the screen, and are placed
+  with their title bar on screen. Placement, resizing and restoring used
+  the surface instead of the window geometry, so client-decorated windows
+  landed offset by their shadow and grew with each unmaximize.
+- Maximized and fullscreen windows below a reserved area (Horizon's status
+  line) were drawn mirrored to the other end of the screen, away from where
+  they took clicks.
+- Screenshots no longer need grim: `shady.screenshot()`, the IPC
+  `screenshot` command and `shell.screenshot()` save the next frame as a
+  PNG in `~/Pictures`. `Print` takes one, the control centre's Capture tile
+  uses it, and a notification says where it went.
+- The brightness slider works without brightnessctl: it reads the backlight
+  from sysfs and sets it through systemd-logind.
+- Horizon's status line reserves its strip at the top, so windows no longer
+  open or maximize underneath it.
+- `shell.notify()` and a `value` event for shady-shell configs.
 - A dragged window leans a little and springs back exactly flat. The tilt
   used to stay wherever the drag left it, softening the text for good.
   Afterglow and Horizon no longer bend windows while they are dragged.

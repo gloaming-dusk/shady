@@ -113,9 +113,12 @@ function sys.volume()
     return live("volume", v and math.floor(v * 100 + 0.5)), live("mute", out:find("MUTED") ~= nil)
 end
 
+-- brightnessctl when installed, else sysfs + logind: no extra package.
+local brightness_cmd = string.format("sh %q", shell.data_dir .. "/bin/shady-brightness")
+
 function sys.brightness()
-    local out = shell.poll("brightnessctl -m 2>/dev/null", 3000)
-    return live("brightness", tonumber(out:match(",(%d+)%%,") or ""))
+    local out = shell.poll(brightness_cmd .. " get 2>/dev/null", 3000)
+    return live("brightness", tonumber(out))
 end
 
 function sys.battery()
@@ -146,10 +149,24 @@ local function set_volume(v)
     shell.spawn(string.format("wpctl set-volume @DEFAULT_AUDIO_SINK@ %.2f", v / 100))
 end
 
+-- Screenshots (the Capture tile, Print) are saved by the compositor; say
+-- where. Values replayed when the shell (re)connects are not news.
+local loaded_at = os.time()
+shell.on("value", function(key, path)
+    if os.time() - loaded_at < 3 or not path then return end
+    if key == "screenshot.saved" then
+        local home = os.getenv("HOME") or ""
+        if home ~= "" and path:sub(1, #home) == home then path = "~" .. path:sub(#home + 1) end
+        shell.notify("Screenshot saved", path, "Capture")
+    elseif key == "screenshot.failed" then
+        shell.notify("Screenshot failed", "Could not write " .. path, "Capture")
+    end
+end)
+
 local function set_brightness(v)
     v = math.max(1, math.min(100, math.floor(v + 0.5)))
     remember("brightness", v)
-    shell.spawn(string.format("brightnessctl -q set %d%%", v))
+    shell.spawn(string.format("%s set %d", brightness_cmd, v))
 end
 
 -- ---- the sky: clock, horizon lights and reflected windows --------------
@@ -364,6 +381,9 @@ shell.popup {
     layer = "top",
     anchor = { "top", "right" },
     margin = { top = 26, right = 40 },
+    -- Windows open and maximize below the status line instead of under it,
+    -- where its text would cover their title bars and close buttons.
+    exclusive = 30,
     persistent = true,
     outputs = "all",
     view = function(ctx)
@@ -587,7 +607,8 @@ shell.popup {
                     end),
                     tile("t:shot", "Capture", "Save the screen", false, function()
                         shell.close("horizon-control")
-                        shell.spawn("mkdir -p ~/Pictures && grim ~/Pictures/shady-$(date +%Y%m%d-%H%M%S).png")
+                        -- The compositor saves the frame itself once the panel is gone.
+                        shell.screenshot(350)
                     end),
                 },
             },

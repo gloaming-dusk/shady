@@ -1,0 +1,36 @@
+#!/bin/sh
+# Screen brightness for the shell's sliders, without extra packages.
+#   shady-brightness get       prints the percentage (nothing without a backlight)
+#   shady-brightness set PCT   sets it, 1-100
+# Uses brightnessctl when it is installed; otherwise reads sysfs and asks
+# systemd-logind to write it, which works unprivileged for the session user.
+if command -v brightnessctl >/dev/null 2>&1; then
+    case "$1" in
+        get) brightnessctl -m 2>/dev/null | sed -n 's/^[^,]*,[^,]*,[^,]*,\([0-9]*\)%.*/\1/p' | head -n1 ;;
+        set) brightnessctl -q set "$2%" ;;
+    esac
+    exit
+fi
+
+dir=
+for d in /sys/class/backlight/*; do
+    [ -r "$d/max_brightness" ] && { dir=$d; break; }
+done
+[ -n "$dir" ] || exit 1
+max=$(cat "$dir/max_brightness")
+[ "$max" -gt 0 ] 2>/dev/null || exit 1
+
+case "$1" in
+    get)
+        cur=$(cat "$dir/brightness")
+        echo $(( (cur * 100 + max / 2) / max ))
+        ;;
+    set)
+        pct=$2
+        [ "$pct" -ge 1 ] 2>/dev/null || pct=1
+        [ "$pct" -le 100 ] || pct=100
+        busctl call org.freedesktop.login1 /org/freedesktop/login1/session/auto \
+            org.freedesktop.login1.Session SetBrightness ssu \
+            backlight "$(basename "$dir")" $(( max * pct / 100 ))
+        ;;
+esac

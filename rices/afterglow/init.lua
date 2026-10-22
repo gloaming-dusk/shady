@@ -20,20 +20,16 @@ if shady.has_capability("spatial") then
         shady.layer_effect(panel, { blur = 26, saturation = 1.2 })
     end
 
-    -- Standing a little above the water, looking slightly up: the horizon
-    -- sits in the lower third so the sky gets the stage, and windows hang
-    -- in front of the sun like panes against a window seat.
-    shady.camera("yaw", -0.05)
-    shady.camera("pitch", -0.07)
-    shady.camera("distance", 1.30)
-    shady.camera("target_x", 0.0)
-    shady.camera("target_y", -0.02)
-    shady.camera("target_z", -0.55)
+    -- The camera stays at its default: windows face it squarely and at
+    -- their real size, one screen pixel per pixel. Pulled in and turned,
+    -- it made every window about 1.4 times too large and a little skewed,
+    -- too big for the screen and soft. The sky and sea need no help.
 end
 
 shady.bind("Super+Shift+Escape", function() shady.quit() end)
 shady.bind("Super+Return", function() shady.spawn(terminal) end, "Open a terminal")
 shady.bind("Super+d", function() shady.toggle_launcher() end, "Open the launcher")
+shady.bind("Print", function() shady.screenshot() end, "Save a screenshot to ~/Pictures")
 
 shady.describe("Super+1…" .. #workspaces, "Go to workspace")
 shady.describe("Super+Shift+1…" .. #workspaces, "Move window to workspace")

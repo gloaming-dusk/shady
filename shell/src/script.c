@@ -1518,6 +1518,23 @@ static int l_shortcuts(lua_State *L) {
     return 1;
 }
 
+/* shell.screenshot([delay_ms]): the compositor saves a frame to
+ * ~/Pictures; its value screenshot.saved names the file once written. */
+static int l_screenshot(lua_State *L) {
+    lua_Integer delay = luaL_optinteger(L, 1, 0);
+    lua_pushboolean(L, delay >= 0 && delay <= 10000 &&
+        shell_compositor_screenshot((int)delay));
+    return 1;
+}
+
+/* shell.notify(summary[, body[, app]]): a notification of the shell's own,
+ * shown like any other. */
+static int l_notify(lua_State *L) {
+    lua_pushboolean(L, shell_notify_post(luaL_optstring(L, 3, "Shady"),
+        luaL_checkstring(L, 1), luaL_optstring(L, 2, "")));
+    return 1;
+}
+
 static int l_toggle_shortcuts(lua_State *L) {
     lua_pushboolean(L, shell_compositor_toggle_shortcuts());
     return 1;
@@ -1637,6 +1654,8 @@ static const luaL_Reg api[] = {
     { "key", l_key },
     { "shortcuts", l_shortcuts },
     { "toggle_shortcuts", l_toggle_shortcuts },
+    { "screenshot", l_screenshot },
+    { "notify", l_notify },
     { "notification_server", l_notification_server },
     { "notifications", l_notifications },
     { "dismiss_notification", l_dismiss_notification },
@@ -1906,21 +1925,29 @@ void shell_lua_model_changed(struct shell *shell) {
     if (shell->lua) redraw_all(shell->lua);
 }
 
-void shell_lua_emit(struct shell *shell, const char *event) {
+void shell_lua_emit_strings(struct shell *shell, const char *event,
+        const char *a, const char *b) {
     struct shell_lua *lua = shell->lua;
     if (!lua) return;
     lua_State *L = lua->L;
+    int nargs = a ? (b ? 2 : 1) : 0;
     lua_rawgeti(L, LUA_REGISTRYINDEX, lua->handlers);
     if (lua_getfield(L, -1, event) == LUA_TTABLE) {
         lua_Integer n = (lua_Integer)lua_rawlen(L, -1);
         for (lua_Integer i = 1; i <= n; i++) {
             lua_rawgeti(L, -1, i);
+            if (nargs >= 1) lua_pushstring(L, a);
+            if (nargs >= 2) lua_pushstring(L, b);
             char what[96];
             snprintf(what, sizeof(what), "'%s' handler", event);
             /* A handler may trigger a reload only through the file system,
              * which happens later, so `lua` stays valid here. */
-            call(L, 0, 0, what, NULL, 0);
+            call(L, nargs, 0, what, NULL, 0);
         }
     }
     lua_pop(L, 2);
+}
+
+void shell_lua_emit(struct shell *shell, const char *event) {
+    shell_lua_emit_strings(shell, event, NULL, NULL);
 }

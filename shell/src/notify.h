@@ -49,5 +49,7 @@ bool shell_notify_dismiss(uint32_t id);
 bool shell_notify_invoke(uint32_t id, const char *key);
 /* Forget every notification, closing the active ones. */
 void shell_notify_clear(void);
+/* Add a notification of the shell's own, as if a client had sent it. */
+bool shell_notify_post(const char *app, const char *summary, const char *body);
 
 #endif

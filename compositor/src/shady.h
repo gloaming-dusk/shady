@@ -96,6 +96,8 @@ struct shady_config {
 	float window_border_focus_color[3];
 	bool window_titlebar;
 	float window_titlebar_height;
+	/* 0 picks a HiDPI scale from the panel's physical size. */
+	float output_scale;
 	float window_titlebar_color[3];
 	float window_titlebar_focus_color[3];
 	float window_titlebar_text_color[3];

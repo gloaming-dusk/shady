@@ -34,6 +34,7 @@
 #include <wlr/types/wlr_xdg_shell.h>
 #include <wlr/util/log.h>
 
+#include "capture.h"
 #include "shady.h"
 #include "titlebar.h"
 #include "render/render.h"
@@ -424,6 +425,7 @@ int main(int argc, char *argv[]) {
 
 	shady_modules_destroy_all(&server);
 	shady_values_finish();
+	shady_capture_finish();
 	shady_shortcuts_finish();
 
 	wl_event_source_remove(sigint);

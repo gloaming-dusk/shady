@@ -11,15 +11,8 @@ shady.rule({ app_id = "org.mozilla.firefox", workspace = "main", maximized = tru
 shady.rule({ app_id = "discord", workspace = "comms" })
 shady.rule({ app_id = "vesktop", workspace = "comms" })
 
-if shady.has_capability("spatial") then
-    -- Slightly closer, flatter and more head-on than Night Observatory.
-    shady.camera("yaw", 0.035)
-    shady.camera("pitch", -0.018)
-    shady.camera("distance", 1.34)
-    shady.camera("target_x", 0.0)
-    shady.camera("target_y", -0.015)
-    shady.camera("target_z", -0.58)
-end
+-- The camera stays at its default, so windows are drawn square-on at their
+-- real size; pulled in and turned it enlarged them about 1.4 times.
 
 shady.bind("Super+Shift+Escape", function()
     shady.quit()

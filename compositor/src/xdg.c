@@ -101,8 +101,10 @@ static struct wlr_output *toplevel_output(struct shady_toplevel *toplevel) {
 		return toplevel->xdg_toplevel->requested.fullscreen_output;
 	}
 	struct wlr_box *geo = &toplevel->xdg_toplevel->base->geometry;
-	double cx = toplevel->scene_tree->node.x + geo->x + geo->width * 0.5;
-	double cy = toplevel->scene_tree->node.y + geo->y + geo->height * 0.5;
+	/* The xdg scene tree's origin is the geometry's top-left: wlroots shifts
+	 * the surface inside it by -geometry. */
+	double cx = toplevel->scene_tree->node.x + geo->width * 0.5;
+	double cy = toplevel->scene_tree->node.y + geo->height * 0.5;
 	struct wlr_output *output = wlr_output_layout_output_at(server->output_layout, cx, cy);
 	if (output) return output;
 	if (wl_list_empty(&server->outputs)) return NULL;
@@ -112,14 +114,13 @@ static struct wlr_output *toplevel_output(struct shady_toplevel *toplevel) {
 
 static void save_restore_geometry(struct shady_toplevel *toplevel) {
 	if (toplevel->restore_geometry_valid) return;
+	/* xdg sizes are geometry sizes: the surface may be larger by the
+	 * shadows a client draws, and asking for that would grow the window
+	 * on every restore. */
+	struct wlr_box *geo = &toplevel->xdg_toplevel->base->geometry;
 	struct wlr_surface *surface = toplevel->xdg_toplevel->base->surface;
-	int width = surface->current.width;
-	int height = surface->current.height;
-	if (width <= 0 || height <= 0) {
-		struct wlr_box *geo = &toplevel->xdg_toplevel->base->geometry;
-		width = geo->width;
-		height = geo->height;
-	}
+	int width = geo->width > 0 ? geo->width : surface->current.width;
+	int height = geo->height > 0 ? geo->height : surface->current.height;
 	toplevel->restore_geometry = (struct wlr_box){
 		.x = toplevel->scene_tree->node.x,
 		.y = toplevel->scene_tree->node.y,
@@ -238,13 +239,12 @@ void shady_toplevel_recover_to_output(struct shady_toplevel *toplevel,
 		struct wlr_box box = {
 			.x = toplevel->scene_tree->node.x,
 			.y = toplevel->scene_tree->node.y,
-			.width = surface ? surface->current.width : 0,
-			.height = surface ? surface->current.height : 0,
+			.width = toplevel->xdg_toplevel->base->geometry.width,
+			.height = toplevel->xdg_toplevel->base->geometry.height,
 		};
 		if (box.width <= 0 || box.height <= 0) {
-			struct wlr_box *geo = &toplevel->xdg_toplevel->base->geometry;
-			box.width = geo->width > 0 ? geo->width : 1;
-			box.height = geo->height > 0 ? geo->height : 1;
+			box.width = surface && surface->current.width > 0 ? surface->current.width : 1;
+			box.height = surface && surface->current.height > 0 ? surface->current.height : 1;
 		}
 		clamp_box_to_output(&box, &area);
 		wlr_scene_node_set_position(&toplevel->scene_tree->node, box.x, box.y);
@@ -350,16 +350,17 @@ void shady_toplevel_begin_interactive(struct shady_toplevel *toplevel,
 	} else {
 		struct wlr_box *geo_box = &toplevel->xdg_toplevel->base->geometry;
 
-		double border_x = (toplevel->scene_tree->node.x + geo_box->x) +
+		/* The node is the geometry's top-left (see toplevel_output). */
+		double border_x = toplevel->scene_tree->node.x +
 			((edges & WLR_EDGE_RIGHT) ? geo_box->width : 0);
-		double border_y = (toplevel->scene_tree->node.y + geo_box->y) +
+		double border_y = toplevel->scene_tree->node.y +
 			((edges & WLR_EDGE_BOTTOM) ? geo_box->height : 0);
 		server->grab_x = server->cursor->x - border_x;
 		server->grab_y = server->cursor->y - border_y;
 
 		server->grab_geobox = *geo_box;
-		server->grab_geobox.x += toplevel->scene_tree->node.x;
-		server->grab_geobox.y += toplevel->scene_tree->node.y;
+		server->grab_geobox.x = toplevel->scene_tree->node.x;
+		server->grab_geobox.y = toplevel->scene_tree->node.y;
 
 		server->resize_edges = edges;
 	}
@@ -381,6 +382,18 @@ static void place_toplevel_initial(struct shady_toplevel *toplevel) {
 	int height = geo->height > 0 ? geo->height : surface->current.height;
 	if (width <= 0 || height <= 0) return;
 
+	/* The title bar sits above the geometry; keep both on screen. */
+	int title_h = shady_toplevel_has_titlebar(toplevel)
+		? (int)(server->config.window_titlebar_height + 0.5f) : 0;
+	int fit_w = area.width, fit_h = area.height - title_h;
+	/* A client that opens larger than the screen (restoring a size from a
+	 * bigger monitor, or ignoring the bounds) is asked to fit. */
+	if (fit_w > 0 && fit_h > 0 && (width > fit_w || height > fit_h)) {
+		if (width > fit_w) width = fit_w;
+		if (height > fit_h) height = fit_h;
+		wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, width, height);
+	}
+
 	size_t mapped_before = 0;
 	struct shady_toplevel *other;
 	wl_list_for_each(other, &server->toplevels, link) {
@@ -388,15 +401,31 @@ static void place_toplevel_initial(struct shady_toplevel *toplevel) {
 	}
 	int cascade = (int)(mapped_before % 6) * 28;
 	int target_x = area.x + (area.width - width) / 2 + cascade;
-	int target_y = area.y + (area.height - height) / 2 + cascade;
+	int target_y = area.y + title_h + (fit_h - height) / 2 + cascade;
 	if (target_x + width > area.x + area.width)
 		target_x = area.x + area.width - width;
 	if (target_y + height > area.y + area.height)
 		target_y = area.y + area.height - height;
 	if (target_x < area.x) target_x = area.x;
-	if (target_y < area.y) target_y = area.y;
-	wlr_scene_node_set_position(&toplevel->scene_tree->node,
-		target_x - geo->x, target_y - geo->y);
+	if (target_y < area.y + title_h) target_y = area.y + title_h;
+	/* The xdg scene tree's origin is the geometry's top-left. */
+	wlr_scene_node_set_position(&toplevel->scene_tree->node, target_x, target_y);
+}
+
+/* Tell the client how much room there is, so it opens at a size that fits
+ * (xdg_toplevel.configure_bounds, xdg-shell v4). */
+static void send_toplevel_bounds(struct shady_toplevel *toplevel) {
+	struct shady_server *server = toplevel->server;
+	if (toplevel->xdg_toplevel->base->client->shell->version < 4 ||
+			wl_list_empty(&server->outputs))
+		return;
+	struct shady_output *first = wl_container_of(server->outputs.next, first, link);
+	struct wlr_box area = {0};
+	shady_output_work_area(server, first->wlr_output, &area);
+	int title_h = shady_toplevel_has_titlebar(toplevel)
+		? (int)(server->config.window_titlebar_height + 0.5f) : 0;
+	if (area.width > 0 && area.height > title_h)
+		wlr_xdg_toplevel_set_bounds(toplevel->xdg_toplevel, area.width, area.height - title_h);
 }
 
 static void xdg_toplevel_map(struct wl_listener *listener, void *data) {
@@ -517,6 +546,7 @@ static void xdg_toplevel_commit(struct wl_listener *listener, void *data) {
 
 	if (toplevel->xdg_toplevel->base->initial_commit) {
 		wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, 0, 0);
+		send_toplevel_bounds(toplevel);
 		/* xdg_toplevel.wm_capabilities was added in xdg-shell v5. */
 		if (toplevel->xdg_toplevel->base->client->shell->version >= 5) {
 			wlr_xdg_toplevel_set_wm_capabilities(toplevel->xdg_toplevel,

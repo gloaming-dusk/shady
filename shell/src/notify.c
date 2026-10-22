@@ -127,6 +127,25 @@ static char *dup_text(const char *s) {
     return strdup(s ? s : "");
 }
 
+bool shell_notify_post(const char *app, const char *summary, const char *body) {
+    struct entry *e = calloc(1, sizeof(*e));
+    if (!e) return false;
+    e->n.app = dup_text(app);
+    e->n.icon = dup_text("");
+    e->n.summary = dup_text(summary);
+    e->n.body = dup_text(body);
+    e->n.urgency = 1;
+    e->n.timeout_ms = hist.default_timeout;
+    e->n.time = (int64_t)time(NULL);
+    e->n.active = true;
+    e->n.id = hist.next_id++;
+    if (hist.next_id == 0) hist.next_id = 1;
+    push_front(e);
+    arm(e);
+    changed();
+    return true;
+}
+
 /* Notify(app_name, replaces_id, app_icon, summary, body, actions, hints,
  *        expire_timeout) -> id */
 static int method_notify(sd_bus_message *m, void *data, sd_bus_error *error) {

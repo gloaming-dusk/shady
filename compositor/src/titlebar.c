@@ -214,7 +214,10 @@ void shady_titlebar_refresh(struct shady_toplevel *toplevel) {
     }
 
     struct wlr_surface *surface = toplevel->xdg_toplevel->base->surface;
-    int width = surface ? surface->current.width : 0;
+    /* As wide as the window, not its client-drawn shadows. */
+    int width = toplevel->xdg_toplevel->base->geometry.width > 0
+        ? toplevel->xdg_toplevel->base->geometry.width
+        : surface ? surface->current.width : 0;
     int height = (int)(toplevel->server->config.window_titlebar_height + 0.5f);
     bool enabled = toplevel->mapped &&
         shady_toplevel_has_titlebar(toplevel) &&

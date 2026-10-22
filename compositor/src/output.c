@@ -1,4 +1,5 @@
 /* Adapted from wlroots 0.20.2 TinyWL (CC0). See LICENSES/tinywl-CC0.txt. */
+#include <math.h>
 #include <stdbool.h>
 #include <inttypes.h>
 #include <stdlib.h>
@@ -104,8 +105,8 @@ void shady_recover_toplevels_to_outputs(struct shady_server *server) {
 		if (!toplevel->scene_tree || !toplevel->xdg_toplevel ||
 				!toplevel->xdg_toplevel->base->surface->mapped) continue;
 		struct wlr_box *geo = &toplevel->xdg_toplevel->base->geometry;
-		double cx = toplevel->scene_tree->node.x + geo->x + geo->width * 0.5;
-		double cy = toplevel->scene_tree->node.y + geo->y + geo->height * 0.5;
+		double cx = toplevel->scene_tree->node.x + geo->width * 0.5;
+		double cy = toplevel->scene_tree->node.y + geo->height * 0.5;
 		if (point_on_managed_output(server, cx, cy)) continue;
 		wlr_log(WLR_INFO, "recovering window onto active output");
 		shady_toplevel_recover_to_output(toplevel, fallback->wlr_output);
@@ -161,6 +162,27 @@ static void output_destroy(struct wl_listener *listener, void *data) {
 	free(output);
 }
 
+/* The scale an output gets: SHADY_OUTPUT_SCALE, then output_scale, then one
+ * derived from the panel's physical size so text is about as large as on a
+ * ~120 DPI screen (a 13.6" 2880x1800 panel gets 2). Outputs without a
+ * physical size (nested, headless) stay at 1. */
+static float output_scale_for(struct shady_server *server, struct wlr_output *output,
+		const struct wlr_output_mode *mode) {
+	const char *env = getenv("SHADY_OUTPUT_SCALE");
+	if (env && *env) {
+		float scale = strtof(env, NULL);
+		if (scale >= 0.5f && scale <= 4.f) return scale;
+	}
+	if (server->config.output_scale >= 0.5f) return server->config.output_scale;
+	int width = mode ? mode->width : output->width;
+	if (output->phys_width <= 0 || width <= 0) return 1.f;
+	float dpi = (float)width / ((float)output->phys_width / 25.4f);
+	float scale = roundf(dpi / 120.f * 4.f) / 4.f;
+	if (scale < 1.f) scale = 1.f;
+	if (scale > 3.f) scale = 3.f;
+	return scale;
+}
+
 void server_new_output(struct wl_listener *listener, void *data) {
 	struct shady_server *server =
 		wl_container_of(listener, server, new_output);
@@ -186,6 +208,7 @@ void server_new_output(struct wl_listener *listener, void *data) {
 	if (mode != NULL) {
 		wlr_output_state_set_mode(&state, mode);
 	}
+	wlr_output_state_set_scale(&state, output_scale_for(server, wlr_output, mode));
 
 	if (!wlr_output_commit_state(wlr_output, &state)) {
 		wlr_log(WLR_ERROR, "output %s: failed to enable/commit preferred mode",

@@ -148,7 +148,11 @@ static void handle_line(char *line) {
     if (event && !strcmp(event, "value.changed")) {
         const char *key = json_get_string(&object, "key");
         const struct json_value *value = json_get(&object, "value");
-        if (key) set_value(key, value && value->type == JSON_STRING ? value->string : NULL);
+        const char *text = value && value->type == JSON_STRING ? value->string : NULL;
+        if (key) {
+            set_value(key, text);
+            shell_lua_emit_strings(link_state.shell, "value", key, text);
+        }
         return;
     }
     /* The only response is to our subscribe; report a refusal once. */
@@ -292,6 +296,13 @@ bool shell_compositor_key(const char *keys) {
             return false;
     char request[128];
     int n = snprintf(request, sizeof(request), "{\"cmd\":\"key\",\"keys\":\"%s\"}\n", keys);
+    return n > 0 && send(link_state.fd, request, (size_t)n, MSG_NOSIGNAL) == n;
+}
+
+bool shell_compositor_screenshot(int delay_ms) {
+    if (!link_state.ready || link_state.fd < 0 || delay_ms < 0 || delay_ms > 10000) return false;
+    char request[64];
+    int n = snprintf(request, sizeof(request), "{\"cmd\":\"screenshot\",\"delay\":%d}\n", delay_ms);
     return n > 0 && send(link_state.fd, request, (size_t)n, MSG_NOSIGNAL) == n;
 }
 

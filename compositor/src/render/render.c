@@ -1,4 +1,5 @@
 #include "render.h"
+#include "../capture.h"
 
 #include <time.h>
 #include <math.h>
@@ -1992,7 +1993,11 @@ static void shady_screen_space_model(float out[16], float x, float y,
 	out[0] = 2.f * width / output_w;
 	out[5] = 2.f * height / output_h;
 	out[12] = 2.f * x / output_w - 1.f;
-	out[13] = 2.f * y / output_h - 1.f;
+	/* The quad's local y = 0 is its bottom edge, at layout y + height
+	 * (layout y grows down, NDC y up). Using y here mirrored the window
+	 * vertically about the screen's middle, which went unnoticed while
+	 * maximized windows filled the whole height. */
+	out[13] = 2.f * (output_h - y - height) / output_h - 1.f;
 }
 
 static void render_spatial_subsurface_buffer(struct wlr_scene_buffer *buffer,
@@ -2185,7 +2190,7 @@ void shady_render_output_frame(
 	/* Safe/desktop mode uses wlroots' scene renderer directly. No custom 3D
 	 * transforms, simulation, effects, or perpetual animation frame loop. */
 	if (!server->config.spatial_mode || shady_desktop_state(server)->session_locked) {
-		if (!wlr_scene_output_commit(scene_output, NULL)) {
+		if (!shady_capture_scene_output_commit(server, scene_output)) {
 			wlr_log(WLR_ERROR, "failed to commit desktop scene output");
 			return;
 		}
@@ -3090,6 +3095,7 @@ void shady_render_output_frame(
 		);
 	}
 	if (renderer_is_software && plugin_make_current()) glFinish();
+	shady_capture_output_buffer(server, state.buffer);
 
 	wlr_output_commit_state(
 		wlr_output,

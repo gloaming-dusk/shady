@@ -171,6 +171,7 @@ bool shady_config_set(struct shady_config *c,const char *key,const char *value){
 	if(!strcmp(key,"window_corner_radius"))return parse_float_range(value,0.f,48.f,&c->window_corner_radius);
 	if(!strcmp(key,"window_border_color"))return parse_color(value,c->window_border_color);
 	if(!strcmp(key,"window_border_focus_color"))return parse_color(value,c->window_border_focus_color);
+	if(!strcmp(key,"output_scale"))return parse_float_range(value,0.f,4.f,&c->output_scale);
 	if(!strcmp(key,"window_titlebar_height"))return parse_float_range(value,16.f,64.f,&c->window_titlebar_height);
 	if(!strcmp(key,"window_titlebar_color"))return parse_color(value,c->window_titlebar_color);
 	if(!strcmp(key,"window_titlebar_focus_color"))return parse_color(value,c->window_titlebar_focus_color);

@@ -64,6 +64,7 @@ shader_dir = join_paths(shady_data_root, 'compositor', 'shaders')
 shady_sources = [
   layer_shell_protocol_header,
   'compositor/src/main.c',
+  'compositor/src/capture.c',
   'compositor/src/module/module.c',
   'compositor/src/event/event.c',
   'compositor/src/module/builtin.c',

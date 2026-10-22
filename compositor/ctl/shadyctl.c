@@ -33,7 +33,7 @@ static void usage(FILE *out) {
 		"       shadyctl [-s socket] --raw '<json request>'\n"
 		"commands: version windows focused workspaces outputs plugins\n"
 		"          window.focus window.close window.maximize window.fullscreen window.move\n"
-		"          workspace.switch key plugin.reload plugin.unload subscribe quit\n");
+		"          workspace.switch key screenshot plugin.reload plugin.unload subscribe quit\n");
 }
 
 static bool is_number(const char *s) {

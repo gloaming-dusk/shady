@@ -286,6 +286,8 @@ Window arguments may also be the window tables themselves.
 | `shell.key(keys)` | press a compositor shortcut such as `"Super+t"` (the IPC `key` command); false when not connected |
 | `shell.shortcuts()` | the compositor's shortcut list as of its last `shortcuts` event: `{keys, group, description}` each (see Shortcut overlay) |
 | `shell.toggle_shortcuts()` | ask the compositor to toggle the shortcut overlay; false when not connected |
+| `shell.screenshot([delay_ms])` | ask the compositor to save its next frame, after the delay, to `~/Pictures` (the IPC `screenshot` command; needs no grim); the `value` event with `screenshot.saved` follows once it is written. Give a closing panel ~300 ms to leave the picture |
+| `shell.notify(summary[, body[, app]])` | show a notification of the shell's own, like one a client sent |
 | `shell.fonts(dir)` | make the font files in `dir` (relative to the config file) available by family name; call it before the views use them |
 | `shell.data_dir`, `shell.config_path` | where the default UI and your config live |
 
@@ -341,6 +343,7 @@ end)
 | `"change"` | the compositor's workspaces or windows changed |
 | `"notifications"` | a notification arrived, expired, closed or was replaced (see Notifications) |
 | `"shortcuts"` | the compositor asked for the shortcut overlay (Super+Shift+/) and sent its list |
+| `"value"` | a published compositor value changed; the handler gets `(key, value)`, `value` nil when removed. Values already set are replayed when the shell connects |
 
 ## Shortcut overlay
 

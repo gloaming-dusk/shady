@@ -1,3 +1,4 @@
+#include "../../capture.h"
 #include "lua.h"
 #include "state.h"
 #include <stdbool.h>
@@ -347,6 +348,22 @@ static int l_shady_publish(lua_State *L) {
 		else value = luaL_checkstring(L, 2);
 	}
 	lua_pushboolean(L, shady_values_set(lua_server, &lua_owner, key, value));
+	return 1;
+}
+
+/* shady.screenshot([path[, delay_ms]]): save the next frame as a PNG
+ * (default: ~/Pictures/shady-<time>.png). Returns the path, or nil while
+ * another capture is pending. */
+static int l_shady_screenshot(lua_State *L) {
+	const char *path = luaL_optstring(L, 1, NULL);
+	lua_Integer delay = luaL_optinteger(L, 2, 0);
+	if (delay < 0 || delay > 10000) return luaL_error(L, "delay must be 0-10000 ms");
+	char chosen[4096];
+	if (!shady_capture_request(lua_server, path, (int)delay, chosen, sizeof(chosen))) {
+		lua_pushnil(L);
+		return 1;
+	}
+	lua_pushstring(L, chosen);
 	return 1;
 }
 
@@ -749,6 +766,7 @@ static void install_api(lua_State *L){
 	lua_pushcfunction(L,l_shady_layer_effect);lua_setfield(L,-2,"layer_effect");
 	lua_pushcfunction(L,l_shady_layer_transform);lua_setfield(L,-2,"layer_transform");
 	lua_pushcfunction(L,l_shady_publish);lua_setfield(L,-2,"publish");
+	lua_pushcfunction(L,l_shady_screenshot);lua_setfield(L,-2,"screenshot");
 	lua_pushcfunction(L,l_shady_value);lua_setfield(L,-2,"value");
 	lua_pushcfunction(L,l_shady_windows);lua_setfield(L,-2,"windows");
 	lua_pushcfunction(L,l_shady_focused_window);lua_setfield(L,-2,"focused_window");

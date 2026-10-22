@@ -12,6 +12,7 @@ shady.workspace(workspaces[1])
 shady.bind("Super+Shift+Escape", function() shady.quit() end)
 shady.bind("Super+Return", function() shady.spawn(terminal) end, "Open a terminal")
 shady.bind("Super+d", function() shady.toggle_launcher() end, "Open the launcher")
+shady.bind("Print", function() shady.screenshot() end, "Save a screenshot to ~/Pictures")
 
 shady.describe("Super+1…" .. #workspaces, "Go to workspace")
 shady.describe("Super+Shift+1…" .. #workspaces, "Move window to workspace")
