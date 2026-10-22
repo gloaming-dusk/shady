@@ -8,6 +8,7 @@
 #include <wlr/types/wlr_output_layout.h>
 #include <wlr/types/wlr_scene.h>
 #include <wlr/types/wlr_seat.h>
+#include <wlr/types/wlr_xdg_decoration_v1.h>
 #include <wlr/types/wlr_xdg_shell.h>
 #include <wlr/util/edges.h>
 
@@ -155,7 +156,7 @@ static void apply_toplevel_state_values(struct shady_toplevel *toplevel,
 				shady_output_work_area(server, output, &box);
 			}
 			int title_h = 0;
-			if (want_maximized && server->config.window_titlebar) {
+			if (want_maximized && shady_toplevel_has_titlebar(toplevel)) {
 				title_h = (int)(server->config.window_titlebar_height + 0.5f);
 				if (title_h < 0) title_h = 0;
 				if (title_h > box.height) title_h = box.height;
@@ -323,7 +324,8 @@ void shady_toplevel_begin_interactive(struct shady_toplevel *toplevel,
 			? restore.width : (surface ? surface->current.width : 0);
 		int title_h = toplevel->titlebar_height > 0
 			? toplevel->titlebar_height
-			: (int)(server->config.window_titlebar_height + 0.5f);
+			: shady_toplevel_has_titlebar(toplevel)
+			? (int)(server->config.window_titlebar_height + 0.5f) : 0;
 		if (restored_width > 0) {
 			int x = (int)(server->cursor->x - fraction * restored_width);
 			int y = (int)(server->cursor->y + title_h * 0.5);
@@ -452,6 +454,62 @@ static void xdg_toplevel_unmap(struct wl_listener *listener, void *data) {
 	}
 }
 
+/* Honour what the client asks for: a client that draws its own title bar
+ * keeps it, and gets none from us. Without a preference, or when ours are
+ * turned off, the compositor decides. */
+static void apply_decoration_mode(struct shady_toplevel *toplevel) {
+	struct wlr_xdg_toplevel_decoration_v1 *decoration = toplevel->decoration;
+	if (!decoration) return;
+	enum wlr_xdg_toplevel_decoration_v1_mode mode = decoration->requested_mode;
+	if (!toplevel->server->config.window_titlebar)
+		mode = WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_CLIENT_SIDE;
+	else if (mode == WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_NONE)
+		mode = WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE;
+	toplevel->client_decorated = mode == WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_CLIENT_SIDE;
+	/* Before the initial commit a configure would be premature; the
+	 * initial commit applies the mode then. */
+	if (toplevel->xdg_toplevel->base->initialized)
+		wlr_xdg_toplevel_decoration_v1_set_mode(decoration, mode);
+	shady_titlebar_refresh(toplevel);
+	if (toplevel->server->renderer)
+		shady_render_schedule_all_outputs(toplevel->server);
+}
+
+static void decoration_request_mode(struct wl_listener *listener, void *data) {
+	(void)data;
+	struct shady_toplevel *toplevel =
+		wl_container_of(listener, toplevel, decoration_request_mode);
+	apply_decoration_mode(toplevel);
+}
+
+static void decoration_detach(struct shady_toplevel *toplevel) {
+	if (!toplevel->decoration) return;
+	wl_list_remove(&toplevel->decoration_request_mode.link);
+	wl_list_remove(&toplevel->decoration_destroy.link);
+	toplevel->decoration = NULL;
+}
+
+static void decoration_destroy(struct wl_listener *listener, void *data) {
+	(void)data;
+	struct shady_toplevel *toplevel =
+		wl_container_of(listener, toplevel, decoration_destroy);
+	decoration_detach(toplevel);
+}
+
+void server_new_toplevel_decoration(struct wl_listener *listener, void *data) {
+	(void)listener;
+	struct wlr_xdg_toplevel_decoration_v1 *decoration = data;
+	struct wlr_scene_tree *tree = decoration->toplevel->base->data;
+	struct shady_toplevel *toplevel = tree ? tree->node.data : NULL;
+	if (!toplevel || toplevel->decoration) return;
+	toplevel->decoration = decoration;
+	toplevel->decoration_request_mode.notify = decoration_request_mode;
+	wl_signal_add(&decoration->events.request_mode, &toplevel->decoration_request_mode);
+	toplevel->decoration_destroy.notify = decoration_destroy;
+	wl_signal_add(&decoration->events.destroy, &toplevel->decoration_destroy);
+	apply_decoration_mode(toplevel);
+}
+
 static void xdg_toplevel_commit(struct wl_listener *listener, void *data) {
 	(void)data;
 	struct shady_toplevel *toplevel = wl_container_of(listener, toplevel, commit);
@@ -472,6 +530,7 @@ static void xdg_toplevel_commit(struct wl_listener *listener, void *data) {
 				toplevel->xdg_toplevel->requested.fullscreen) {
 			apply_requested_toplevel_state(toplevel);
 		}
+		if (toplevel->decoration) apply_decoration_mode(toplevel);
 	}
 
 	shady_modules_toplevel_commit(toplevel);
@@ -526,6 +585,7 @@ static void xdg_toplevel_destroy(struct wl_listener *listener, void *data) {
 	}
 	shady_modules_toplevel_destroy(toplevel);
 	shady_plugin_window_cleanup(toplevel);
+	decoration_detach(toplevel);
 
 	/* Normally xdg-surface unmap runs before destroy and removes this node from
 	 * server->toplevels. Keep the destroy path safe even if that ordering is

@@ -246,6 +246,12 @@ struct shady_toplevel {
 	struct wl_listener request_fullscreen;
 	int last_surface_width;
 	int last_surface_height;
+	/* xdg-decoration: a client that draws its own decorations (Chromium,
+	 * Firefox) gets no compositor title bar on top of them. */
+	struct wlr_xdg_toplevel_decoration_v1 *decoration;
+	struct wl_listener decoration_request_mode;
+	struct wl_listener decoration_destroy;
+	bool client_decorated;
 	bool mapped;
 	bool maximized;
 	bool fullscreen;
@@ -282,6 +288,10 @@ struct shady_toplevel {
 	 * which optional modules attach data here. */
 	void *module_state[SHADY_MAX_MODULES];
 };
+
+static inline bool shady_toplevel_has_titlebar(const struct shady_toplevel *toplevel) {
+	return toplevel->server->config.window_titlebar && !toplevel->client_decorated;
+}
 
 struct shady_session_lock {
 	struct shady_server *server;
@@ -387,6 +397,7 @@ void server_new_session_lock(struct wl_listener *listener, void *data);
 /* xdg.c */
 void server_new_xdg_toplevel(struct wl_listener *listener, void *data);
 void server_new_xdg_popup(struct wl_listener *listener, void *data);
+void server_new_toplevel_decoration(struct wl_listener *listener, void *data);
 
 /* layer.c */
 void server_new_layer_surface(struct wl_listener *listener, void *data);

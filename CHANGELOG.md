@@ -24,6 +24,27 @@ between releases. Breaking changes are called out here.
 - Afterglow's sky skips cloud noise where it would be multiplied by zero:
   the same picture for less GPU time on every frame.
 
+Spatial mode is easier to work in with ordinary applications (a browser
+was the test):
+
+- The focused window shows exactly what its client drew. It used to be
+  tinted blue, brightened, left translucent and run through the glass
+  effect, which put colour fringes on text and the sky behind web pages.
+  The rice's glass now shades only the windows behind it;
+  `window_focused_exact = false` brings the old look back.
+- Menus and other popups appear where the application put them, follow
+  their window and take clicks. They were drawn offset by the window's
+  position, and clicks fell through to the window underneath.
+- Clients that draw their own decorations (Chromium, Brave, Firefox) ask
+  for that through xdg-decoration and no longer get a second title bar
+  from Shady. Windows are drawn to their xdg geometry, without the
+  shadow margin such clients keep around themselves, and a buffer cropped
+  with wp_viewporter (Chromium when maximized) is drawn cropped instead of
+  squeezed.
+- A dragged window leans a little and springs back exactly flat. The tilt
+  used to stay wherever the drag left it, softening the text for good.
+  Afterglow and Horizon no longer bend windows while they are dragged.
+
 ## 0.1.0 (2026-10-22)
 
 The first release, five weeks after the first commit. Everything below is

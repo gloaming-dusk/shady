@@ -3,6 +3,7 @@
 
 #include <stdbool.h>
 #include <shady/plugin.h>
+#include <wlr/util/box.h>
 
 struct shady_output;
 struct shady_server;
@@ -87,6 +88,10 @@ int shady_render_layer_pick(struct shady_server *server, double lx, double ly,
 /* Whether this surface belongs to a transformed layer (whose untransformed
  * scene position must not take input). */
 bool shady_render_layer_is_transformed(struct shady_server *server, struct wlr_surface *surface);
+/* The window inside its root surface, in surface coordinates: the xdg
+ * geometry, which leaves out shadows a client draws around itself. The
+ * scene node's position is this box's top-left. */
+struct wlr_box shady_toplevel_content_box(const struct shady_toplevel *toplevel);
 
 /* Shared with pick3d: build view/proj for the given output size. */
 void shady_render_camera_matrices(struct shady_server *server,

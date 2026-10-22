@@ -31,6 +31,9 @@ uniform vec4 u_close_effect; /* style, strength, direction_x, direction_y */
 uniform vec4 u_frame_rect; /* this pass's sub-rect inside the decorated frame */
 uniform vec2 u_frame_px; /* decorated frame size in px; 0 = legacy border */
 uniform vec2 u_frame_shape; /* corner radius px, border px */
+/* The part of the client texture that is the window: its xdg geometry,
+ * without the shadows a client draws around itself. */
+uniform vec4 u_uv_rect;
 
 varying vec2 v_uv;
 varying vec3 v_normal;
@@ -85,18 +88,18 @@ void main() {
 	float pulse = 0.5 + 0.5 * sin(u_time * 1.7);
 	float aberration = (0.0007 + 0.0013 * pulse) * u_effect_strength;
 
-	vec4 center = texture2D(u_tex, uv);
+	vec4 center = texture2D(u_tex, u_uv_rect.xy + uv * u_uv_rect.zw);
 
 	float r = texture2D(
 		u_tex,
-		clamp(uv + vec2(aberration, 0.0), 0.0, 1.0)
+		u_uv_rect.xy + clamp(uv + vec2(aberration, 0.0), 0.0, 1.0) * u_uv_rect.zw
 	).r;
 
 	float g = center.g;
 
 	float b = texture2D(
 		u_tex,
-		clamp(uv - vec2(aberration, 0.0), 0.0, 1.0)
+		u_uv_rect.xy + clamp(uv - vec2(aberration, 0.0), 0.0, 1.0) * u_uv_rect.zw
 	).b;
 
 	vec4 color = vec4(r, g, b, center.a);

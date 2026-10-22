@@ -52,6 +52,8 @@ struct shady_gl_pipeline {
 	GLint u_brightness_ext;
 	GLint u_frame_rect_ext;
 	GLint u_use_vertex_uv_ext;
+	GLint u_uv_rect_2d;
+	GLint u_uv_rect_ext;
 	GLint u_frame_px_2d;
 	GLint u_frame_shape_2d;
 	GLint u_frame_px_ext;
@@ -67,6 +69,8 @@ struct shady_gl_pipeline {
 	float frame_radius;
 	float frame_border;
 	float frame_edge_color[4];
+	/* Sub-rect of the client texture to draw (x, y, w, h in 0..1). */
+	float uv_rect[4];
 
 	/* Unlit compositor-side title bar texture. */
 	GLuint titlebar_prog;
@@ -170,6 +174,13 @@ void shady_gl_pipeline_draw_window(
  * side-wall draws. Pass width/height <= 0 (or radius and border <= 0) to
  * fall back to the legacy rectangular client border.
  */
+/* Draw only this part of the client texture (normalized x, y, w, h);
+ * NULL draws all of it. Applies to the window passes until changed. */
+void shady_gl_pipeline_set_uv_rect(
+	struct shady_gl_pipeline *pipeline,
+	const float rect[4]
+);
+
 void shady_gl_pipeline_set_frame_style(
 	struct shady_gl_pipeline *pipeline,
 	float frame_width,

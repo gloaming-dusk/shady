@@ -217,7 +217,7 @@ void shady_titlebar_refresh(struct shady_toplevel *toplevel) {
     int width = surface ? surface->current.width : 0;
     int height = (int)(toplevel->server->config.window_titlebar_height + 0.5f);
     bool enabled = toplevel->mapped &&
-        toplevel->server->config.window_titlebar &&
+        shady_toplevel_has_titlebar(toplevel) &&
         !toplevel->fullscreen && width > 0 && height > 0;
 
     wlr_scene_node_set_enabled(&toplevel->titlebar_tree->node, enabled);

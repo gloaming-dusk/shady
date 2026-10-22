@@ -702,6 +702,7 @@ struct shady_close_snapshot {
 
 	int texture_width;
 	int texture_height;
+	float uv_rect[4]; /* the window's part of the texture */
 
 	float x;
 	float y;
@@ -1834,6 +1835,42 @@ bool shady_render_layer_is_transformed(struct shady_server *server, struct wlr_s
 	return ls && layer_transform_for(ls->namespace) != NULL;
 }
 
+struct wlr_box shady_toplevel_content_box(const struct shady_toplevel *toplevel) {
+	struct wlr_xdg_surface *base = toplevel->xdg_toplevel->base;
+	struct wlr_box full = {
+		.width = base->surface->current.width,
+		.height = base->surface->current.height,
+	};
+	struct wlr_box content;
+	if (base->geometry.width <= 0 || base->geometry.height <= 0 ||
+			!wlr_box_intersection(&content, &full, &base->geometry))
+		return full;
+	return content;
+}
+
+/* The part of `texture` that shows `box` (surface coordinates; NULL for the
+ * whole surface), as normalized x, y, w, h. A surface may show only a crop
+ * of its buffer (wp_viewporter): Chromium, maximized, attaches a buffer
+ * larger than the window and crops it. Buffer transforms are not handled. */
+static void surface_uv_rect(struct wlr_surface *surface, struct wlr_texture *texture,
+		const struct wlr_box *box, float out[4]) {
+	out[0] = out[1] = 0.f;
+	out[2] = out[3] = 1.f;
+	int sw = surface->current.width, sh = surface->current.height;
+	if (!texture || texture->width == 0 || texture->height == 0 || sw <= 0 || sh <= 0)
+		return;
+	struct wlr_fbox src;
+	wlr_surface_get_buffer_source_box(surface, &src);
+	if (src.width <= 0.0 || src.height <= 0.0) return;
+	struct wlr_box whole = { .width = sw, .height = sh };
+	if (!box || box->width <= 0 || box->height <= 0) box = &whole;
+	double sx = src.width / sw, sy = src.height / sh;
+	out[0] = (float)((src.x + box->x * sx) / texture->width);
+	out[1] = (float)((src.y + box->y * sy) / texture->height);
+	out[2] = (float)(box->width * sx / texture->width);
+	out[3] = (float)(box->height * sy / texture->height);
+}
+
 /* How a window's pixels are shaded. The focused window shows exactly what
  * its client drew: no tint, exposure, glass effect or translucency, since
  * that is the one being read and worked in. The rice's glass look belongs
@@ -1980,6 +2017,9 @@ static void render_spatial_subsurface_buffer(struct wlr_scene_buffer *buffer,
 	if (width <= 0.f || height <= 0.f) {
 		return;
 	}
+	float uv_rect[4];
+	surface_uv_rect(scene_surface->surface, texture, NULL, uv_rect);
+	shady_gl_pipeline_set_uv_rect(&pipeline, uv_rect);
 
 	float model[16], mvp[16];
 	float wobble_x = ctx->toplevel->motion.wobble_x;
@@ -2426,6 +2466,17 @@ void shady_render_output_frame(
 				scale;
 		}
 
+		/* Draw the window, not the shadow margin a client-decorated window
+		 * keeps around it: the xdg geometry, whose top-left is the node. */
+		float uv_rect[4];
+		struct wlr_box content = shady_toplevel_content_box(toplevel);
+		surface_uv_rect(surface, texture, &content, uv_rect);
+		if (content.width > 0 && content.height > 0 &&
+				surface->current.width > 0 && surface->current.height > 0) {
+			tw = (float)content.width;
+			th = (float)content.height;
+		}
+
 		float layout_x =
 			(float)(
 				toplevel
@@ -2482,6 +2533,7 @@ void shady_render_output_frame(
 					snapshot->texture = new_texture;
 					snapshot->texture_width = texture->width;
 					snapshot->texture_height = texture->height;
+					memcpy(snapshot->uv_rect, uv_rect, sizeof(uv_rect));
 					snapshot->x =
 						(float)toplevel->scene_tree->node.x;
 					snapshot->y =
@@ -2546,7 +2598,7 @@ void shady_render_output_frame(
 				&representation_context, &representation_mesh);
 		bool frame_has_titlebar = !toplevel->fullscreen &&
 			!(folded_representation && representation_model.hide_titlebar) &&
-			server->config.window_titlebar && toplevel->titlebar_texture &&
+			shady_toplevel_has_titlebar(toplevel) && toplevel->titlebar_texture &&
 			wlr_texture_is_gles2(toplevel->titlebar_texture) &&
 			toplevel->titlebar_height > 0;
 		float frame_title_h = frame_has_titlebar ? (float)toplevel->titlebar_height : 0.f;
@@ -2606,6 +2658,7 @@ void shady_render_output_frame(
 		shady_gl_pipeline_set_frame_style(&pipeline,
 			rounded_frame ? frame_w : 0.f, rounded_frame ? frame_h : 0.f,
 			server->config.window_corner_radius, border_px, border_color);
+		shady_gl_pipeline_set_uv_rect(&pipeline, uv_rect);
 
 		if (!screen_space && !mesh_representation) {
 			shady_scene_effects_draw_sides(server, &pipeline, mvp, model,
@@ -2771,6 +2824,7 @@ void shady_render_output_frame(
 		/* Subsurfaces are rectangles inside the client; never clip them to
 		 * the parent's frame shape. */
 		shady_gl_pipeline_set_frame_style(&pipeline, 0.f, 0.f, 0.f, 0.f, NULL);
+		shady_gl_pipeline_set_uv_rect(&pipeline, NULL);
 
 		/* Render wl_subsurface children from the same scene subtree instead of
 		 * silently dropping them in spatial mode. XDG popups are intentionally
@@ -2841,6 +2895,7 @@ void shady_render_output_frame(
 		 * does not snap back to square corners on its first frame. */
 		shady_gl_pipeline_set_frame_style(&pipeline, snapshot->width,
 			snapshot->height, server->config.window_corner_radius, 0.f, NULL);
+		shady_gl_pipeline_set_uv_rect(&pipeline, snapshot->uv_rect);
 		shady_scene_effects_draw_sides(server, &pipeline, mvp, model,
 			snapshot->wobble_x, snapshot->wobble_y, snapshot->progress);
 
@@ -2896,6 +2951,7 @@ void shady_render_output_frame(
 		}
 	}
 	shady_gl_pipeline_set_frame_style(&pipeline, 0.f, 0.f, 0.f, 0.f, NULL);
+	shady_gl_pipeline_set_uv_rect(&pipeline, NULL);
 	plugin_render_hooks_run(server, SHADY_RENDER_STAGE_AFTER_WINDOWS,
 		output, buf_w, buf_h, logical_w, logical_h, time_seconds);
 	if (profile) clock_gettime(CLOCK_MONOTONIC, &profile_windows_end);

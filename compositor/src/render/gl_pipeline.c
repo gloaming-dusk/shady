@@ -492,6 +492,7 @@ bool shady_gl_pipeline_init(
 		0,
 		sizeof(*pipeline)
 	);
+	shady_gl_pipeline_set_uv_rect(pipeline, NULL);
 
 	if (!wlr_renderer_is_gles2(renderer)) {
 		wlr_log(
@@ -599,6 +600,7 @@ bool shady_gl_pipeline_init(
 	pipeline->u_brightness_2d = glGetUniformLocation(pipeline->prog_2d, "u_brightness");
 	pipeline->u_frame_rect_2d = glGetUniformLocation(pipeline->prog_2d, "u_frame_rect");
 	pipeline->u_use_vertex_uv_2d = glGetUniformLocation(pipeline->prog_2d, "u_use_vertex_uv");
+	pipeline->u_uv_rect_2d = glGetUniformLocation(pipeline->prog_2d, "u_uv_rect");
 	pipeline->u_frame_px_2d = glGetUniformLocation(pipeline->prog_2d, "u_frame_px");
 	pipeline->u_frame_shape_2d = glGetUniformLocation(pipeline->prog_2d, "u_frame_shape");
 
@@ -655,6 +657,7 @@ bool shady_gl_pipeline_init(
 	pipeline->u_brightness_ext = glGetUniformLocation(pipeline->prog_ext, "u_brightness");
 	pipeline->u_frame_rect_ext = glGetUniformLocation(pipeline->prog_ext, "u_frame_rect");
 	pipeline->u_use_vertex_uv_ext = glGetUniformLocation(pipeline->prog_ext, "u_use_vertex_uv");
+	pipeline->u_uv_rect_ext = glGetUniformLocation(pipeline->prog_ext, "u_uv_rect");
 	pipeline->u_frame_px_ext = glGetUniformLocation(pipeline->prog_ext, "u_frame_px");
 	pipeline->u_frame_shape_ext = glGetUniformLocation(pipeline->prog_ext, "u_frame_shape");
 
@@ -926,6 +929,7 @@ void shady_gl_pipeline_draw_window(
 	GLint u_use_vertex_uv = external ? pipeline->u_use_vertex_uv_ext : pipeline->u_use_vertex_uv_2d;
 	GLint u_frame_px = external ? pipeline->u_frame_px_ext : pipeline->u_frame_px_2d;
 	GLint u_frame_shape = external ? pipeline->u_frame_shape_ext : pipeline->u_frame_shape_2d;
+	GLint u_uv_rect = external ? pipeline->u_uv_rect_ext : pipeline->u_uv_rect_2d;
 	/* Mesh representations carry their own UV layout, so the frame-space
 	 * rounded rectangle does not describe their silhouette. */
 	bool rounded_frame = !pipeline->mesh_use_vertex_uv &&
@@ -938,6 +942,8 @@ void shady_gl_pipeline_draw_window(
 			rounded_frame ? pipeline->frame_px[1] : 0.f);
 	if (u_frame_shape >= 0)
 		glUniform2f(u_frame_shape, pipeline->frame_radius, pipeline->frame_border);
+	if (u_uv_rect >= 0)
+		glUniform4fv(u_uv_rect, 1, pipeline->uv_rect);
 
 	glUniformMatrix4fv(u_mvp, 1, GL_FALSE, mvp);
 	glUniformMatrix4fv(u_model, 1, GL_FALSE, model);
@@ -1077,6 +1083,14 @@ void shady_gl_pipeline_draw_window(
 	);
 
 	glUseProgram(0);
+}
+
+void shady_gl_pipeline_set_uv_rect(struct shady_gl_pipeline *pipeline,
+		const float rect[4]) {
+	if (!pipeline) return;
+	static const float full[4] = {0.f, 0.f, 1.f, 1.f};
+	for (int i = 0; i < 4; ++i)
+		pipeline->uv_rect[i] = rect ? rect[i] : full[i];
 }
 
 void shady_gl_pipeline_set_frame_style(

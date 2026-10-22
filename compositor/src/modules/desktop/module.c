@@ -149,6 +149,11 @@ static bool desktop_protocols_init(struct shady_server *server) {
 		wlr_data_control_manager_v1_create(server->wl_display);
 	state->xdg_decoration_manager =
 		wlr_xdg_decoration_manager_v1_create(server->wl_display);
+	if (state->xdg_decoration_manager) {
+		state->new_toplevel_decoration.notify = server_new_toplevel_decoration;
+		wl_signal_add(&state->xdg_decoration_manager->events.new_toplevel_decoration,
+			&state->new_toplevel_decoration);
+	}
 	state->xdg_output_manager =
 		wlr_xdg_output_manager_v1_create(server->wl_display, server->output_layout);
 	state->xdg_activation = wlr_xdg_activation_v1_create(server->wl_display);
@@ -224,6 +229,8 @@ static void desktop_protocols_destroy(struct shady_server *server) {
 	}
 	if (state->xdg_activation_request.link.prev)
 		wl_list_remove(&state->xdg_activation_request.link);
+	if (state->new_toplevel_decoration.link.prev)
+		wl_list_remove(&state->new_toplevel_decoration.link);
 	if (state->new_layer_surface.link.prev)
 		wl_list_remove(&state->new_layer_surface.link);
 	if (state->output_layout_change.link.prev)

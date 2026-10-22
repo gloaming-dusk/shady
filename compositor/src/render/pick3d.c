@@ -42,14 +42,15 @@ struct shady_toplevel *shady_titlebar_at_3d(struct shady_server *server,
 		struct wlr_surface *surf = toplevel->xdg_toplevel->base->surface;
 		if (!surf || !surf->mapped || !toplevel->scene_tree->node.enabled ||
 				toplevel->fullscreen ||
-				!server->config.window_titlebar || toplevel->titlebar_height <= 0)
+				!shady_toplevel_has_titlebar(toplevel) || toplevel->titlebar_height <= 0)
 			continue;
 		if (shady_spatial_state(server)->runtime.camera.first_person &&
 				!shady_fps_toplevel_state_const(toplevel)->expanded)
 			continue;
 
-		float tw = (float)surf->current.width;
-		float th = (float)surf->current.height;
+		struct wlr_box content = shady_toplevel_content_box(toplevel);
+		float tw = (float)content.width;
+		float th = (float)content.height;
 		if (tw <= 0.f || th <= 0.f) continue;
 		float layout_x = (float)(toplevel->scene_tree->node.x + ox);
 		float layout_y = (float)(toplevel->scene_tree->node.y + oy);
@@ -128,10 +129,13 @@ struct shady_toplevel *shady_toplevel_at_3d(struct shady_server *server,
 				!screen_toplevel->scene_tree->node.enabled) continue;
 		struct wlr_surface *root = screen_toplevel->xdg_toplevel->base->surface;
 		if (!root || !root->mapped) continue;
-		double root_x = lx - screen_toplevel->scene_tree->node.x;
-		double root_y = ly - screen_toplevel->scene_tree->node.y;
-		if (root_x < 0 || root_y < 0 || root_x >= root->current.width ||
-				root_y >= root->current.height) continue;
+		/* The node is the content box's top-left. */
+		struct wlr_box content = shady_toplevel_content_box(screen_toplevel);
+		double root_x = lx - screen_toplevel->scene_tree->node.x + content.x;
+		double root_y = ly - screen_toplevel->scene_tree->node.y + content.y;
+		if (root_x < content.x || root_y < content.y ||
+				root_x >= content.x + content.width ||
+				root_y >= content.y + content.height) continue;
 		struct wlr_surface *leaf = wlr_surface_surface_at(root, root_x, root_y, sx, sy);
 		if (leaf) *surface = leaf;
 		else { *surface = root; *sx = root_x; *sy = root_y; }
@@ -150,7 +154,7 @@ struct shady_toplevel *shady_toplevel_at_3d(struct shady_server *server,
 	struct shady_toplevel *best = NULL;
 	float best_t = 1e30f;
 	float best_u = 0.f, best_v = 0.f;
-	int best_sw = 0, best_sh = 0;
+	struct wlr_box best_content = {0};
 
 	struct shady_toplevel *toplevel;
 	wl_list_for_each(toplevel, &server->toplevels, link) {
@@ -159,8 +163,9 @@ struct shady_toplevel *shady_toplevel_at_3d(struct shady_server *server,
 			continue;
 		}
 
-		float tw = (float)surf->current.width;
-		float th = (float)surf->current.height;
+		struct wlr_box content = shady_toplevel_content_box(toplevel);
+		float tw = (float)content.width;
+		float th = (float)content.height;
 		if (tw <= 0.f || th <= 0.f) {
 			continue;
 		}
@@ -207,7 +212,7 @@ struct shady_toplevel *shady_toplevel_at_3d(struct shady_server *server,
 				representation_model.depth,
 				representation_model.tilt_x, representation_model.tilt_y);
 		}else{
-			float title_h = (!toplevel->fullscreen && server->config.window_titlebar &&
+			float title_h = (!toplevel->fullscreen && shady_toplevel_has_titlebar(toplevel) &&
 				toplevel->titlebar_height > 0) ? (float)toplevel->titlebar_height : 0.f;
 			float frame_h = th + title_h;
 			client_fraction = frame_h > 0.f ? th / frame_h : 1.f;
@@ -239,8 +244,7 @@ struct shady_toplevel *shady_toplevel_at_3d(struct shady_server *server,
 			best_u = u;
 			best_v = v;
 			best = toplevel;
-			best_sw = surf->current.width;
-			best_sh = surf->current.height;
+			best_content = content;
 		}
 	}
 
@@ -248,9 +252,9 @@ struct shady_toplevel *shady_toplevel_at_3d(struct shady_server *server,
 		return NULL;
 	}
 
-	double surf_x = (double)best_u * (double)best_sw;
+	double surf_x = best_content.x + (double)best_u * (double)best_content.width;
 	/* Model local v=0 is bottom; surface y=0 is top. */
-	double surf_y = (1.0 - (double)best_v) * (double)best_sh;
+	double surf_y = best_content.y + (1.0 - (double)best_v) * (double)best_content.height;
 	struct wlr_surface *root = best->xdg_toplevel->base->surface;
 	struct wlr_surface *leaf = wlr_surface_surface_at(root, surf_x, surf_y, sx, sy);
 	if (leaf) {
@@ -300,8 +304,9 @@ struct shady_toplevel *shady_toplevel_at_camera_center_hit_output(
 		wl_list_for_each(toplevel, &server->toplevels, link) {
 			struct wlr_surface *surf = toplevel->xdg_toplevel->base->surface;
 			if (!surf->mapped || !toplevel->scene_tree->node.enabled) continue;
-			float tw = (float)surf->current.width;
-			float th = (float)surf->current.height;
+			struct wlr_box content = shady_toplevel_content_box(toplevel);
+			float tw = (float)content.width;
+			float th = (float)content.height;
 			if (tw <= 0.f || th <= 0.f) continue;
 
 			float model[16];
