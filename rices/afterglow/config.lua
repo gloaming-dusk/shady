@@ -10,7 +10,9 @@ shady.log("loading rice: Afterglow")
 shady.set("spatial_mode", true)
 shady.set("physics_enabled", false)
 shady.set("window_gravity", false)
-shady.set("window_wobble", true)
+-- Rigid panels: a window being dragged leans a little but never bends,
+-- so what is on it stays readable.
+shady.set("window_wobble", false)
 shady.set("window_sides", true)
 shady.set("shadows", true)
 -- No grid floor: the Afterglow sky plugin draws an open sea down to the

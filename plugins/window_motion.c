@@ -21,11 +21,17 @@ static void publish(shady_host h, shady_window w) {
         .tilt_x = s->tilt_x, .tilt_y = s->tilt_y,
         .animating = fabsf(s->wobble_x) > .00005f || fabsf(s->wobble_y) > .00005f ||
             fabsf(s->wobble_vx) > .00005f || fabsf(s->wobble_vy) > .00005f ||
+            fabsf(s->tilt_x) > 0.f || fabsf(s->tilt_y) > 0.f ||
             fabsf(s->tilt_vx) > .00005f || fabsf(s->tilt_vy) > .00005f,
     };
     motion->set_visual(h, w, &v);
 }
 static void motion_begin_drag(shady_host h, shady_window w, double x, double y);
+/* A hint of physical lean, not a turn: about 4 degrees at most. */
+#define TILT_LIMIT .07f
+static float clamp_tilt(float t) {
+	return fmaxf(-TILT_LIMIT, fminf(TILT_LIMIT, t));
+}
 static void motion_update_toplevel(shady_host server,
 		shady_window toplevel, float dt) {
 	struct motion_state *s = state_for(toplevel);
@@ -52,18 +58,22 @@ static void motion_update_toplevel(shady_host server,
 		s->wobble_vx=s->wobble_vy=0.f;
 	}
 
-	/* Rigid tilt is intentionally independent from flexible wobble. */
-	const float tilt_damping_rate = 9.f;
+	/* Rigid tilt is intentionally independent from flexible wobble. A
+	 * spring pulls it back to exactly flat: a window left even slightly
+	 * turned is resampled, and its text goes soft. */
+	const float tilt_spring = 70.f, tilt_damping_rate = 13.f;
+	s->tilt_vx += -s->tilt_x * tilt_spring * dt;
+	s->tilt_vy += -s->tilt_y * tilt_spring * dt;
 	float damping = 1.f - tilt_damping_rate * dt;
 	if (damping < 0.f) damping = 0.f;
 	s->tilt_vx *= damping;
 	s->tilt_vy *= damping;
-	s->tilt_x += s->tilt_vx * dt;
-	s->tilt_y += s->tilt_vy * dt;
-	if (fabsf(s->tilt_vx) < .00005f)
-		s->tilt_vx = 0.f;
-	if (fabsf(s->tilt_vy) < .00005f)
-		s->tilt_vy = 0.f;
+	s->tilt_x = clamp_tilt(s->tilt_x + s->tilt_vx * dt);
+	s->tilt_y = clamp_tilt(s->tilt_y + s->tilt_vy * dt);
+	if (fabsf(s->tilt_x) < .0002f && fabsf(s->tilt_vx) < .002f)
+		s->tilt_x = s->tilt_vx = 0.f;
+	if (fabsf(s->tilt_y) < .0002f && fabsf(s->tilt_vy) < .002f)
+		s->tilt_y = s->tilt_vy = 0.f;
 	publish(server, toplevel);
 }
 
