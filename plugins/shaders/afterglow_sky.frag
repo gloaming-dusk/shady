@@ -87,11 +87,13 @@ vec3 sky(vec3 d, bool with_stars) {
     col = mix(col, core, disk * u_sun_dir.w);
 
     /* Thin stratus streaks, lit from below by the low sun. */
-    if (u_night.y > 0.001) {
+    /* The noise is the costly part; skip it outside the band, where it
+     * would be multiplied by zero. */
+    float band = smoothstep(0.02, 0.07, elev) * (1.0 - smoothstep(0.16, 0.32, elev));
+    if (u_night.y > 0.001 && band > 0.0) {
         float az = atan(d.x, -d.z);
         vec2 cp = vec2(az * 2.6 + u_time * 0.004, elev * 34.0);
         float c = fbm(cp * vec2(1.0, 1.0) + vec2(0.0, fbm(cp * 0.5) * 1.6));
-        float band = smoothstep(0.02, 0.07, elev) * (1.0 - smoothstep(0.16, 0.32, elev));
         float cover = smoothstep(0.52, 0.78, c) * band * u_night.y;
         vec3 lit = mix(u_mid.rgb * 0.55, u_sun_color.rgb * 1.05, pow(sun_side, 1.5));
         lit = mix(lit, u_glow.rgb, 0.25 * pow(sun_side, 4.0));
@@ -170,8 +172,10 @@ void main() {
         col += u_glow.rgb * sheen * 0.10 * u_glow.a * sun_up;
 
         /* Haze line: the sea meets the sky without a hard edge. */
-        float horizon_haze = exp(d.y * 60.0);
-        col = mix(col, sky(vec3(d.x, 0.0, d.z), false), horizon_haze * 0.85);
+        float horizon_haze = exp(d.y * 60.0) * 0.85;
+        /* Below 1/1024 the blend is under the dither; skip the sky lookup. */
+        if (horizon_haze > 0.001)
+            col = mix(col, sky(vec3(d.x, 0.0, d.z), false), horizon_haze);
     }
 
     /* Highlight shoulder: values above 0.7 roll off smoothly instead of
