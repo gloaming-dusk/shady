@@ -590,6 +590,16 @@ static int l_automation_click(lua_State *L) {
 	return 0;
 }
 
+static int l_automation_button_down(lua_State *L) {
+	shady_input_automation_pointer_button(lua_server, automation_button(L, 1), true);
+	return 0;
+}
+
+static int l_automation_button_up(lua_State *L) {
+	shady_input_automation_pointer_button(lua_server, automation_button(L, 1), false);
+	return 0;
+}
+
 static int l_automation_drag(lua_State *L) {
 	double x1 = luaL_checknumber(L, 1);
 	double y1 = luaL_checknumber(L, 2);
@@ -786,6 +796,8 @@ static void install_api(lua_State *L){
 	lua_pushcfunction(L,l_automation_move_pointer);lua_setfield(L,-2,"move_pointer");
 	lua_pushcfunction(L,l_automation_click);lua_setfield(L,-2,"click");
 	lua_pushcfunction(L,l_automation_drag);lua_setfield(L,-2,"drag");
+	lua_pushcfunction(L,l_automation_button_down);lua_setfield(L,-2,"button_down");
+	lua_pushcfunction(L,l_automation_button_up);lua_setfield(L,-2,"button_up");
 	lua_pushcfunction(L,l_automation_scroll);lua_setfield(L,-2,"scroll");
 	lua_pushcfunction(L,l_automation_screenshot);lua_setfield(L,-2,"screenshot");
 	lua_setfield(L,-2,"automation");

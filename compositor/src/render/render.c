@@ -28,6 +28,7 @@
 #include <GLES2/gl2.h>
 
 #include "../shady.h"
+#include "close_snapshot.h"
 #include "gl_pipeline.h"
 #include "math3d.h"
 #include "pick3d.h"
@@ -909,43 +910,6 @@ static uint64_t timespec_delta_ns(const struct timespec *start,
 static struct timespec shader_start_time;
 static struct timespec close_snapshot_last_time;
 
-struct shady_close_snapshot {
-	struct wl_list link;
-
-	struct shady_toplevel *toplevel;
-	struct shady_server *server;
-
-	GLuint texture;
-
-	int texture_width;
-	int texture_height;
-	float uv_rect[4]; /* the window's part of the texture */
-
-	float x;
-	float y;
-	float width;
-	float height;
-	float tilt_x;
-	float tilt_y;
-	float z;
-	float wobble_x;
-	float wobble_y;
-
-	bool has_alpha;
-
-	bool dirty;
-	bool animating;
-
-	float progress;
-	uint32_t close_style;
-	float close_duration;
-	float close_strength;
-	float close_direction_x;
-	float close_direction_y;
-	shady_shader_program plugin_shader_program;
-	void *plugin_shader_owner;
-	float plugin_shader_params[SHADY_WINDOW_SHADER_PARAMS * 4];
-};
 
 static struct shady_close_snapshot *
 find_close_snapshot(

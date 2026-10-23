@@ -5,6 +5,26 @@ between releases. Breaking changes are called out here.
 
 ## Unreleased
 
+Fixes from testing on hardware:
+
+- Clicks work after dragging or resizing a window by its own decorations
+  (Brave's tab strip). The compositor swallowed the button release that
+  ended the grab, so the seat kept the button pressed and dropped every
+  later click on it. A client that started a grab now gets the release.
+- Closing a window that had refused to close once (Ghostty asking for
+  confirmation after `Super+Q`) no longer leaves a frozen picture of it on
+  screen. The close-animation module advanced that picture through its own
+  copy of the renderer's snapshot struct, which had fallen out of step
+  when the viewport crop was added; both now share one definition.
+- The window you raised gets the clicks where windows overlap. Picking
+  chose the nearest hit, and a window leaning a fraction of a degree
+  (wobble, a drag settling) could put its far half behind the window it
+  covers. Windows in one plane are now ordered by stacking, as drawn.
+- Window edges can be grabbed over a shell's desktop: in Objects the
+  background layer took the press just outside every window.
+- `shady.automation.button_down`/`button_up` for drags that wait for the
+  client between steps.
+
 Everyday use, measured on a 14" 2880x1800 laptop (Intel Lunar Lake):
 
 - Windows can be resized. In spatial mode clicks were only picked inside a

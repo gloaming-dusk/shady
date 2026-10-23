@@ -1,5 +1,7 @@
 #include "pick3d.h"
 
+#include <math.h>
+
 #include <wayland-server-core.h>
 #include <wlr/types/wlr_compositor.h>
 #include <wlr/types/wlr_output.h>
@@ -13,6 +15,24 @@
 #include "render.h"
 #include "../modules/fps/fps.h"
 #include "../modules/fps/state.h"
+
+/*
+ * Which of two hit windows is in front. Windows in one plane overlap the way
+ * they are stacked (the renderer draws them back to front), so they are
+ * ordered by the depth of their plane along the ray, not by the exact hit:
+ * a window leaning a fraction of a degree (wobble, a drag settling) would
+ * otherwise put its far half behind the window it covers and hand the click
+ * to that one. Hits come top of the stack first, so a tie keeps the earlier.
+ */
+#define STACK_DEPTH_EPSILON 1e-3f
+
+static float plane_depth(const struct shady_ray *ray, float z) {
+	return fabsf(ray->dir.z) > 1e-6f ? (z - ray->origin.z) / ray->dir.z : 1e30f;
+}
+
+static bool in_front(float depth, float best_depth) {
+	return depth < best_depth - STACK_DEPTH_EPSILON;
+}
 
 struct shady_toplevel *shady_titlebar_at_3d(struct shady_server *server,
 		double lx, double ly) {
@@ -83,8 +103,9 @@ struct shady_toplevel *shady_titlebar_at_3d(struct shady_server *server,
 				&t, &u, &v, &front_hit) || !front_hit ||
 				v < client_fraction)
 			continue;
-		if (t < best_t) {
-			best_t = t;
+		float depth = plane_depth(&ray, shady_spatial_toplevel_state(toplevel)->z);
+		if (in_front(depth, best_t)) {
+			best_t = depth;
 			best = toplevel;
 		}
 	}
@@ -143,8 +164,10 @@ struct shady_toplevel *shady_resize_edge_at_3d(struct shady_server *server,
 		float t, u, v;
 		bool front_hit = false;
 		if (!shady_ray_window_shell_hit(&ray, model, 0.f, 0.f, &t, &u, &v, &front_hit) ||
-				!front_hit || t >= best_t)
+				!front_hit)
 			continue;
+		float depth = plane_depth(&ray, shady_spatial_toplevel_state(toplevel)->z);
+		if (!in_front(depth, best_t)) continue;
 		/* Frame-local position, from the title bar's top-left. */
 		float px = u * frame_w - RESIZE_BORDER;
 		float py = (1.f - v) * frame_h - RESIZE_BORDER;
@@ -163,7 +186,7 @@ struct shady_toplevel *shady_resize_edge_at_3d(struct shady_server *server,
 			else if (px > fw - RESIZE_CORNER) edges |= WLR_EDGE_RIGHT;
 		}
 		best = toplevel;
-		best_t = t;
+		best_t = depth;
 		best_edges = edges;
 	}
 	*edges_out = best_edges;
@@ -319,8 +342,11 @@ struct shady_toplevel *shady_toplevel_at_3d(struct shady_server *server,
 			if (v > client_fraction) continue;
 			v /= client_fraction;
 		}
-		if (t < best_t) {
-			best_t = t;
+		/* A folded first-person body is a solid: its nearest face counts. */
+		float depth = folded_representation ? t
+			: plane_depth(&ray, shady_spatial_toplevel_state(toplevel)->z);
+		if (in_front(depth, best_t)) {
+			best_t = depth;
 			best_u = u;
 			best_v = v;
 			best = toplevel;

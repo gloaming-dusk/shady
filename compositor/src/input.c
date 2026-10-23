@@ -284,6 +284,15 @@ static struct shady_toplevel *toplevel_at_cursor(struct shady_server *server,
 	return desktop_toplevel_at(server, lx, ly, surface, sx, sy);
 }
 
+/* Nothing, or the desktop: a background or bottom layer surface (a shell's
+ * wallpaper or desktop), which lies behind the windows and their edges. */
+static bool on_desktop(struct wlr_surface *surface) {
+	if (!surface) return true;
+	struct wlr_layer_surface_v1 *layer = wlr_layer_surface_v1_try_from_wlr_surface(
+		wlr_surface_get_root_surface(surface));
+	return layer && layer->current.layer <= ZWLR_LAYER_SHELL_V1_LAYER_BOTTOM;
+}
+
 static void process_cursor_motion(struct shady_server *server, uint32_t time) {
 	if (server->cursor_mode == SHADY_CURSOR_MOVE) {
 		process_cursor_move(server);
@@ -298,12 +307,17 @@ static void process_cursor_motion(struct shady_server *server, uint32_t time) {
 	struct wlr_surface *surface = NULL;
 	struct shady_toplevel *toplevel = toplevel_at_cursor(server,
 			server->cursor->x, server->cursor->y, &surface, &sx, &sy);
-	if (!toplevel && !surface) {
-		uint32_t edges = 0;
+	uint32_t edges = 0;
+	if (!toplevel && on_desktop(surface))
 		resize_edge_at(server, server->cursor->x, server->cursor->y, &edges);
+	if (edges) {
+		/* The edge is ours: the desktop underneath gets no pointer. */
+		wlr_seat_pointer_clear_focus(seat);
 		wlr_cursor_set_xcursor(server->cursor, server->cursor_mgr,
-			edges ? wlr_xcursor_get_resize_name(edges) : "default");
-	} else if (!toplevel) {
+			wlr_xcursor_get_resize_name(edges));
+		return;
+	}
+	if (!toplevel && !surface) {
 		wlr_cursor_set_xcursor(server->cursor, server->cursor_mgr, "default");
 	}
 	if (surface) {
@@ -698,7 +712,7 @@ static bool begin_pointer_grab(struct shady_server *server, uint32_t button,
 		wlr_seat_pointer_clear_focus(server->seat);
 		return server->grabbed_toplevel == toplevel;
 	}
-	if (button != BTN_LEFT || toplevel || surface) return false;
+	if (button != BTN_LEFT || toplevel || !on_desktop(surface)) return false;
 	uint32_t edges = 0;
 	struct shady_toplevel *edge = resize_edge_at(server, lx, ly, &edges);
 	if (!edge || !edges) return false;
@@ -713,12 +727,17 @@ static void handle_pointer_button(struct shady_server *server,
 		struct wlr_pointer_button_event *event) {
 	uint32_t mods = seat_modifiers(server);
 
-	/* A move or resize the compositor runs ends with the button; the
-	 * client never saw it pressed. */
+	/* A move or resize ends with the button. One the client started (its
+	 * title bar or border, xdg_toplevel.move/resize) began with a press the
+	 * client saw, so it gets the release too: the seat counts presses, and
+	 * a press left open makes it drop every later click on that button.
+	 * The seat ignores the release when the client never saw the press. */
 	if (event->state == WL_POINTER_BUTTON_STATE_RELEASED &&
 			(server->cursor_mode == SHADY_CURSOR_MOVE ||
 			 server->cursor_mode == SHADY_CURSOR_RESIZE) && server->grabbed_toplevel) {
 		reset_cursor_mode(server);
+		wlr_seat_pointer_notify_button(server->seat,
+			event->time_msec, event->button, event->state);
 		process_cursor_motion(server, event->time_msec);
 		return;
 	}

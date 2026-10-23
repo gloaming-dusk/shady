@@ -9,28 +9,12 @@
 #include <shady/plugin.h>
 
 #include "../../render/render.h"
+#include "../../render/close_snapshot.h"
 
 #define DEFAULT_CLOSE_SECONDS .42f
 #define WAIT_SECONDS .25f
 #define DEFAULT_RESTORE_SECONDS .32f
 
-/* Snapshot prefix shared with renderer; keep this layout in sync with
- * struct shady_close_snapshot in render.c. */
-struct close_snapshot_lifetime {
-	struct wl_list link;
-	struct shady_toplevel *toplevel;
-	struct shady_server *server;
-	GLuint texture;
-	int texture_width, texture_height;
-	float x, y, width, height, tilt_x, tilt_y, z, wobble_x, wobble_y;
-	bool has_alpha, dirty, animating;
-	float progress;
-	uint32_t close_style;
-	float close_duration;
-	float close_strength;
-	float close_direction_x;
-	float close_direction_y;
-};
 
 static float clamp_duration(float duration) {
 	if (duration < .08f) return .08f;
@@ -151,7 +135,7 @@ void shady_close_animation_update_toplevel(struct shady_toplevel *toplevel,
 
 void shady_close_animation_update_snapshots(struct wl_list *snapshots,
 		float dt) {
-	struct close_snapshot_lifetime *snapshot, *tmp;
+	struct shady_close_snapshot *snapshot, *tmp;
 	wl_list_for_each_safe(snapshot, tmp, snapshots, link) {
 		if (!snapshot->animating) continue;
 		float duration = clamp_duration(snapshot->close_duration > 0.f

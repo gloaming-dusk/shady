@@ -71,6 +71,12 @@ Move the compositor pointer to logical layout coordinates.
 
 Press and release a mouse button. `button` can be `"left"`, `"right"`, `"middle"`, or a numeric Linux input button code.
 
+### `shady.automation.button_down(button)` / `shady.automation.button_up(button)`
+
+Press or release a mouse button and leave it there, for drags that wait for
+the client between steps (a client starts its own move or resize only after
+it has seen the press).
+
 ### `shady.automation.drag(x1, y1, x2, y2 [, button [, steps]])`
 
 Move to the start point, press the button, interpolate to the end point, then release it.
