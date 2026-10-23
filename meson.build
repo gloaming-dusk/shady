@@ -616,6 +616,14 @@ shared_module('shady-plugin-black-hole',
   install: true,
   install_dir: plugin_install_dir)
 
+shared_module('shady-plugin-bad-apple',
+  'plugins/bad_apple.c',
+  include_directories: include_directories('include'),
+  dependencies: [glesv2, dependency('xkbcommon'), cc.find_library('m')],
+  build_by_default: true,
+  install: true,
+  install_dir: plugin_install_dir)
+
 shared_module('shady-plugin-frozen-window',
   'plugins/frozen_window.c',
   include_directories: include_directories('include'),
@@ -755,6 +763,14 @@ if obj_loader_enabled
       meson.current_build_dir()],
     depends: [obj_loader_plugin])
 endif
+
+bad_apple_plugin_test = executable('bad-apple-plugin-test',
+  'tests/bad-apple-plugin.c',
+  include_directories: include_directories('include'),
+  dependencies: [dl, dependency('xkbcommon')],
+  install: false)
+test('bad-apple-plugin', bad_apple_plugin_test,
+  args: [join_paths(meson.current_build_dir(), 'libshady-plugin-bad-apple.so')])
 
 black_hole_plugin_test = executable('black-hole-plugin-test',
   'tests/black-hole-plugin.c',

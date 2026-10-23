@@ -76,6 +76,8 @@ plugin("SHADY_FPS_REPRESENTATION_PLUGIN", "fps-folded-paper")
 plugin("SHADY_OVERVIEW_PLUGIN", "spatial-overview")
 -- Super+BackSpace: scrub back through earlier layouts of the desktop.
 plugin("SHADY_REWIND_PLUGIN", "rewind")
+-- Super+A: Bad Apple on the desktop, once tools/bad-apple.sh made frames.
+plugin("SHADY_BAD_APPLE_PLUGIN", "bad-apple")
 
 shady.bind("quit", "Super+Shift+Escape")
 shady.bind("cycle_windows", "Super+Tab")

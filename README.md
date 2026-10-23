@@ -57,6 +57,7 @@ rices load several.
 | `water-windows` | `Super+W` | windows turn to water: waves, refraction, caustics |
 | `frozen-window` | `Super+Z`, `Super+Shift+Z` | frost grows over a window, or the whole workspace, and melts away |
 | `black-hole` | `Super+H` | the workspace's windows fall into a black hole and a white hole returns them |
+| `bad-apple` | `Super+A` | the screen becomes flip-dot tiles that play Bad Apple!! over the desktop, from your own copy of the video (`tools/bad-apple.sh`; Afterglow, Horizon) |
 | `magnetic-windows` | `Super+M` | nearby windows dock together on springs |
 | `window-constellation` | `Super+C` | the other windows orbit the focused one |
 | `window-portal` | `Super+P`, `Super+Shift+P` | a live portal onto another window |

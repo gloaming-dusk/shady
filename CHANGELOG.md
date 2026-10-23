@@ -5,6 +5,19 @@ between releases. Breaking changes are called out here.
 
 ## Unreleased
 
+New:
+
+- `bad-apple` plugin (`Super+A`, loaded by Afterglow and Horizon): the
+  screen turns into a board of flip-dot tiles with the desktop on their
+  fronts and black on their backs, and plays a video on them, Bad Apple!!
+  being the one it is made for. A wave from the centre turns the first
+  frame in and, at the end, turns the desktop back. No video ships with
+  Shady: `tools/bad-apple.sh <video>` makes 1-bit frames (80x60 by
+  default) and a WAV from your own copy. The audio plays through
+  pw-play, paplay or aplay (`SHADY_BAD_APPLE_PLAYER` for another), and
+  the frames follow the clock from the moment it starts; over the full
+  3:39 a headless recording stayed on the source frames with no drift.
+
 Fixes from testing on hardware:
 
 - Clicks work after dragging or resizing a window by its own decorations
