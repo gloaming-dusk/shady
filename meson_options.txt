@@ -8,3 +8,4 @@ option('scene_effects', type: 'feature', value: 'enabled', description: 'Build f
 option('shell', type: 'feature', value: 'enabled', description: 'Build the standalone shady-shell layer-shell client')
 option('obj_loader', type: 'feature', value: 'enabled', description: 'Build the Wavefront OBJ environment loader plugin (loaded when an .obj environment is configured)')
 option('installed_data', type: 'boolean', value: false, description: 'Read shaders and shell data from the install prefix instead of the source tree')
+option('cursor_path', type: 'string', value: '', description: 'An icon directory holding a cursor theme, used when XCURSOR_PATH has none (Adwaita is looked for there)')

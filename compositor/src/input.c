@@ -24,6 +24,7 @@
 #include <wlr/types/wlr_xdg_shell.h>
 #include <wlr/util/edges.h>
 #include <wlr/util/log.h>
+#include <wlr/xcursor.h>
 #include <xkbcommon/xkbcommon.h>
 
 #include "shady.h"
@@ -33,8 +34,15 @@
 #include "modules/desktop/state.h"
 #include <wlr/types/wlr_layer_shell_v1.h>
 #include "render/render.h"
+#if SHADY_HAS_SPATIAL
+#include "render/pick3d.h"
+#endif
 
 void reset_cursor_mode(struct shady_server *server) {
+	if (server->cursor_mode == SHADY_CURSOR_RESIZE && server->grabbed_toplevel) {
+		struct shady_toplevel *toplevel = server->grabbed_toplevel;
+		toplevel->resize_serial = wlr_xdg_toplevel_set_resizing(toplevel->xdg_toplevel, false);
+	}
 	server->cursor_mode = SHADY_CURSOR_PASSTHROUGH;
 	server->grabbed_toplevel = NULL;
 }
@@ -68,43 +76,76 @@ static void process_cursor_move(struct shady_server *server) {
 	);
 }
 
+/* The smallest window a resize makes, unless the client asks for more. */
+#define RESIZE_MIN_WIDTH 120
+#define RESIZE_MIN_HEIGHT 60
+
 static void process_cursor_resize(struct shady_server *server) {
 	struct shady_toplevel *toplevel = server->grabbed_toplevel;
+	if (!toplevel) return;
 	double border_x = server->cursor->x - server->grab_x;
 	double border_y = server->cursor->y - server->grab_y;
-	int new_left = server->grab_geobox.x;
-	int new_right = server->grab_geobox.x + server->grab_geobox.width;
-	int new_top = server->grab_geobox.y;
-	int new_bottom = server->grab_geobox.y + server->grab_geobox.height;
+	int left = server->grab_geobox.x;
+	int right = server->grab_geobox.x + server->grab_geobox.width;
+	int top = server->grab_geobox.y;
+	int bottom = server->grab_geobox.y + server->grab_geobox.height;
+	int width = server->grab_geobox.width, height = server->grab_geobox.height;
+	if (server->resize_edges & WLR_EDGE_LEFT) width = right - (int)border_x;
+	else if (server->resize_edges & WLR_EDGE_RIGHT) width = (int)border_x - left;
+	if (server->resize_edges & WLR_EDGE_TOP) height = bottom - (int)border_y;
+	else if (server->resize_edges & WLR_EDGE_BOTTOM) height = (int)border_y - top;
 
-	if (server->resize_edges & WLR_EDGE_TOP) {
-		new_top = border_y;
-		if (new_top >= new_bottom) {
-			new_top = new_bottom - 1;
+	struct wlr_xdg_toplevel_state *current = &toplevel->xdg_toplevel->current;
+	int min_w = current->min_width > RESIZE_MIN_WIDTH ? current->min_width : RESIZE_MIN_WIDTH;
+	int min_h = current->min_height > RESIZE_MIN_HEIGHT ? current->min_height : RESIZE_MIN_HEIGHT;
+	if (width < min_w) width = min_w;
+	if (height < min_h) height = min_h;
+	if (current->max_width > 0 && width > current->max_width) width = current->max_width;
+	if (current->max_height > 0 && height > current->max_height) height = current->max_height;
+
+	/* Moving the window here, before the client has drawn the new size,
+	 * would make the opposite edge jitter: the commit handler keeps that
+	 * edge where it was grabbed once the new size arrives. */
+	toplevel->resize_serial = wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, width, height);
+}
+
+/* The window edge under the pointer when nothing else is (see
+ * shady_resize_edge_at_3d); in the flat desktop the frames are where the
+ * scene graph has them. */
+static struct shady_toplevel *resize_edge_at(struct shady_server *server,
+		double lx, double ly, uint32_t *edges) {
+	*edges = 0;
+	if (shady_desktop_state(server)->session_locked) return NULL;
+#if SHADY_HAS_SPATIAL
+	if (server->config.spatial_mode)
+		return shady_resize_edge_at_3d(server, lx, ly, edges);
+#endif
+	const double border = 10.0, corner = 24.0;
+	struct shady_toplevel *toplevel;
+	wl_list_for_each(toplevel, &server->toplevels, link) {
+		if (!toplevel->mapped || !toplevel->scene_tree->node.enabled ||
+				toplevel->maximized || toplevel->fullscreen) continue;
+		struct wlr_box *geo = &toplevel->xdg_toplevel->base->geometry;
+		double title = shady_toplevel_has_titlebar(toplevel) ? toplevel->titlebar_height : 0;
+		double x0 = toplevel->scene_tree->node.x, y0 = toplevel->scene_tree->node.y - title;
+		double x1 = x0 + geo->width, y1 = toplevel->scene_tree->node.y + geo->height;
+		if (lx < x0 - border || lx > x1 + border || ly < y0 - border || ly > y1 + border)
+			continue;
+		uint32_t e = 0;
+		if (lx < x0) e |= WLR_EDGE_LEFT; else if (lx > x1) e |= WLR_EDGE_RIGHT;
+		if (ly < y0) e |= WLR_EDGE_TOP; else if (ly > y1) e |= WLR_EDGE_BOTTOM;
+		if (!e) return NULL; /* on the window itself */
+		if (e == WLR_EDGE_LEFT || e == WLR_EDGE_RIGHT) {
+			if (ly < y0 + corner) e |= WLR_EDGE_TOP;
+			else if (ly > y1 - corner) e |= WLR_EDGE_BOTTOM;
+		} else if (e == WLR_EDGE_TOP || e == WLR_EDGE_BOTTOM) {
+			if (lx < x0 + corner) e |= WLR_EDGE_LEFT;
+			else if (lx > x1 - corner) e |= WLR_EDGE_RIGHT;
 		}
-	} else if (server->resize_edges & WLR_EDGE_BOTTOM) {
-		new_bottom = border_y;
-		if (new_bottom <= new_top) {
-			new_bottom = new_top + 1;
-		}
+		*edges = e;
+		return toplevel;
 	}
-	if (server->resize_edges & WLR_EDGE_LEFT) {
-		new_left = border_x;
-		if (new_left >= new_right) {
-			new_left = new_right - 1;
-		}
-	} else if (server->resize_edges & WLR_EDGE_RIGHT) {
-		new_right = border_x;
-		if (new_right <= new_left) {
-			new_right = new_left + 1;
-		}
-	}
-
-	wlr_scene_node_set_position(&toplevel->scene_tree->node, new_left, new_top);
-
-	int new_width = new_right - new_left;
-	int new_height = new_bottom - new_top;
-	wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, new_width, new_height);
+	return NULL;
 }
 
 static struct shady_toplevel *desktop_titlebar_at(struct shady_server *server,
@@ -257,7 +298,12 @@ static void process_cursor_motion(struct shady_server *server, uint32_t time) {
 	struct wlr_surface *surface = NULL;
 	struct shady_toplevel *toplevel = toplevel_at_cursor(server,
 			server->cursor->x, server->cursor->y, &surface, &sx, &sy);
-	if (!toplevel) {
+	if (!toplevel && !surface) {
+		uint32_t edges = 0;
+		resize_edge_at(server, server->cursor->x, server->cursor->y, &edges);
+		wlr_cursor_set_xcursor(server->cursor, server->cursor_mgr,
+			edges ? wlr_xcursor_get_resize_name(edges) : "default");
+	} else if (!toplevel) {
 		wlr_cursor_set_xcursor(server->cursor, server->cursor_mgr, "default");
 	}
 	if (surface) {
@@ -460,30 +506,44 @@ void shady_input_add_keyboard(struct shady_server *server,
 	}
 }
 
-static void configure_libinput_pointer(struct wlr_input_device *device) {
+static void configure_libinput_pointer(struct shady_server *server,
+		struct wlr_input_device *device) {
 	if (!wlr_input_device_is_libinput(device)) return;
 	struct libinput_device *libinput_device =
 		wlr_libinput_get_device_handle(device);
-	if (!libinput_device ||
-			!libinput_device_config_dwt_is_available(libinput_device)) return;
+	if (!libinput_device) return;
+	const char *name = device->name ? device->name : "pointer";
 
+	/* Touchpads tap to click and scroll the way the config says, as on
+	 * other desktops; libinput leaves tapping off by default. */
+	if (libinput_device_config_tap_get_finger_count(libinput_device) > 0) {
+		libinput_device_config_tap_set_enabled(libinput_device,
+			server->config.touchpad_tap ? LIBINPUT_CONFIG_TAP_ENABLED
+				: LIBINPUT_CONFIG_TAP_DISABLED);
+		if (libinput_device_config_scroll_has_natural_scroll(libinput_device))
+			libinput_device_config_scroll_set_natural_scroll_enabled(libinput_device,
+				server->config.touchpad_natural_scroll);
+		wlr_log(WLR_INFO, "input: %s: tap %s, natural scroll %s", name,
+			server->config.touchpad_tap ? "on" : "off",
+			server->config.touchpad_natural_scroll ? "on" : "off");
+	}
+
+	if (!libinput_device_config_dwt_is_available(libinput_device)) return;
 	enum libinput_config_status status =
 		libinput_device_config_dwt_set_enabled(libinput_device,
 			LIBINPUT_CONFIG_DWT_DISABLED);
 	if (status == LIBINPUT_CONFIG_STATUS_SUCCESS) {
 		wlr_log(WLR_INFO,
-			"input: disabled touchpad disable-while-typing for %s",
-			device->name ? device->name : "pointer");
+			"input: disabled touchpad disable-while-typing for %s", name);
 	} else {
 		wlr_log(WLR_ERROR,
-			"input: failed to disable touchpad disable-while-typing for %s",
-			device->name ? device->name : "pointer");
+			"input: failed to disable touchpad disable-while-typing for %s", name);
 	}
 }
 
 static void server_new_pointer(struct shady_server *server,
 		struct wlr_input_device *device) {
-	configure_libinput_pointer(device);
+	configure_libinput_pointer(server, device);
 	wlr_cursor_attach_input_device(server->cursor, device);
 }
 
@@ -604,16 +664,70 @@ static uint32_t seat_modifiers(struct shady_server *server) {
 	return wlr_keyboard_get_modifiers(keyboard);
 }
 
-void server_cursor_button(struct wl_listener *listener, void *data) {
-	struct shady_server *server =
-		wl_container_of(listener, server, cursor_button);
-	struct wlr_pointer_button_event *event = data;
-	if (shady_desktop_state(server)->idle_notifier) {
-		wlr_idle_notifier_v1_notify_activity(shady_desktop_state(server)->idle_notifier, server->seat);
+/* Super+left drag moves the window under the pointer, Super+right drag
+ * resizes it from the nearest corner, and a left press just outside a
+ * window's frame resizes it from that edge. */
+static bool begin_pointer_grab(struct shady_server *server, uint32_t button,
+		uint32_t mods) {
+	if (shady_desktop_state(server)->session_locked ||
+			shady_input_pointer_on_overlay(server)) return false;
+	double lx = server->cursor->x, ly = server->cursor->y;
+	const uint32_t mod_mask = WLR_MODIFIER_ALT | WLR_MODIFIER_SHIFT |
+		WLR_MODIFIER_CTRL | WLR_MODIFIER_LOGO;
+	double sx, sy;
+	struct wlr_surface *surface = NULL;
+	struct shady_toplevel *toplevel = toplevel_at_cursor(server, lx, ly, &surface, &sx, &sy);
+	if ((mods & mod_mask) == WLR_MODIFIER_LOGO &&
+			(button == BTN_LEFT || button == BTN_RIGHT)) {
+		if (!toplevel || toplevel->fullscreen) return false;
+		focus_toplevel(toplevel);
+		if (button == BTN_LEFT) {
+			shady_toplevel_begin_interactive(toplevel, SHADY_CURSOR_MOVE, 0);
+		} else {
+			if (toplevel->maximized) shady_toplevel_set_maximized(toplevel, false);
+			struct wlr_box *geo = &toplevel->xdg_toplevel->base->geometry;
+			uint32_t edges =
+				(lx < toplevel->scene_tree->node.x + geo->width / 2.0
+					? WLR_EDGE_LEFT : WLR_EDGE_RIGHT) |
+				(ly < toplevel->scene_tree->node.y + geo->height / 2.0
+					? WLR_EDGE_TOP : WLR_EDGE_BOTTOM);
+			shady_toplevel_begin_interactive(toplevel, SHADY_CURSOR_RESIZE, edges);
+			wlr_cursor_set_xcursor(server->cursor, server->cursor_mgr,
+				wlr_xcursor_get_resize_name(edges));
+		}
+		wlr_seat_pointer_clear_focus(server->seat);
+		return server->grabbed_toplevel == toplevel;
 	}
+	if (button != BTN_LEFT || toplevel || surface) return false;
+	uint32_t edges = 0;
+	struct shady_toplevel *edge = resize_edge_at(server, lx, ly, &edges);
+	if (!edge || !edges) return false;
+	focus_toplevel(edge);
+	shady_toplevel_begin_interactive(edge, SHADY_CURSOR_RESIZE, edges);
+	wlr_seat_pointer_clear_focus(server->seat);
+	return server->grabbed_toplevel == edge;
+}
+
+/* A button from a pointer or from automation. */
+static void handle_pointer_button(struct shady_server *server,
+		struct wlr_pointer_button_event *event) {
 	uint32_t mods = seat_modifiers(server);
 
+	/* A move or resize the compositor runs ends with the button; the
+	 * client never saw it pressed. */
+	if (event->state == WL_POINTER_BUTTON_STATE_RELEASED &&
+			(server->cursor_mode == SHADY_CURSOR_MOVE ||
+			 server->cursor_mode == SHADY_CURSOR_RESIZE) && server->grabbed_toplevel) {
+		reset_cursor_mode(server);
+		process_cursor_motion(server, event->time_msec);
+		return;
+	}
+
 	if (shady_modules_pointer_button(server, event, mods))
+		return;
+
+	if (event->state == WL_POINTER_BUTTON_STATE_PRESSED &&
+			begin_pointer_grab(server, event->button, mods))
 		return;
 
 	if (event->button == BTN_LEFT) {
@@ -645,6 +759,16 @@ void server_cursor_button(struct wl_listener *listener, void *data) {
 				server->cursor->x, server->cursor->y, &surface, &sx, &sy);
 		focus_toplevel(toplevel);
 	}
+}
+
+void server_cursor_button(struct wl_listener *listener, void *data) {
+	struct shady_server *server =
+		wl_container_of(listener, server, cursor_button);
+	struct wlr_pointer_button_event *event = data;
+	if (shady_desktop_state(server)->idle_notifier) {
+		wlr_idle_notifier_v1_notify_activity(shady_desktop_state(server)->idle_notifier, server->seat);
+	}
+	handle_pointer_button(server, event);
 }
 
 void server_cursor_axis(struct wl_listener *listener, void *data) {
@@ -705,37 +829,7 @@ void shady_input_automation_pointer_button(struct shady_server *server,
 	event.state = pressed ? WL_POINTER_BUTTON_STATE_PRESSED :
 		WL_POINTER_BUTTON_STATE_RELEASED;
 
-	uint32_t mods = seat_modifiers(server);
-	if (!shady_modules_pointer_button(server, &event, mods)) {
-		if (button == BTN_LEFT) {
-			struct shady_toplevel *titlebar = desktop_titlebar_at(server,
-				server->cursor->x, server->cursor->y);
-			if (titlebar) {
-				if (pressed) {
-					focus_toplevel(titlebar);
-					shady_toplevel_begin_interactive(titlebar, SHADY_CURSOR_MOVE, 0);
-				} else if (server->cursor_mode == SHADY_CURSOR_MOVE &&
-						server->grabbed_toplevel == titlebar) {
-					reset_cursor_mode(server);
-				}
-				wlr_seat_pointer_clear_focus(server->seat);
-				wlr_seat_pointer_notify_frame(server->seat);
-				return;
-			}
-		}
-		if (pressed) process_cursor_motion(server, event.time_msec);
-		wlr_seat_pointer_notify_button(server->seat,
-			event.time_msec, event.button, event.state);
-		if (!pressed) {
-			reset_cursor_mode(server);
-		} else {
-			double sx, sy;
-			struct wlr_surface *surface = NULL;
-			struct shady_toplevel *toplevel = toplevel_at_cursor(server,
-				server->cursor->x, server->cursor->y, &surface, &sx, &sy);
-			focus_toplevel(toplevel);
-		}
-	}
+	handle_pointer_button(server, &event);
 	wlr_seat_pointer_notify_frame(server->seat);
 }
 

@@ -122,6 +122,9 @@ static void output_destroy(struct wl_listener *listener, void *data) {
 	wl_list_remove(&output->present.link);
 	wl_list_remove(&output->request_state.link);
 	shady_session_lock_output_removed(output);
+#if SHADY_HAS_SPATIAL
+	if (server->config.spatial_mode) shady_render_output_destroy(output);
+#endif
 	shady_event_emit_output(server, SHADY_EVENT_OUTPUT_REMOVED, output);
 	wl_list_remove(&output->destroy.link);
 	wl_list_remove(&output->link);
@@ -163,9 +166,11 @@ static void output_destroy(struct wl_listener *listener, void *data) {
 }
 
 /* The scale an output gets: SHADY_OUTPUT_SCALE, then output_scale, then one
- * derived from the panel's physical size so text is about as large as on a
- * ~120 DPI screen (a 13.6" 2880x1800 panel gets 2). Outputs without a
- * physical size (nested, headless) stay at 1. */
+ * guessed from the panel's physical size the way niri and GNOME do it: aim
+ * for ~135 DPI on laptop-sized panels and ~110 on monitors of 20" and up, in
+ * quarter steps, so the desktop has the same room as there (a 14" 2880x1800
+ * panel gets 1.75). Outputs without a physical size (nested, headless) stay
+ * at 1. */
 static float output_scale_for(struct shady_server *server, struct wlr_output *output,
 		const struct wlr_output_mode *mode) {
 	const char *env = getenv("SHADY_OUTPUT_SCALE");
@@ -175,12 +180,23 @@ static float output_scale_for(struct shady_server *server, struct wlr_output *ou
 	}
 	if (server->config.output_scale >= 0.5f) return server->config.output_scale;
 	int width = mode ? mode->width : output->width;
-	if (output->phys_width <= 0 || width <= 0) return 1.f;
-	float dpi = (float)width / ((float)output->phys_width / 25.4f);
-	float scale = roundf(dpi / 120.f * 4.f) / 4.f;
-	if (scale < 1.f) scale = 1.f;
-	if (scale > 3.f) scale = 3.f;
-	return scale;
+	int height = mode ? mode->height : output->height;
+	if (output->phys_width <= 0 || output->phys_height <= 0 ||
+			width <= 0 || height <= 0)
+		return 1.f;
+	double diag_inches = sqrt((double)output->phys_width * output->phys_width +
+		(double)output->phys_height * output->phys_height) / 25.4;
+	double target_dpi = diag_inches < 20.0 ? 135.0 : 110.0;
+	double dpi = sqrt((double)width * width + (double)height * height) / diag_inches;
+	double perfect = dpi / target_dpi;
+	float best = 1.f;
+	for (int step = 4; step <= 16; step++) {
+		float scale = step / 4.f;
+		/* Keep at least 800x480 logical pixels. */
+		if (width / scale < 800.f || height / scale < 480.f) break;
+		if (fabs(scale - perfect) < fabs(best - perfect)) best = scale;
+	}
+	return best;
 }
 
 void server_new_output(struct wl_listener *listener, void *data) {

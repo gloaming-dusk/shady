@@ -5,6 +5,7 @@
 #include <wlr/types/wlr_output.h>
 #include <wlr/types/wlr_output_layout.h>
 #include <wlr/types/wlr_xdg_shell.h>
+#include <wlr/util/edges.h>
 
 #include "../shady.h"
 #include "../modules/spatial/state.h"
@@ -87,6 +88,85 @@ struct shady_toplevel *shady_titlebar_at_3d(struct shady_server *server,
 			best = toplevel;
 		}
 	}
+	return best;
+}
+
+/* How far outside a window its edges can be grabbed, and how far along an
+ * edge from a corner the grab takes the corner, in logical pixels. */
+#define RESIZE_BORDER 10.f
+#define RESIZE_CORNER 24.f
+
+struct shady_toplevel *shady_resize_edge_at_3d(struct shady_server *server,
+		double lx, double ly, uint32_t *edges_out) {
+	*edges_out = 0;
+	if (shady_spatial_state(server)->runtime.camera.first_person) return NULL;
+	struct wlr_output *wlr_output =
+		wlr_output_layout_output_at(server->output_layout, lx, ly);
+	if (!wlr_output || wlr_output->scale <= 0.f) return NULL;
+
+	double ox = 0, oy = 0;
+	wlr_output_layout_output_coords(server->output_layout, wlr_output, &ox, &oy);
+	float logical_w = (float)wlr_output->width / wlr_output->scale;
+	float logical_h = (float)wlr_output->height / wlr_output->scale;
+	if (logical_w <= 0.f || logical_h <= 0.f) return NULL;
+	float ndc_x = (float)((lx + ox) / logical_w) * 2.f - 1.f;
+	float ndc_y = 1.f - (float)((ly + oy) / logical_h) * 2.f;
+	float view[16], proj[16];
+	shady_render_camera_matrices(server, wlr_output->width, wlr_output->height,
+		view, proj);
+	struct shady_ray ray;
+	shady_ray_from_ndc(&ray, ndc_x, ndc_y, view, proj);
+
+	struct shady_toplevel *best = NULL;
+	float best_t = 1e30f;
+	uint32_t best_edges = 0;
+	struct shady_toplevel *toplevel;
+	wl_list_for_each(toplevel, &server->toplevels, link) {
+		struct wlr_surface *surf = toplevel->xdg_toplevel->base->surface;
+		if (!surf || !surf->mapped || !toplevel->scene_tree->node.enabled ||
+				toplevel->fullscreen || toplevel->maximized)
+			continue;
+		struct wlr_box content = shady_toplevel_content_box(toplevel);
+		float tw = (float)content.width, th = (float)content.height;
+		if (tw <= 0.f || th <= 0.f) continue;
+		float title_h = shady_toplevel_has_titlebar(toplevel) && toplevel->titlebar_height > 0
+			? (float)toplevel->titlebar_height : 0.f;
+		float frame_w = tw + 2.f * RESIZE_BORDER;
+		float frame_h = th + title_h + 2.f * RESIZE_BORDER;
+		float model[16];
+		shady_window_model(model,
+			(float)(toplevel->scene_tree->node.x + ox) - RESIZE_BORDER,
+			(float)(toplevel->scene_tree->node.y + oy) - title_h - RESIZE_BORDER,
+			frame_w, frame_h, logical_w, logical_h,
+			shady_spatial_toplevel_state(toplevel)->z,
+			toplevel->motion.tilt_x, toplevel->motion.tilt_y);
+		float t, u, v;
+		bool front_hit = false;
+		if (!shady_ray_window_shell_hit(&ray, model, 0.f, 0.f, &t, &u, &v, &front_hit) ||
+				!front_hit || t >= best_t)
+			continue;
+		/* Frame-local position, from the title bar's top-left. */
+		float px = u * frame_w - RESIZE_BORDER;
+		float py = (1.f - v) * frame_h - RESIZE_BORDER;
+		float fw = tw, fh = th + title_h;
+		uint32_t edges = 0;
+		if (px < 0.f) edges |= WLR_EDGE_LEFT;
+		else if (px > fw) edges |= WLR_EDGE_RIGHT;
+		if (py < 0.f) edges |= WLR_EDGE_TOP;
+		else if (py > fh) edges |= WLR_EDGE_BOTTOM;
+		if (!edges) continue;
+		if (edges == WLR_EDGE_LEFT || edges == WLR_EDGE_RIGHT) {
+			if (py < RESIZE_CORNER) edges |= WLR_EDGE_TOP;
+			else if (py > fh - RESIZE_CORNER) edges |= WLR_EDGE_BOTTOM;
+		} else if (edges == WLR_EDGE_TOP || edges == WLR_EDGE_BOTTOM) {
+			if (px < RESIZE_CORNER) edges |= WLR_EDGE_LEFT;
+			else if (px > fw - RESIZE_CORNER) edges |= WLR_EDGE_RIGHT;
+		}
+		best = toplevel;
+		best_t = t;
+		best_edges = edges;
+	}
+	*edges_out = best_edges;
 	return best;
 }
 

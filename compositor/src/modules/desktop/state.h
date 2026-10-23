@@ -15,6 +15,7 @@ struct wlr_idle_notifier_v1;
 struct wlr_primary_selection_v1_device_manager;
 struct wlr_data_control_manager_v1;
 struct wlr_xdg_decoration_manager_v1;
+struct wlr_server_decoration_manager;
 struct wlr_xdg_output_manager_v1;
 struct wlr_virtual_keyboard_manager_v1;
 struct wlr_xdg_activation_v1;
@@ -49,6 +50,9 @@ struct shady_desktop_state {
 	struct wlr_data_control_manager_v1 *data_control_manager;
 	struct wlr_xdg_decoration_manager_v1 *xdg_decoration_manager;
 	struct wl_listener new_toplevel_decoration;
+	/* org_kde_kwin_server_decoration: how GTK clients (Ghostty) ask. */
+	struct wlr_server_decoration_manager *server_decoration_manager;
+	struct wl_listener new_server_decoration;
 	struct wlr_xdg_output_manager_v1 *xdg_output_manager;
 	struct wlr_xdg_activation_v1 *xdg_activation;
 	struct wl_listener xdg_activation_request;
@@ -73,6 +77,11 @@ struct shady_desktop_state {
 	bool session_lock_pending_locked_event;
 	size_t session_lock_pending_outputs;
 };
+
+struct wlr_surface;
+/* The org_kde_kwin_server_decoration mode a surface asked for, or -1. */
+int shady_desktop_server_decoration_mode(struct shady_server *server,
+		struct wlr_surface *surface);
 
 static inline struct shady_desktop_state *shady_desktop_state(struct shady_server *server) {
 	return shady_module_state(server, "desktop-protocols");

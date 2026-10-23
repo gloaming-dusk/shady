@@ -33,11 +33,19 @@ the window you work in stay true; `shady.set("window_focused_exact", false)`
 applies the glass to it too.
 
 `output_scale` sets the scale of every output (0.5-4). Left at 0, each
-output gets one from its panel's physical size, so text comes out about as
-large as on a ~120 DPI screen: a 13.6" 2880x1800 laptop panel gets 2,
-monitors around 100 DPI get 1. `SHADY_OUTPUT_SCALE` overrides both, and
-outputs can still be changed at runtime with wlr-output-management tools
-(`wlr-randr`).
+output gets one guessed from its panel's physical size the way niri and
+GNOME do it: about 135 DPI on panels under 20" and 110 DPI on larger
+monitors, in quarter steps (a 14" 2880x1800 laptop panel gets 1.75, monitors
+around 100 DPI get 1). `SHADY_OUTPUT_SCALE` overrides both, and outputs can
+still be changed at runtime with wlr-output-management tools (`wlr-randr`).
+
+`cursor_theme` and `cursor_size` choose the pointer; left empty and 0 they
+follow `XCURSOR_THEME` and `XCURSOR_SIZE` (24 when unset). When the theme
+cannot be found Shady falls back to the Adwaita theme it was built with, and
+it exports both variables so clients draw the same cursor.
+
+`touchpad_tap` (default on) turns tap-to-click on for touchpads, and
+`touchpad_natural_scroll` (default off) reverses their scrolling.
 
 The spatial environment is configured the same way. `environment_path` is
 dispatched to the loader plugin registered for its extension, and can be

@@ -170,6 +170,13 @@ static const struct core_bind core_binds[] = {
 };
 #undef B
 
+/* Pointer grabs the compositor handles itself (input.c), not configurable. */
+static const struct shady_shortcut window_grabs[] = {
+	{ "Super+Drag", "Windows", "Move the window" },
+	{ "Super+Right-drag", "Windows", "Resize the window from the nearest corner" },
+	{ "Drag an edge", "Windows", "Resize the window" },
+};
+
 /* Keys first-person mode reads directly, not configurable. */
 static const struct shady_shortcut fps_keys[] = {
 	{ "W A S D", "First person", "Walk" },
@@ -207,6 +214,8 @@ static void for_each_core(struct shady_server *server,
 		if (!keys[0]) continue;
 		fn(&(struct shady_shortcut){ keys, c->group, c->description }, data);
 	}
+	for (size_t i = 0; i < sizeof(window_grabs) / sizeof(window_grabs[0]); i++)
+		fn(&window_grabs[i], data);
 	if (module_active(server, "fps"))
 		for (size_t i = 0; i < sizeof(fps_keys) / sizeof(fps_keys[0]); i++)
 			fn(&fps_keys[i], data);

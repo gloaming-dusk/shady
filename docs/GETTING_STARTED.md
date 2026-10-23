@@ -125,6 +125,9 @@ launcher, `Super+Return` for a terminal, `Super+1…3` for workspaces,
 | `Alt+Tab` | focus the next window |
 | `Alt+F11` | close the focused window |
 | `Escape` | quit (rices move this to `Super+Shift+Escape`) |
+| `Super` + drag | move the window under the pointer |
+| `Super` + right-drag | resize it from the nearest corner |
+| drag just outside a window's edge | resize it from that edge |
 
 **The 3D camera** (spatial mode)
 

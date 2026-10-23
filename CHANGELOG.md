@@ -5,6 +5,42 @@ between releases. Breaking changes are called out here.
 
 ## Unreleased
 
+Everyday use, measured on a 14" 2880x1800 laptop (Intel Lunar Lake):
+
+- Windows can be resized. In spatial mode clicks were only picked inside a
+  window's geometry, so the resize borders that GTK, Ghostty and Chromium
+  keep in their shadow were out of reach, and windows with Shady's title
+  bar had no edges at all. Every window now has a 10px grab border (the
+  pointer turns into a resize arrow there, corners take both edges),
+  `Super`+drag moves the window under the pointer and `Super`+right-drag
+  resizes it from the nearest corner, as in niri and sway. A resize from
+  the left or top keeps the opposite edge still instead of letting it
+  jitter while the client catches up, and clients are told they are being
+  resized.
+- One title bar per window. Ghostty and other GTK applications do not
+  speak xdg-decoration and got Shady's title bar on top of their own.
+  Shady now offers KDE's server-decoration protocol, which they use to ask
+  for Shady's bar (Ghostty drops its own), and a client that uses neither
+  protocol is taken to draw its own decorations, as the spec says.
+- The sky is drawn once and reused. Afterglow's sky and sea filled the
+  whole panel with an expensive shader on every frame, also when only a
+  terminal had changed, so a client drawing at 60 fps kept the GPU about
+  60% busy. It is now kept in a texture per output and
+  redrawn only when the camera, the palette, the output size or the sky
+  plugin changes: a Horizon frame went from 10.0 to 4.3 ms of GPU time.
+- The pointer is no longer tiny. On a system without a cursor theme
+  wlroots drew a built-in 24px arrow at half size on a scale 2 panel.
+  Shady now builds with Adwaita as a fallback theme, honours
+  `XCURSOR_THEME`/`XCURSOR_SIZE` or the new `cursor_theme`/`cursor_size`
+  settings, and exports them so clients match.
+- Output scales are guessed the way niri and GNOME do (135 DPI on laptop
+  panels, 110 on monitors), so a 14" 2880x1800 panel gets 1.75 instead of
+  2 and has as much room as in niri.
+- Touchpads tap to click (`touchpad_tap`, on by default) and can scroll
+  naturally (`touchpad_natural_scroll`).
+- xdg-shell v5: clients learn how much room there is (configure_bounds)
+  and which window states Shady supports.
+
 - `rewind`, a new plugin loaded by Afterglow and Horizon: every layout the
   desktop settles into (positions, depth, workspaces, maximized and
   fullscreen) is kept as a keyframe. `Super+BackSpace` opens a timeline and

@@ -19,6 +19,7 @@
   pango,
   fontconfig,
   systemd,
+  adwaita-icon-theme,
 }:
 
 stdenv.mkDerivation {
@@ -55,7 +56,12 @@ stdenv.mkDerivation {
   ];
 
   mesonBuildType = "release";
-  mesonFlags = [ (lib.mesonBool "installed_data" true) ];
+  mesonFlags = [
+    (lib.mesonBool "installed_data" true)
+    # A cursor theme for systems that have none installed: without one
+    # wlroots draws a tiny built-in arrow that does not follow the scale.
+    (lib.mesonOption "cursor_path" "${adwaita-icon-theme}/share/icons")
+  ];
 
   doCheck = true;
 

@@ -671,6 +671,222 @@ static void plugin_render_hooks_run(struct shady_server *server, uint32_t stage,
 	plugin_hooks_running = false;
 }
 
+/*
+ * The sky: the gradient, the AFTER_BACKGROUND plugin hooks (Afterglow's sky
+ * and sea) and the environment's sky texture. It is the most expensive part
+ * of a frame (a full-screen shader at the panel's resolution) and rarely
+ * changes, while frames are mostly drawn because a client committed. It is
+ * drawn into a texture per output and reused until the camera, the size,
+ * the palette or a plugin that draws it changes.
+ */
+#define BACKGROUND_CACHE_MAX 8
+
+struct background_cache {
+	struct shady_output *output;
+	GLuint texture, fbo;
+	int width, height;
+	bool valid;
+	float vp[16];
+	float colors[12];
+	bool sky;
+	char sky_path[sizeof(((struct shady_config *)0)->sky_path)];
+	uint64_t hooks;
+	uint64_t generation;
+};
+
+static struct background_cache background_caches[BACKGROUND_CACHE_MAX];
+/* Bumped when a plugin with an AFTER_BACKGROUND hook asks for a frame. */
+static uint64_t background_generation = 1;
+static GLuint background_copy_program;
+static GLint background_copy_u_tex = -1;
+
+void shady_render_plugin_owner_changed(void *owner) {
+	if (!owner) {
+		background_generation++;
+		return;
+	}
+	for (size_t i = 0; i < SHADY_PLUGIN_HOOK_MAX; i++)
+		if (plugin_hooks[i].used && plugin_hooks[i].owner == owner &&
+				plugin_hooks[i].stage == SHADY_RENDER_STAGE_AFTER_BACKGROUND) {
+			background_generation++;
+			return;
+		}
+}
+
+static void background_cache_release(struct background_cache *cache) {
+	if (cache->fbo) glDeleteFramebuffers(1, &cache->fbo);
+	if (cache->texture) glDeleteTextures(1, &cache->texture);
+	memset(cache, 0, sizeof(*cache));
+}
+
+void shady_render_output_destroy(struct shady_output *output) {
+	for (size_t i = 0; i < BACKGROUND_CACHE_MAX; i++)
+		if (background_caches[i].output == output) {
+			if (plugin_make_current()) background_cache_release(&background_caches[i]);
+			else memset(&background_caches[i], 0, sizeof(background_caches[i]));
+		}
+}
+
+static struct background_cache *background_cache_for(struct shady_output *output) {
+	struct background_cache *free_slot = NULL;
+	for (size_t i = 0; i < BACKGROUND_CACHE_MAX; i++) {
+		if (background_caches[i].output == output) return &background_caches[i];
+		if (!background_caches[i].output && !free_slot) free_slot = &background_caches[i];
+	}
+	if (free_slot) free_slot->output = output;
+	return free_slot;
+}
+
+static bool background_copy_ready(void) {
+	if (background_copy_program) return true;
+	static const char *vert =
+		"attribute vec2 a_pos;\n"
+		"varying vec2 v_uv;\n"
+		"void main() { v_uv = a_pos * 0.5 + 0.5; gl_Position = vec4(a_pos, 0.0, 1.0); }\n";
+	static const char *frag =
+		"precision mediump float;\n"
+		"uniform sampler2D u_tex;\n"
+		"varying vec2 v_uv;\n"
+		"void main() { gl_FragColor = vec4(texture2D(u_tex, v_uv).rgb, 1.0); }\n";
+	GLuint shaders[2] = {glCreateShader(GL_VERTEX_SHADER), glCreateShader(GL_FRAGMENT_SHADER)};
+	const char *sources[2] = {vert, frag};
+	GLuint program = glCreateProgram();
+	bool ok = true;
+	for (int i = 0; i < 2; i++) {
+		GLint status = 0;
+		glShaderSource(shaders[i], 1, &sources[i], NULL);
+		glCompileShader(shaders[i]);
+		glGetShaderiv(shaders[i], GL_COMPILE_STATUS, &status);
+		ok = ok && status;
+		glAttachShader(program, shaders[i]);
+	}
+	glBindAttribLocation(program, 0, "a_pos");
+	glLinkProgram(program);
+	GLint linked = 0;
+	glGetProgramiv(program, GL_LINK_STATUS, &linked);
+	for (int i = 0; i < 2; i++) glDeleteShader(shaders[i]);
+	if (!ok || !linked) {
+		glDeleteProgram(program);
+		wlr_log(WLR_ERROR, "background cache: copy shader failed; drawing the sky every frame");
+		return false;
+	}
+	background_copy_program = program;
+	background_copy_u_tex = glGetUniformLocation(program, "u_tex");
+	return true;
+}
+
+static bool background_cache_resize(struct background_cache *cache, int width, int height) {
+	if (cache->texture && cache->width == width && cache->height == height) return true;
+	if (cache->fbo) glDeleteFramebuffers(1, &cache->fbo);
+	if (cache->texture) glDeleteTextures(1, &cache->texture);
+	cache->fbo = cache->texture = 0;
+	cache->valid = false;
+	GLint old_texture = 0;
+	glGetIntegerv(GL_TEXTURE_BINDING_2D, &old_texture);
+	glGenTextures(1, &cache->texture);
+	glBindTexture(GL_TEXTURE_2D, cache->texture);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+	glBindTexture(GL_TEXTURE_2D, (GLuint)old_texture);
+	GLint old_fbo = 0;
+	glGetIntegerv(GL_FRAMEBUFFER_BINDING, &old_fbo);
+	glGenFramebuffers(1, &cache->fbo);
+	glBindFramebuffer(GL_FRAMEBUFFER, cache->fbo);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, cache->texture, 0);
+	bool complete = glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+	glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)old_fbo);
+	if (!complete) {
+		background_cache_release(cache);
+		return false;
+	}
+	cache->width = width;
+	cache->height = height;
+	return true;
+}
+
+static void draw_background_layers(struct shady_server *server, struct shady_output *output,
+		int width, int height, float logical_w, float logical_h, float time_seconds) {
+	shady_gl_pipeline_draw_background(&pipeline,
+		server->config.background_top,
+		server->config.background_horizon,
+		server->config.background_bottom);
+	plugin_render_hooks_run(server, SHADY_RENDER_STAGE_AFTER_BACKGROUND,
+		output, width, height, logical_w, logical_h, time_seconds);
+	shady_environment_draw_sky(server);
+}
+
+static void draw_background_cached(struct shady_server *server, struct shady_output *output,
+		GLuint output_fbo, int width, int height, float logical_w, float logical_h,
+		float time_seconds, const float vp[16]) {
+	struct shady_config *c = &server->config;
+	uint64_t hooks = 0;
+	for (size_t i = 0; i < SHADY_PLUGIN_HOOK_MAX; i++)
+		if (plugin_hooks[i].used && plugin_hooks[i].stage == SHADY_RENDER_STAGE_AFTER_BACKGROUND)
+			hooks = hooks * 31u + plugin_hooks[i].id;
+	float colors[12];
+	memcpy(colors, c->background_color, sizeof(float) * 3);
+	memcpy(colors + 3, c->background_top, sizeof(float) * 3);
+	memcpy(colors + 6, c->background_horizon, sizeof(float) * 3);
+	memcpy(colors + 9, c->background_bottom, sizeof(float) * 3);
+
+	struct background_cache *cache = background_cache_for(output);
+	if (!cache || !background_copy_ready() || !background_cache_resize(cache, width, height)) {
+		glClearColor(colors[0], colors[1], colors[2], 1.f);
+		glClear(GL_COLOR_BUFFER_BIT);
+		draw_background_layers(server, output, width, height, logical_w, logical_h, time_seconds);
+		return;
+	}
+	bool fresh = cache->valid && cache->hooks == hooks &&
+		cache->generation == background_generation && cache->sky == c->sky &&
+		!strcmp(cache->sky_path, c->sky_path) &&
+		!memcmp(cache->vp, vp, sizeof(cache->vp)) &&
+		!memcmp(cache->colors, colors, sizeof(colors));
+	if (!fresh) {
+		glBindFramebuffer(GL_FRAMEBUFFER, cache->fbo);
+		glViewport(0, 0, width, height);
+		glClearColor(colors[0], colors[1], colors[2], 1.f);
+		glClear(GL_COLOR_BUFFER_BIT);
+		draw_background_layers(server, output, width, height, logical_w, logical_h, time_seconds);
+		glBindFramebuffer(GL_FRAMEBUFFER, output_fbo);
+		glViewport(0, 0, width, height);
+		cache->valid = true;
+		cache->hooks = hooks;
+		cache->generation = background_generation;
+		cache->sky = c->sky;
+		snprintf(cache->sky_path, sizeof(cache->sky_path), "%s", c->sky_path);
+		memcpy(cache->vp, vp, sizeof(cache->vp));
+		memcpy(cache->colors, colors, sizeof(colors));
+	}
+
+	if (!plugin_fullscreen_vbo) {
+		static const float verts[] = {-1.f,-1.f, 3.f,-1.f, -1.f,3.f};
+		glGenBuffers(1, &plugin_fullscreen_vbo);
+		glBindBuffer(GL_ARRAY_BUFFER, plugin_fullscreen_vbo);
+		glBufferData(GL_ARRAY_BUFFER, sizeof(verts), verts, GL_STATIC_DRAW);
+	}
+	glDisable(GL_DEPTH_TEST);
+	glDepthMask(GL_FALSE);
+	glDisable(GL_BLEND);
+	glUseProgram(background_copy_program);
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_2D, cache->texture);
+	glUniform1i(background_copy_u_tex, 0);
+	glBindBuffer(GL_ARRAY_BUFFER, plugin_fullscreen_vbo);
+	glEnableVertexAttribArray(0);
+	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void *)0);
+	glDrawArrays(GL_TRIANGLES, 0, 3);
+	glDisableVertexAttribArray(0);
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
+	glBindTexture(GL_TEXTURE_2D, 0);
+	glUseProgram(0);
+	glDepthMask(GL_TRUE);
+	glEnable(GL_DEPTH_TEST);
+	glDepthFunc(GL_LEQUAL);
+}
+
 static bool render_stats_enabled(void) {
 	if (render_stats_enabled_cache < 0) {
 		const char *value = getenv("SHADY_RENDER_STATS");
@@ -2311,20 +2527,11 @@ void shady_render_output_frame(
 
 	glClearDepthf(1.0f);
 
-	glClear(
-		GL_COLOR_BUFFER_BIT |
-		GL_DEPTH_BUFFER_BIT
-	);
+	/* The sky (draw_background_cached) covers every pixel. */
+	glClear(GL_DEPTH_BUFFER_BIT);
 
 	glDisable(GL_CULL_FACE);
 	glDisable(GL_SCISSOR_TEST);
-
-	shady_gl_pipeline_draw_background(&pipeline,
-		server->config.background_top,
-		server->config.background_horizon,
-		server->config.background_bottom);
-	plugin_render_hooks_run(server, SHADY_RENDER_STAGE_AFTER_BACKGROUND,
-		output, buf_w, buf_h, logical_w, logical_h, time_seconds);
 
 	float view[16];
 	float proj[16];
@@ -2345,7 +2552,8 @@ void shady_render_output_frame(
 	);
 
 	shady_environment_sync(server);
-	shady_environment_draw_sky(server);
+	draw_background_cached(server, output, (GLuint)fbo, buf_w, buf_h,
+		logical_w, logical_h, time_seconds, vp);
 
 	/* Background and bottom layer surfaces (a wallpaper, desktop widgets)
 	 * lie flat in front of the sky and behind the world, without touching
@@ -3094,7 +3302,8 @@ void shady_render_output_frame(
 			"failed to submit render pass"
 		);
 	}
-	if (renderer_is_software && plugin_make_current()) glFinish();
+	/* With stats on, wait for the GPU so submit_us is the frame's real cost. */
+	if ((renderer_is_software || profile) && plugin_make_current()) glFinish();
 	shady_capture_output_buffer(server, state.buffer);
 
 	wlr_output_commit_state(

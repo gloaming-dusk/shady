@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <wlr/types/wlr_cursor.h>
 #include <wlr/types/wlr_cursor_shape_v1.h>
+#include <wlr/types/wlr_server_decoration.h>
 #include <wlr/types/wlr_data_control_v1.h>
 #include <wlr/types/wlr_idle_notify_v1.h>
 #include <wlr/types/wlr_fractional_scale_v1.h>
@@ -19,6 +20,7 @@
 #include <wlr/types/wlr_xdg_activation_v1.h>
 #include <wlr/types/wlr_xdg_decoration_v1.h>
 #include <wlr/types/wlr_xdg_output_v1.h>
+#include <wlr/types/wlr_xdg_shell.h>
 
 #include "../../shady.h"
 #include "../../shell_protocol.h"
@@ -111,6 +113,61 @@ static void new_virtual_keyboard(struct wl_listener *listener, void *data) {
 	wl_list_insert(&state->pending_virtual_keyboards, &pending->link);
 }
 
+struct server_decoration {
+	struct wlr_server_decoration *decoration;
+	struct wl_listener mode;
+	struct wl_listener destroy;
+};
+
+static void server_decoration_changed(struct wlr_server_decoration *decoration) {
+	struct wlr_xdg_toplevel *xdg = wlr_xdg_toplevel_try_from_wlr_surface(decoration->surface);
+	struct wlr_scene_tree *tree = xdg ? xdg->base->data : NULL;
+	struct shady_toplevel *toplevel = tree ? tree->node.data : NULL;
+	if (toplevel) shady_toplevel_update_decoration(toplevel);
+}
+
+static void server_decoration_mode(struct wl_listener *listener, void *data) {
+	(void)data;
+	struct server_decoration *deco = wl_container_of(listener, deco, mode);
+	server_decoration_changed(deco->decoration);
+}
+
+static void server_decoration_destroy(struct wl_listener *listener, void *data) {
+	(void)data;
+	struct server_decoration *deco = wl_container_of(listener, deco, destroy);
+	wl_list_remove(&deco->mode.link);
+	wl_list_remove(&deco->destroy.link);
+	/* Still listed in the manager until this signal returns. */
+	wl_list_remove(&deco->decoration->link);
+	wl_list_init(&deco->decoration->link);
+	server_decoration_changed(deco->decoration);
+	free(deco);
+}
+
+static void new_server_decoration(struct wl_listener *listener, void *data) {
+	(void)listener;
+	struct wlr_server_decoration *decoration = data;
+	struct server_decoration *deco = calloc(1, sizeof(*deco));
+	if (!deco) return;
+	deco->decoration = decoration;
+	deco->mode.notify = server_decoration_mode;
+	wl_signal_add(&decoration->events.mode, &deco->mode);
+	deco->destroy.notify = server_decoration_destroy;
+	wl_signal_add(&decoration->events.destroy, &deco->destroy);
+	server_decoration_changed(decoration);
+}
+
+int shady_desktop_server_decoration_mode(struct shady_server *server,
+		struct wlr_surface *surface) {
+	struct shady_desktop_state *state = shady_desktop_state(server);
+	if (!state || !state->server_decoration_manager || !surface) return -1;
+	struct wlr_server_decoration *decoration;
+	wl_list_for_each(decoration, &state->server_decoration_manager->decorations, link) {
+		if (decoration->surface == surface) return (int)decoration->mode;
+	}
+	return -1;
+}
+
 static void output_layout_change(struct wl_listener *listener, void *data) {
 	(void)data;
 	struct shady_desktop_state *state =
@@ -153,6 +210,16 @@ static bool desktop_protocols_init(struct shady_server *server) {
 		state->new_toplevel_decoration.notify = server_new_toplevel_decoration;
 		wl_signal_add(&state->xdg_decoration_manager->events.new_toplevel_decoration,
 			&state->new_toplevel_decoration);
+	}
+	state->server_decoration_manager =
+		wlr_server_decoration_manager_create(server->wl_display);
+	if (state->server_decoration_manager) {
+		wlr_server_decoration_manager_set_default_mode(state->server_decoration_manager,
+			server->config.window_titlebar ? WLR_SERVER_DECORATION_MANAGER_MODE_SERVER
+				: WLR_SERVER_DECORATION_MANAGER_MODE_CLIENT);
+		state->new_server_decoration.notify = new_server_decoration;
+		wl_signal_add(&state->server_decoration_manager->events.new_decoration,
+			&state->new_server_decoration);
 	}
 	state->xdg_output_manager =
 		wlr_xdg_output_manager_v1_create(server->wl_display, server->output_layout);
@@ -231,6 +298,8 @@ static void desktop_protocols_destroy(struct shady_server *server) {
 		wl_list_remove(&state->xdg_activation_request.link);
 	if (state->new_toplevel_decoration.link.prev)
 		wl_list_remove(&state->new_toplevel_decoration.link);
+	if (state->new_server_decoration.link.prev)
+		wl_list_remove(&state->new_server_decoration.link);
 	if (state->new_layer_surface.link.prev)
 		wl_list_remove(&state->new_layer_surface.link);
 	if (state->output_layout_change.link.prev)

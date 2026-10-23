@@ -354,12 +354,16 @@ static bool host_unsubscribe_event(shady_host host,
 
 static void host_schedule_render(shady_host host) {
 	struct shady_server *server = HOST(host);
+	shady_render_plugin_owner_changed(
+		shady_plugin_owner_from_address(__builtin_return_address(0)));
 	if (server->renderer) shady_render_schedule_all_outputs(server);
 }
 
 static void host_output_schedule_render(shady_host host, shady_output output) {
 	if (!host_output_valid(host, output)) return;
 	struct shady_server *server = HOST(host);
+	shady_render_plugin_owner_changed(
+		shady_plugin_owner_from_address(__builtin_return_address(0)));
 	if (server->renderer) shady_render_schedule_output(OUTPUT(output));
 }
 

@@ -8,6 +8,7 @@
 #include <wlr/types/wlr_output_layout.h>
 #include <wlr/types/wlr_scene.h>
 #include <wlr/types/wlr_seat.h>
+#include <wlr/types/wlr_server_decoration.h>
 #include <wlr/types/wlr_xdg_decoration_v1.h>
 #include <wlr/types/wlr_xdg_shell.h>
 #include <wlr/util/edges.h>
@@ -17,6 +18,7 @@
 #include "render/render.h"
 #include "plugin/plugin.h"
 #include "titlebar.h"
+#include "modules/desktop/state.h"
 
 static void set_scene_buffer_opacity(struct wlr_scene_buffer *buffer,
 		int sx, int sy, void *data) {
@@ -144,6 +146,7 @@ static void apply_toplevel_state_values(struct shady_toplevel *toplevel,
 
 	toplevel->fullscreen = want_fullscreen;
 	toplevel->maximized = want_maximized;
+	toplevel->resize_anchor_edges = 0;
 	wlr_xdg_toplevel_set_fullscreen(xdg, want_fullscreen);
 	wlr_xdg_toplevel_set_maximized(xdg, want_maximized);
 
@@ -363,6 +366,10 @@ void shady_toplevel_begin_interactive(struct shady_toplevel *toplevel,
 		server->grab_geobox.y = toplevel->scene_tree->node.y;
 
 		server->resize_edges = edges;
+		toplevel->resize_anchor_edges = edges & (WLR_EDGE_LEFT | WLR_EDGE_TOP);
+		toplevel->resize_anchor_right = server->grab_geobox.x + server->grab_geobox.width;
+		toplevel->resize_anchor_bottom = server->grab_geobox.y + server->grab_geobox.height;
+		toplevel->resize_serial = wlr_xdg_toplevel_set_resizing(toplevel->xdg_toplevel, true);
 	}
 }
 
@@ -484,31 +491,39 @@ static void xdg_toplevel_unmap(struct wl_listener *listener, void *data) {
 }
 
 /* Honour what the client asks for: a client that draws its own title bar
- * keeps it, and gets none from us. Without a preference, or when ours are
- * turned off, the compositor decides. */
-static void apply_decoration_mode(struct shady_toplevel *toplevel) {
+ * keeps it, and gets none from us. xdg-decoration is asked first, then KDE's
+ * server-decoration (GTK, Ghostty). A client that uses neither draws its own
+ * decorations, as the xdg-decoration spec has it: giving it ours as well
+ * stacked two title bars. When ours are turned off, every client decides. */
+void shady_toplevel_update_decoration(struct shady_toplevel *toplevel) {
+	struct shady_server *server = toplevel->server;
 	struct wlr_xdg_toplevel_decoration_v1 *decoration = toplevel->decoration;
-	if (!decoration) return;
-	enum wlr_xdg_toplevel_decoration_v1_mode mode = decoration->requested_mode;
-	if (!toplevel->server->config.window_titlebar)
-		mode = WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_CLIENT_SIDE;
-	else if (mode == WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_NONE)
-		mode = WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE;
-	toplevel->client_decorated = mode == WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_CLIENT_SIDE;
-	/* Before the initial commit a configure would be premature; the
-	 * initial commit applies the mode then. */
-	if (toplevel->xdg_toplevel->base->initialized)
-		wlr_xdg_toplevel_decoration_v1_set_mode(decoration, mode);
+	if (decoration) {
+		enum wlr_xdg_toplevel_decoration_v1_mode mode = decoration->requested_mode;
+		if (!server->config.window_titlebar)
+			mode = WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_CLIENT_SIDE;
+		else if (mode == WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_NONE)
+			mode = WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE;
+		toplevel->client_decorated = mode == WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_CLIENT_SIDE;
+		/* Before the initial commit a configure would be premature; the
+		 * initial commit applies the mode then. */
+		if (toplevel->xdg_toplevel->base->initialized)
+			wlr_xdg_toplevel_decoration_v1_set_mode(decoration, mode);
+	} else {
+		int kde = shady_desktop_server_decoration_mode(server,
+			toplevel->xdg_toplevel->base->surface);
+		toplevel->client_decorated = kde != WLR_SERVER_DECORATION_MANAGER_MODE_SERVER;
+	}
 	shady_titlebar_refresh(toplevel);
-	if (toplevel->server->renderer)
-		shady_render_schedule_all_outputs(toplevel->server);
+	if (server->renderer)
+		shady_render_schedule_all_outputs(server);
 }
 
 static void decoration_request_mode(struct wl_listener *listener, void *data) {
 	(void)data;
 	struct shady_toplevel *toplevel =
 		wl_container_of(listener, toplevel, decoration_request_mode);
-	apply_decoration_mode(toplevel);
+	shady_toplevel_update_decoration(toplevel);
 }
 
 static void decoration_detach(struct shady_toplevel *toplevel) {
@@ -523,6 +538,7 @@ static void decoration_destroy(struct wl_listener *listener, void *data) {
 	struct shady_toplevel *toplevel =
 		wl_container_of(listener, toplevel, decoration_destroy);
 	decoration_detach(toplevel);
+	shady_toplevel_update_decoration(toplevel);
 }
 
 void server_new_toplevel_decoration(struct wl_listener *listener, void *data) {
@@ -536,7 +552,7 @@ void server_new_toplevel_decoration(struct wl_listener *listener, void *data) {
 	wl_signal_add(&decoration->events.request_mode, &toplevel->decoration_request_mode);
 	toplevel->decoration_destroy.notify = decoration_destroy;
 	wl_signal_add(&decoration->events.destroy, &toplevel->decoration_destroy);
-	apply_decoration_mode(toplevel);
+	shady_toplevel_update_decoration(toplevel);
 }
 
 static void xdg_toplevel_commit(struct wl_listener *listener, void *data) {
@@ -560,7 +576,26 @@ static void xdg_toplevel_commit(struct wl_listener *listener, void *data) {
 				toplevel->xdg_toplevel->requested.fullscreen) {
 			apply_requested_toplevel_state(toplevel);
 		}
-		if (toplevel->decoration) apply_decoration_mode(toplevel);
+		shady_toplevel_update_decoration(toplevel);
+	}
+
+	/* A resize from the left or top keeps the opposite edge still: the
+	 * window moves only once the client has drawn the new size, and keeps
+	 * following until it has drawn the last size asked for. */
+	if (toplevel->resize_anchor_edges) {
+		struct shady_server *server = toplevel->server;
+		struct wlr_box *geo = &toplevel->xdg_toplevel->base->geometry;
+		int x = toplevel->scene_tree->node.x, y = toplevel->scene_tree->node.y;
+		if (toplevel->resize_anchor_edges & WLR_EDGE_LEFT)
+			x = toplevel->resize_anchor_right - geo->width;
+		if (toplevel->resize_anchor_edges & WLR_EDGE_TOP)
+			y = toplevel->resize_anchor_bottom - geo->height;
+		wlr_scene_node_set_position(&toplevel->scene_tree->node, x, y);
+		bool grabbing = server->cursor_mode == SHADY_CURSOR_RESIZE &&
+			server->grabbed_toplevel == toplevel;
+		if (!grabbing && (int32_t)(toplevel->xdg_toplevel->base->current.configure_serial -
+				toplevel->resize_serial) >= 0)
+			toplevel->resize_anchor_edges = 0;
 	}
 
 	shady_modules_toplevel_commit(toplevel);

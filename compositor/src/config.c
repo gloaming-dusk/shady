@@ -47,6 +47,7 @@ void shady_config_defaults(struct shady_config *c) {
 		.window_titlebar_color = { 0.035f, 0.075f, 0.10f },
 		.window_titlebar_focus_color = { 0.055f, 0.16f, 0.22f },
 		.window_titlebar_text_color = { 0.90f, 0.96f, 1.0f },
+		.touchpad_tap = true,
 		.environment = false,
 		.environment_path = "",
 		.bind_quit = { XKB_KEY_Escape, 0 },
@@ -146,6 +147,8 @@ static bool parse_keybind(const char *s, struct shady_keybind *out) {
 
 bool shady_config_set(struct shady_config *c,const char *key,const char *value){
 	if(!strcmp(key,"sky_path")){snprintf(c->sky_path,sizeof(c->sky_path),"%s",value);return true;}
+	if(!strcmp(key,"cursor_theme")){snprintf(c->cursor_theme,sizeof(c->cursor_theme),"%s",value);return true;}
+	if(!strcmp(key,"cursor_size")){float v;if(!parse_float_range(value,0.f,256.f,&v))return false;c->cursor_size=(int)(v+.5f);return true;}
 	if(!strcmp(key,"background_color")){
 		if(!parse_color(value,c->background_color))return false;
 		memcpy(c->background_top,c->background_color,sizeof(c->background_top));
@@ -197,6 +200,7 @@ bool shady_config_set(struct shady_config *c,const char *key,const char *value){
 	BOOL_SET("shadows",shadows) BOOL_SET("floor",floor) BOOL_SET("close_animation",close_animation)
 	BOOL_SET("fps_mode",fps_mode) BOOL_SET("sky",sky) BOOL_SET("environment",environment) BOOL_SET("environment_obj",environment)
 	BOOL_SET("window_titlebar",window_titlebar)
+	BOOL_SET("touchpad_tap",touchpad_tap) BOOL_SET("touchpad_natural_scroll",touchpad_natural_scroll)
 #undef BOOL_SET
 	return false;
 }

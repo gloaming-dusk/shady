@@ -101,6 +101,11 @@ struct shady_config {
 	float window_titlebar_color[3];
 	float window_titlebar_focus_color[3];
 	float window_titlebar_text_color[3];
+	/* Empty and 0 follow XCURSOR_THEME and XCURSOR_SIZE (then Adwaita, 24). */
+	char cursor_theme[128];
+	int cursor_size;
+	bool touchpad_tap;
+	bool touchpad_natural_scroll;
 	/* Static 3D environment, loaded by the plugin registered for the
 	 * path's extension (see docs/ENVIRONMENT_API.md). */
 	bool environment;
@@ -260,6 +265,11 @@ struct shady_toplevel {
 	bool fullscreen_restore_maximized;
 	bool restore_geometry_valid;
 	struct wlr_box restore_geometry;
+	/* A resize from the left or top keeps the right or bottom edge here
+	 * until the client has drawn the size of configure resize_serial. */
+	uint32_t resize_anchor_edges;
+	int resize_anchor_right, resize_anchor_bottom;
+	uint32_t resize_serial;
 	/* Optional native-plugin driven surface wave effect. Zero amplitude means off. */
 	float water_amplitude;
 	float water_frequency;
@@ -356,6 +366,8 @@ void shady_toplevel_refresh_state(struct shady_toplevel *toplevel);
 void shady_toplevel_get_border(const struct shady_toplevel *toplevel,
 	float *width, float color[4]);
 void shady_toplevel_refresh_border(struct shady_toplevel *toplevel);
+/* Re-decide who draws the title bar after a decoration protocol change. */
+void shady_toplevel_update_decoration(struct shady_toplevel *toplevel);
 void shady_titlebar_refresh(struct shady_toplevel *toplevel);
 void shady_toplevel_recover_to_output(struct shady_toplevel *toplevel,
 	struct wlr_output *output);

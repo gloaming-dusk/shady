@@ -3,6 +3,7 @@
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 #include <sys/wait.h>
 #include <wayland-server-core.h>
@@ -53,6 +54,77 @@ static void default_config_path(char *buf, size_t size) {
 	if (xdg && *xdg) snprintf(buf, size, "%s/shady/config.lua", xdg);
 	else if (home && *home) snprintf(buf, size, "%s/.config/shady/config.lua", home);
 	else snprintf(buf, size, "config.lua");
+}
+
+#ifndef SHADY_CURSOR_PATH
+#define SHADY_CURSOR_PATH ""
+#endif
+
+/* Whether an xcursor theme directory with cursors exists in XCURSOR_PATH
+ * (or libXcursor's default search path when that is unset). */
+static bool cursor_theme_exists(const char *theme) {
+	if (!theme || !*theme) return false;
+	const char *path = getenv("XCURSOR_PATH");
+	char fallback[1024];
+	if (!path || !*path) {
+		const char *home = getenv("HOME");
+		snprintf(fallback, sizeof(fallback),
+			"%s/.local/share/icons:%s/.icons:/usr/share/icons:/usr/share/pixmaps",
+			home ? home : "", home ? home : "");
+		path = fallback;
+	}
+	const char *dir = path;
+	while (*dir) {
+		size_t len = strcspn(dir, ":");
+		char candidate[1024];
+		snprintf(candidate, sizeof(candidate), "%.*s/%s/cursors", (int)len, dir, theme);
+		if (len > 0 && access(candidate, R_OK) == 0) return true;
+		snprintf(candidate, sizeof(candidate), "%.*s/%s/index.theme", (int)len, dir, theme);
+		if (len > 0 && access(candidate, R_OK) == 0) return true;
+		dir += len;
+		if (*dir == ':') dir++;
+	}
+	return false;
+}
+
+/*
+ * Pick the cursor theme and size, and export them so clients draw the same
+ * cursor. Without any theme wlroots falls back to a built-in 24px arrow that
+ * ignores the output scale (half size on a scale 2 panel), so a theme
+ * shipped with the build (Adwaita) stands in when the configured one is
+ * missing.
+ */
+static void setup_cursor_theme(struct shady_config *config,
+		const char **theme_out, int *size_out) {
+	const char *theme = config->cursor_theme[0] ? config->cursor_theme : getenv("XCURSOR_THEME");
+	int size = config->cursor_size;
+	if (size <= 0) {
+		const char *env = getenv("XCURSOR_SIZE");
+		size = env ? atoi(env) : 0;
+	}
+	if (size <= 0) size = 24;
+
+	if (!cursor_theme_exists(theme) && SHADY_CURSOR_PATH[0]) {
+		const char *path = getenv("XCURSOR_PATH");
+		char joined[4096];
+		snprintf(joined, sizeof(joined), "%s%s%s", path && *path ? path : "",
+			path && *path ? ":" : "", SHADY_CURSOR_PATH);
+		setenv("XCURSOR_PATH", joined, 1);
+		if (!cursor_theme_exists(theme)) {
+			wlr_log(WLR_INFO, "cursor: theme '%s' not found, using Adwaita",
+				theme && *theme ? theme : "default");
+			theme = "Adwaita";
+		}
+	}
+	if (!cursor_theme_exists(theme ? theme : "default"))
+		wlr_log(WLR_ERROR, "cursor: no cursor theme found (set XCURSOR_PATH); "
+			"the built-in cursor will be small on HiDPI outputs");
+	if (theme && *theme) setenv("XCURSOR_THEME", theme, 1);
+	char size_text[16];
+	snprintf(size_text, sizeof(size_text), "%d", size);
+	setenv("XCURSOR_SIZE", size_text, 1);
+	*theme_out = theme && *theme ? theme : NULL;
+	*size_out = size;
 }
 
 static int terminate_display(int signal_number, void *data) {
@@ -304,7 +376,9 @@ int main(int argc, char *argv[]) {
 	server.scene_layout = wlr_scene_attach_output_layout(server.scene,
 		server.output_layout);
 
-	server.xdg_shell = wlr_xdg_shell_create(server.wl_display, 3);
+	/* v4 tells clients how much room there is (configure_bounds), v5 which
+	 * window states we support (wm_capabilities). */
+	server.xdg_shell = wlr_xdg_shell_create(server.wl_display, 5);
 	server.new_xdg_toplevel.notify = server_new_xdg_toplevel;
 	wl_signal_add(&server.xdg_shell->events.new_toplevel, &server.new_xdg_toplevel);
 	server.new_xdg_popup.notify = server_new_xdg_popup;
@@ -312,7 +386,10 @@ int main(int argc, char *argv[]) {
 
 	server.cursor = wlr_cursor_create();
 	wlr_cursor_attach_output_layout(server.cursor, server.output_layout);
-	server.cursor_mgr = wlr_xcursor_manager_create(NULL, 24);
+	const char *cursor_theme = NULL;
+	int cursor_size = 24;
+	setup_cursor_theme(&server.config, &cursor_theme, &cursor_size);
+	server.cursor_mgr = wlr_xcursor_manager_create(cursor_theme, (uint32_t)cursor_size);
 	wlr_cursor_set_xcursor(server.cursor, server.cursor_mgr, "default");
 
 	server.cursor_mode = SHADY_CURSOR_PASSTHROUGH;

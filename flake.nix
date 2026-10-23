@@ -50,6 +50,8 @@
             cairo cairo.dev pango pango.dev
           ]);
           packages = with pkgs; [ stdenv.cc gdb foot seatd wlr-randr grim wtype ];
+          # tools/build.sh builds with this cursor theme (meson -Dcursor_path).
+          SHADY_CURSOR_PATH = "${pkgs.adwaita-icon-theme}/share/icons";
           shellHook = ''
             export PKG_CONFIG_PATH=${pkgs.cairo.dev}/lib/pkgconfig:${pkgs.pango.dev}/lib/pkgconfig:${pkgs.wlr-protocols}/share/pkgconfig:$PKG_CONFIG_PATH
           '';

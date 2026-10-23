@@ -41,6 +41,10 @@ shady_render_hook_id shady_render_plugin_hook_add(struct shady_server *server, v
 bool shady_render_plugin_hook_remove(struct shady_server *server, void *owner,
 	shady_render_hook_id hook);
 void shady_render_plugin_cleanup_owner(struct shady_server *server, void *owner);
+/* A plugin asked for a frame: if it draws the sky, the cached sky is stale. */
+void shady_render_plugin_owner_changed(void *owner);
+/* Drop what the renderer keeps for an output that is going away. */
+void shady_render_output_destroy(struct shady_output *output);
 
 /* Backdrop effects for layer-shell surfaces (shady.layer_effect in Lua).
  * Before a layer surface whose namespace matches is drawn, the scene behind
