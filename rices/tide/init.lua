@@ -202,10 +202,12 @@ shady.bind("Super+Ctrl+Shift+F12", function()
     shady.publish("tide.caffeine", caffeine and "1" or "0")
 end)
 
+-- Frosted glass is redrawn on every frame the screen changes, so only the
+-- panels that open briefly over the windows get it. The bar lies over the
+-- wallpaper, where blur shows nothing, and the control center animates its
+-- sliders: both use more opaque glass instead (shell.lua).
 if shady.has_capability("spatial") then
-    shady.layer_effect("tide-bar", { blur = 20, saturation = 1.25, tint = "#0c0c1428" })
-    for _, name in ipairs({ "tide-control", "tide-launcher", "tide-power", "tide-toasts",
-            "tide-osd", "tide-calendar", "tide-shortcuts" }) do
+    for _, name in ipairs({ "tide-launcher", "tide-power", "tide-calendar", "tide-shortcuts" }) do
         shady.layer_effect(name, { blur = 26, saturation = 1.2, tint = "#0c0c1430" })
     end
 end

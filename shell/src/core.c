@@ -434,14 +434,48 @@ static void paint(struct shell_surface *surface) {
     int width = (int)surface->width * surface->scale;
     int height = (int)surface->height * surface->scale;
     if (width <= 0 || height <= 0) return;
+    if (!surface->repaint_only && surface->handler->prepare &&
+            !surface->handler->prepare(surface->data, surface)) {
+        surface->stats_skipped++;
+        return;
+    }
     cairo_surface_t *image = core->renderer->impl->begin(core->renderer, surface, width, height);
     if (!image) return;
     cairo_t *cr = cairo_create(image);
+    cairo_scale(cr, surface->scale, surface->scale);
+    double area = 1.0;
+    double rect[4];
+    static int no_damage = -1;
+    if (no_damage < 0) {
+        const char *env = getenv("SHADY_SHELL_NO_DAMAGE");
+        no_damage = env && *env && strcmp(env, "0") != 0;
+    }
+    if (!no_damage && surface->handler->damage && core->renderer->impl->retains &&
+            surface->retained_width == width && surface->retained_height == height &&
+            surface->handler->damage(surface->data, surface, cr, rect)) {
+        /* Something still moves below a pixel: a token damage keeps the
+         * frame callbacks, and so the animation, going. */
+        if (rect[2] <= 0 || rect[3] <= 0) rect[0] = rect[1] = 0, rect[2] = rect[3] = 1;
+        double s = surface->scale;
+        cairo_rectangle(cr, rect[0] / s, rect[1] / s, rect[2] / s, rect[3] / s);
+        cairo_clip(cr);
+        area = rect[2] * rect[3] / ((double)width * height);
+        int y0 = (int)floor(rect[1]), y1 = (int)ceil(rect[1] + rect[3]);
+        if (y0 < 0) y0 = 0;
+        if (y1 > height) y1 = height;
+        surface->damage_y = y0;
+        surface->damage_height = y1 > y0 ? y1 - y0 : 0;
+    } else {
+        surface->retained_width = width;
+        surface->retained_height = height;
+        surface->damage_y = 0;
+        surface->damage_height = height;
+    }
+    surface->stats_area += area > 1.0 ? 1.0 : area;
     cairo_set_operator(cr, CAIRO_OPERATOR_SOURCE);
     cairo_set_source_rgba(cr, 0, 0, 0, 0);
     cairo_paint(cr);
     cairo_set_operator(cr, CAIRO_OPERATOR_OVER);
-    cairo_scale(cr, surface->scale, surface->scale);
     surface->handler->draw(surface->data, surface, cr, surface->width, surface->height);
     cairo_destroy(cr);
     cairo_surface_flush(image);
@@ -471,11 +505,44 @@ static void composite(struct shell_surface *surface) {
 
 /* Paint every dirty or animating surface that is configured and not
  * waiting on a frame, and re-composite ones with animated shaders. */
+/* SHADY_SHELL_PAINT_STATS=1: every two seconds, how often each surface was
+ * painted, from a change (views ran) or for animation only. */
+static void paint_stats(struct shell_core *core, struct shell_surface *painted, bool changed) {
+    static int enabled = -1;
+    static uint64_t since;
+    if (enabled < 0) {
+        const char *env = getenv("SHADY_SHELL_PAINT_STATS");
+        enabled = env && *env && strcmp(env, "0") != 0;
+    }
+    if (!enabled) return;
+    if (painted) {
+        if (changed) painted->stats_changed++;
+        else painted->stats_animated++;
+    }
+    uint64_t now = now_ms();
+    if (!since) since = now;
+    if (now - since < 2000) return;
+    since = now;
+    struct shell_surface *surface;
+    wl_list_for_each(surface, &core->surfaces, link) {
+        if (!surface->stats_changed && !surface->stats_animated) continue;
+        unsigned paints = surface->stats_changed + surface->stats_animated;
+        fprintf(stderr, "shady-shell: paints %s: %u changed (%u unchanged, skipped), "
+            "%u animated in 2 s, %.0f%% of the surface on average\n",
+            surface->name, surface->stats_changed, surface->stats_skipped, surface->stats_animated,
+            paints ? surface->stats_area * 100.0 / paints : 0.0);
+        surface->stats_changed = surface->stats_animated = surface->stats_skipped = 0;
+        surface->stats_area = 0;
+    }
+}
+
 static void paint_dirty(struct shell_core *core) {
     struct shell_surface *surface;
+    paint_stats(core, NULL, false);
     wl_list_for_each(surface, &core->surfaces, link) {
         if (!surface->configured || surface->frame) continue;
         if (surface->dirty || surface->animating) {
+            paint_stats(core, surface, surface->dirty);
             surface->repaint_only = !surface->dirty;
             surface->dirty = false;
             surface->animating = false;

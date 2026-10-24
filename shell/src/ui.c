@@ -637,12 +637,39 @@ static double main_of(const struct ui_node *n, enum ui_direction d, bool natural
     return d == UI_ROW ? (natural ? n->nat_w : n->w) : (natural ? n->nat_h : n->h);
 }
 
+/* One Pango context per drawing scale, shared by every text: Pango keeps
+ * its loaded fonts with the context, so a context per layout looked fonts
+ * up through fontconfig again on every paint. */
+static PangoContext *text_context(cairo_t *cr) {
+    static struct { double xx, yy; PangoContext *context; } contexts[4];
+    static size_t next;
+    cairo_matrix_t m;
+    cairo_get_matrix(cr, &m);
+    for (size_t i = 0; i < 4; i++)
+        if (contexts[i].context && contexts[i].xx == m.xx && contexts[i].yy == m.yy)
+            return contexts[i].context;
+    size_t slot = next++ % 4;
+    if (contexts[slot].context) g_object_unref(contexts[slot].context);
+    PangoContext *context = pango_font_map_create_context(pango_cairo_font_map_get_default());
+    /* The scale, without the translation: layouts are placed by hand. */
+    cairo_save(cr);
+    cairo_matrix_t scale;
+    cairo_matrix_init_scale(&scale, m.xx, m.yy);
+    cairo_set_matrix(cr, &scale);
+    pango_cairo_update_context(cr, context);
+    cairo_restore(cr);
+    contexts[slot].xx = m.xx;
+    contexts[slot].yy = m.yy;
+    contexts[slot].context = context;
+    return context;
+}
+
 void ui_measure(cairo_t *cr, struct ui_node *node, const struct ui_defaults *defaults) {
     double w = 0, h = 0;
     switch (node->kind) {
     case UI_NODE_TEXT: {
         if (node->layout) g_object_unref(node->layout);
-        node->layout = pango_cairo_create_layout(cr);
+        node->layout = pango_layout_new(text_context(cr));
         PangoFontDescription *font = pango_font_description_from_string(
             node->font ? node->font : defaults->font);
         pango_layout_set_font_description(node->layout, font);
@@ -1004,6 +1031,9 @@ static void draw_icon(cairo_t *cr, const char *name, double stroke) {
         cairo_line_to(cr, 7, 17);
         cairo_stroke(cr);
     } else if (!strcmp(name, "moon")) {
+        cairo_save(cr);
+        cairo_rectangle(cr, 0, 0, 24, 24);
+        cairo_clip(cr);
         cairo_push_group(cr);
         cairo_arc(cr, 12, 12, 9, 0, 2 * G_PI);
         cairo_set_source_rgba(cr, 0, 0, 0, 1);
@@ -1014,6 +1044,7 @@ static void draw_icon(cairo_t *cr, const char *name, double stroke) {
         cairo_pattern_t *mask = cairo_pop_group(cr);
         cairo_mask(cr, mask);
         cairo_pattern_destroy(mask);
+        cairo_restore(cr);
     } else if (!strcmp(name, "sun")) {
         cairo_arc(cr, 12, 12, 4, 0, 2 * G_PI);
         for (int i = 0; i < 8; i++) {
@@ -1210,6 +1241,24 @@ static void set_paint_anim(cairo_t *cr, const struct ui_paint *paint, const doub
     cairo_pattern_destroy(pattern);
 }
 
+bool ui_draw_recording;
+
+/* Where a node's box (with room for a border, a shadow and a little
+ * overflow) lands on the buffer under the current transform. */
+static void device_box(cairo_t *cr, double x, double y, double w, double h, double pad,
+        double out[4]) {
+    double xs[4] = { x - pad, x + w + pad, x - pad, x + w + pad };
+    double ys[4] = { y - pad, y - pad, y + h + pad, y + h + pad };
+    double x1 = INFINITY, y1 = INFINITY, x2 = -INFINITY, y2 = -INFINITY;
+    for (int i = 0; i < 4; i++) {
+        cairo_user_to_device(cr, &xs[i], &ys[i]);
+        x1 = fmin(x1, xs[i]); y1 = fmin(y1, ys[i]);
+        x2 = fmax(x2, xs[i]); y2 = fmax(y2, ys[i]);
+    }
+    out[0] = floor(x1); out[1] = floor(y1);
+    out[2] = ceil(x2) - out[0]; out[3] = ceil(y2) - out[1];
+}
+
 void ui_draw(cairo_t *cr, const struct ui_node *node, const struct ui_node *hovered,
         const struct ui_defaults *defaults) {
     if (node->hidden) return;
@@ -1245,8 +1294,34 @@ void ui_draw(cairo_t *cr, const struct ui_node *node, const struct ui_node *hove
             cairo_translate(cr, -(x + w / 2), -(y + h / 2));
         }
     }
+    double pad = 6 + node->border_width +
+        (s.has_shadow ? fabs(s.shadow[0]) + fabs(s.shadow[1]) : 0);
+    if (anim) {
+        struct ui_anim *state = (struct ui_anim *)anim;
+        device_box(cr, x, y, w, h, pad, state->drawn);
+        state->has_drawn = true;
+    }
+    if (!ui_draw_recording && node->child_count == 0) {
+        /* Outside the damage of this frame: nothing to draw. (Containers
+         * are always entered: children may stick out of them.) */
+        double cx1, cy1, cx2, cy2;
+        cairo_clip_extents(cr, &cx1, &cy1, &cx2, &cy2);
+        if (x + w + pad < cx1 || y + h + pad < cy1 || x - pad > cx2 || y - pad > cy2) {
+            if (moved) cairo_restore(cr);
+            return;
+        }
+    }
     bool group = s.has_opacity && s.opacity < 1.0;
-    if (group) cairo_push_group(cr);
+    if (group) {
+        /* A group is as large as the clip: keep it to the widget (with room
+         * for a shadow and children that stick out a little), or every
+         * fading widget clears a buffer the size of the surface. */
+        cairo_save(cr);
+        double room = 24 + (s.has_shadow ? fabs(s.shadow[0]) + fabs(s.shadow[1]) : 0);
+        cairo_rectangle(cr, x - room, y - room, w + 2 * room, h + 2 * room);
+        cairo_clip(cr);
+        cairo_push_group(cr);
+    }
 
     if (s.has_shadow && s.shadow_color[3] > 0) {
         rounded_rect(cr, x + s.shadow[0], y + s.shadow[1], w, h, node->radius);
@@ -1274,7 +1349,8 @@ void ui_draw(cairo_t *cr, const struct ui_node *node, const struct ui_node *hove
     case UI_NODE_TEXT:
         if (node->layout && node->text && *node->text) {
             int lw = 0, lh = 0;
-            pango_cairo_update_layout(cr, node->layout);
+            /* Shaped when measured, for this scale; updating the layout
+             * from cr here would shape it again on every frame. */
             pango_layout_get_pixel_size(node->layout, &lw, &lh);
             /* Wrapped lines are aligned by pango inside the layout width. */
             double box = lw;
@@ -1334,6 +1410,7 @@ void ui_draw(cairo_t *cr, const struct ui_node *node, const struct ui_node *hove
     if (group) {
         cairo_pop_group_to_source(cr);
         cairo_paint_with_alpha(cr, s.opacity);
+        cairo_restore(cr);
     }
     if (moved) cairo_restore(cr);
 }
@@ -1366,4 +1443,143 @@ struct ui_node *ui_hit(struct ui_node *node, double x, double y, bool clickable)
         if (hit) return hit;
     }
     return interactive(node, clickable) ? node : NULL;
+}
+
+/* FNV-1a over the bytes of each field. */
+static uint64_t hash_bytes(uint64_t h, const void *data, size_t size) {
+    const unsigned char *p = data;
+    for (size_t i = 0; i < size; i++) {
+        h ^= p[i];
+        h *= 1099511628211ull;
+    }
+    return h;
+}
+
+static uint64_t hash_string(uint64_t h, const char *s) {
+    if (!s) return hash_bytes(h, "\xff", 1);
+    return hash_bytes(h, s, strlen(s) + 1);
+}
+
+#define HASH(h, field) hash_bytes((h), &(field), sizeof(field))
+
+static uint64_t hash_style(uint64_t h, const struct ui_style *s) {
+    h = HASH(h, s->has_background);
+    if (s->has_background) h = hash_bytes(h, &s->background, sizeof(s->background));
+    h = HASH(h, s->has_border);
+    if (s->has_border) h = HASH(h, s->border);
+    h = HASH(h, s->has_color);
+    if (s->has_color) h = HASH(h, s->color);
+    h = HASH(h, s->has_opacity);
+    if (s->has_opacity) h = HASH(h, s->opacity);
+    h = HASH(h, s->has_scale);
+    if (s->has_scale) h = HASH(h, s->scale);
+    h = HASH(h, s->has_translate);
+    if (s->has_translate) h = HASH(h, s->translate);
+    h = HASH(h, s->has_rotate);
+    if (s->has_rotate) h = HASH(h, s->rotate);
+    h = HASH(h, s->has_shadow);
+    if (s->has_shadow) {
+        h = HASH(h, s->shadow);
+        h = HASH(h, s->shadow_color);
+    }
+    return h;
+}
+
+static uint64_t node_hash(const struct ui_node *n, uint64_t h, bool *dynamic, bool children);
+
+uint64_t ui_tree_hash(const struct ui_node *n, uint64_t h, bool *dynamic) {
+    return node_hash(n, h, dynamic, true);
+}
+
+static uint64_t node_hash(const struct ui_node *n, uint64_t h, bool *dynamic, bool children) {
+    if (!n) return hash_bytes(h, "", 1);
+    h = HASH(h, n->kind);
+    h = HASH(h, n->width); h = HASH(h, n->height);
+    h = HASH(h, n->min_width); h = HASH(h, n->max_width);
+    h = HASH(h, n->min_height); h = HASH(h, n->max_height);
+    h = HASH(h, n->grow); h = HASH(h, n->shrink);
+    h = HASH(h, n->padding); h = HASH(h, n->gap);
+    h = HASH(h, n->direction); h = HASH(h, n->align); h = HASH(h, n->justify);
+    h = HASH(h, n->clip);
+    h = HASH(h, n->left); h = HASH(h, n->top); h = HASH(h, n->right); h = HASH(h, n->bottom);
+    h = hash_style(h, &n->style);
+    h = HASH(h, n->has_hover);
+    if (n->has_hover) h = hash_style(h, &n->hover);
+    h = HASH(h, n->animate);
+    if (n->animate) h = HASH(h, n->spring);
+    h = HASH(h, n->has_enter);
+    if (n->has_enter) h = hash_style(h, &n->enter);
+    h = HASH(h, n->has_exit);
+    if (n->has_exit) h = hash_style(h, &n->exit);
+    h = hash_string(h, n->key);
+    h = HASH(h, n->caret);
+    h = HASH(h, n->radius); h = HASH(h, n->border_width);
+    h = hash_string(h, n->text);
+    h = hash_string(h, n->font);
+    h = HASH(h, n->letter_spacing); h = HASH(h, n->ellipsize); h = HASH(h, n->text_align);
+    h = HASH(h, n->wrap); h = HASH(h, n->max_lines);
+    h = HASH(h, n->pip_radius); h = HASH(h, n->lit);
+    h = HASH(h, n->image);
+    h = hash_string(h, n->icon);
+    h = HASH(h, n->stroke);
+    if (n->widget) *dynamic = true;
+    /* Whether it reacts, not to what: the input region depends on it. */
+    bool reacts[3] = { n->on_click != LUA_NOREF, n->on_scroll != LUA_NOREF, n->on_drag != LUA_NOREF };
+    h = HASH(h, reacts);
+    h = hash_string(h, n->id);
+    h = hash_string(h, n->shader);
+    h = HASH(h, n->uniform_count);
+    if (n->uniform_count) h = hash_bytes(h, n->uniforms, n->uniform_count * sizeof(n->uniforms[0]));
+    h = HASH(h, n->child_count);
+    if (children)
+        for (size_t i = 0; i < n->child_count; i++) h = node_hash(n->children[i], h, dynamic, true);
+    return h;
+}
+
+static void diff_grow(double rect[4], bool *any, const struct ui_node *n) {
+    double pad = 6 + n->border_width +
+        (n->style.has_shadow ? fabs(n->style.shadow[0]) + fabs(n->style.shadow[1]) : 0);
+    double x = n->x - pad, y = n->y - pad, w = n->w + 2 * pad, h = n->h + 2 * pad;
+    if (n->style.has_translate) { x += n->style.translate[0]; y += n->style.translate[1]; }
+    if (!*any) {
+        rect[0] = x; rect[1] = y; rect[2] = w; rect[3] = h;
+        *any = true;
+        return;
+    }
+    double x2 = fmax(rect[0] + rect[2], x + w), y2 = fmax(rect[1] + rect[3], y + h);
+    rect[0] = fmin(rect[0], x);
+    rect[1] = fmin(rect[1], y);
+    rect[2] = x2 - rect[0];
+    rect[3] = y2 - rect[1];
+}
+
+static bool transformed(const struct ui_node *n) {
+    return (n->style.has_scale && n->style.scale != 1.0) ||
+        (n->style.has_rotate && n->style.rotate != 0.0);
+}
+
+static bool diff_node(const struct ui_node *a, const struct ui_node *b, double rect[4], bool *any) {
+    if (a->hidden != b->hidden || transformed(a) || transformed(b)) return false;
+    if (a->hidden) return true;
+    bool dynamic = false;
+    bool same = a->kind == b->kind && a->child_count == b->child_count &&
+        a->x == b->x && a->y == b->y && a->w == b->w && a->h == b->h &&
+        node_hash(a, 0, &dynamic, false) == node_hash(b, 0, &dynamic, false);
+    if (dynamic) return false;
+    if (!same) {
+        /* The whole node, children included, on both sides. */
+        diff_grow(rect, any, a);
+        diff_grow(rect, any, b);
+        return true;
+    }
+    for (size_t i = 0; i < a->child_count; i++)
+        if (!diff_node(a->children[i], b->children[i], rect, any)) return false;
+    return true;
+}
+
+bool ui_tree_diff(const struct ui_node *before, const struct ui_node *after, double rect[4]) {
+    bool any = false;
+    rect[0] = rect[1] = rect[2] = rect[3] = 0;
+    if (!before || !after) return false;
+    return diff_node(before, after, rect, &any);
 }

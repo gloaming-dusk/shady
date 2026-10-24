@@ -39,6 +39,10 @@ struct ui_anim {
     double target[UI_CH_COUNT];
     char dir; /* gradient direction of the background */
     bool seen; /* matched in the current tree */
+    /* Where the node was drawn, in buffer pixels, this frame and the last:
+     * frames that only move springs repaint the difference. */
+    double drawn[4], last_drawn[4];
+    bool has_drawn, had_drawn;
 };
 
 struct ui_anims;
@@ -56,6 +60,13 @@ void ui_anims_destroy(struct ui_anims *anims);
 bool ui_anims_step(struct ui_anims *anims, struct ui_node *tree,
     const struct ui_node *hovered, const struct ui_defaults *defaults, double dt,
     bool exiting);
+
+/* Damage tracking for frames that only move springs: begin_frame keeps
+ * where every node was drawn; after a pass of ui_draw (which records where
+ * they are drawn now) damage gives the union of what changed, in buffer
+ * pixels, false when nothing was recorded. */
+void ui_anims_begin_frame(struct ui_anims *anims);
+bool ui_anims_damage(struct ui_anims *anims, double rect[4]);
 
 /* Whether any node in the tree has an `exit` style. */
 bool ui_tree_has_exit(const struct ui_node *tree);

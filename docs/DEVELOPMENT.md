@@ -154,7 +154,9 @@ commits, input, configuration changes and module actions, and asks for
 continuous frames only while something moves (physics, FPS movement, wobble
 settling, close animations). `SHADY_RENDER_STATS=1` logs per-output
 scheduling, coalesced requests, frame callbacks, CPU frame timing and why
-continuous frames were requested.
+continuous frames were requested. For shady-shell, `SHADY_SHELL_PAINT_STATS=1`
+logs how often each surface paints and how much of it (see
+[SHELL_DESIGN.md](SHELL_DESIGN.md)).
 
 `./tools/test.sh` runs the development build nested with
 `tools/test-shady.lua`, which binds a few scripting examples: F6 gravity,

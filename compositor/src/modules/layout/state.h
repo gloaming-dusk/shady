@@ -83,8 +83,9 @@ struct shady_layout_toplevel {
 	double strip_x, y;
 	/* Where the layout wants it. */
 	int target_strip_x, target_y;
-	/* The size last asked of the client. */
+	/* The size last asked of the client, and the bounds last sent. */
 	int asked_w, asked_h;
+	int bounds_w, bounds_h;
 };
 
 static inline struct shady_layout_state *shady_layout_state_for(

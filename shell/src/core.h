@@ -144,6 +144,14 @@ struct shell_surface_handler {
      * already scaled for HiDPI and cleared to transparent. */
     void (*draw)(void *data, struct shell_surface *surface, cairo_t *cr,
         double width, double height);
+    /* Optional, before a paint for a change (not for an animation frame):
+     * false when the surface would look the same, so nothing is drawn or
+     * committed. */
+    bool (*prepare)(void *data, struct shell_surface *surface);
+    /* Optional, with cr scaled for the surface, when the buffer still holds
+     * the last paint: the part that changes, in buffer pixels, so only that
+     * is cleared and drawn. False to paint everything. */
+    bool (*damage)(void *data, struct shell_surface *surface, cairo_t *cr, double rect[4]);
     /* The compositor closed the surface; destroy it from here or later. */
     void (*closed)(void *data, struct shell_surface *surface);
     void (*pointer_motion)(void *data, struct shell_surface *surface, double x, double y);
@@ -189,6 +197,13 @@ struct shell_surface {
     bool wants_text_input;
     int32_t text_cursor[4]; /* where the caret is, for the input method's popup */
     char name[32]; /* layer namespace, for logs */
+    unsigned stats_changed, stats_animated, stats_skipped; /* SHADY_SHELL_PAINT_STATS */
+    double stats_area; /* share of the buffer painted, summed */
+    /* The buffer size of the last full paint: the renderer's buffer holds
+     * that picture, which a partial paint can build on. */
+    int retained_width, retained_height;
+    /* The rows (buffer px) the last paint changed, for the renderer. */
+    int damage_y, damage_height;
 };
 
 struct shell_surface *shell_surface_create(struct shell_core *core,

@@ -372,10 +372,16 @@ static void arrange_workspace(struct shady_server *server, size_t index, bool an
 			}
 			set_tiled_state(t, true);
 			ask_size(t, tw, th);
-			/* xdg_toplevel.configure_bounds was added in xdg-shell v4. */
+			/* xdg_toplevel.configure_bounds was added in xdg-shell v4. Every
+			 * call schedules a configure, so only when the bounds change:
+			 * a configure makes clients like browsers lay out again. */
 			if (t->xdg_toplevel->base->initialized &&
-					t->xdg_toplevel->base->client->shell->version >= 4)
+					t->xdg_toplevel->base->client->shell->version >= 4 &&
+					(lt->bounds_w != area.width || lt->bounds_h != area.height)) {
+				lt->bounds_w = area.width;
+				lt->bounds_h = area.height;
 				wlr_xdg_toplevel_set_bounds(t->xdg_toplevel, area.width, area.height);
+			}
 		}
 	}
 	apply_positions(server, index);
@@ -470,12 +476,17 @@ static bool camera_step(struct shady_server *server, double a) {
 		ty = (float)((full.height / 2.0 - cy) / full.height);
 		pitch = -0.10f;
 	}
-	cam->distance = (float)approach(cam->distance, distance, a);
-	cam->target_x = (float)approach(cam->target_x * 1000.0, tx * 1000.0, a) / 1000.f;
-	cam->target_y = (float)approach(cam->target_y * 1000.0, ty * 1000.0, a) / 1000.f;
-	cam->pitch = (float)approach(cam->pitch * 1000.0, pitch * 1000.0, a) / 1000.f;
-	bool moving = cam->distance != distance || cam->target_x != tx ||
-		cam->target_y != ty || cam->pitch != pitch;
+	/* Close enough (a tenth of a pixel or so) is there: comparing floats
+	 * for equality after scaling kept the camera "moving" for ever. */
+	float *values[4] = { &cam->distance, &cam->target_x, &cam->target_y, &cam->pitch };
+	const float targets[4] = { distance, tx, ty, pitch };
+	bool moving = false;
+	for (size_t i = 0; i < 4; i++) {
+		float v = *values[i] + (targets[i] - *values[i]) * (float)a;
+		if (fabsf(targets[i] - v) < 1e-4f) v = targets[i];
+		else moving = true;
+		*values[i] = v;
+	}
 	if (!state->overview && !moving) {
 		cam->yaw = 0.f;
 		state->camera_owned = false;

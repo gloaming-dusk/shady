@@ -105,6 +105,13 @@ struct view {
     int drag;
     double drag_box[4];
     char *preedit; /* what the input method is composing, for ctx.preedit */
+    /* A tree built by view_prepare for the paint that follows, and what
+     * the surface shows: unchanged trees are not painted again. */
+    struct ui_node *pending;
+    uint64_t pending_hash, painted_hash;
+    bool painted;
+    unsigned hover_serial, painted_hover;
+    bool stepped; /* view_damage already advanced the springs for this paint */
 };
 
 /* shell.poll / shell.listen: a command whose output is a string value. */
@@ -402,6 +409,113 @@ static double step_time(struct view *view) {
     return dt;
 }
 
+/* Run the view; when what it returns is what the surface already shows
+ * (same tree, size, scale and hover), skip the paint. A plugin-drawn widget,
+ * a shader whose uniforms come from a function, springs still moving or a
+ * closing popup always paint. */
+static bool view_prepare(void *data, struct shell_surface *surface) {
+    struct view *view = data;
+    lua_State *L = view->lua->L;
+    if (view->closing || view->stepping) return true;
+    ui_free(L, view->pending);
+    view->pending = build_tree(view, surface->width, surface->height);
+    if (!view->pending) return true;
+    bool dynamic = false;
+    uint64_t h = ui_tree_hash(view->pending, 1469598103934665603ull, &dynamic);
+    const uint32_t size[3] = { surface->width, surface->height, (uint32_t)surface->scale };
+    for (size_t i = 0; i < sizeof(size); i++) h = (h ^ ((const unsigned char *)size)[i]) * 1099511628211ull;
+    h = (h ^ view->hover_serial) * 1099511628211ull;
+    view->pending_hash = h;
+    if (view->def->uniforms != LUA_NOREF) {
+        lua_rawgeti(L, LUA_REGISTRYINDEX, view->def->uniforms);
+        if (lua_isfunction(L, -1)) dynamic = true;
+        lua_pop(L, 1);
+    }
+    if (dynamic || !view->painted || h != view->painted_hash) return true;
+    ui_free(L, view->pending);
+    view->pending = NULL;
+    return false;
+}
+
+/* Lay out a new tree for the surface; popups without a fixed size follow
+ * their content. */
+static void view_layout(struct view *view, struct shell_surface *surface, cairo_t *cr,
+        struct ui_node *tree, double width, double height, const struct ui_defaults *defaults) {
+    ui_measure(cr, tree, defaults);
+    /* Text narrowed by layout may wrap onto more lines and measure again,
+     * so popups size themselves from the result. */
+    ui_arrange(cr, tree, defaults, 0, 0, width, height);
+    if (view->def->popup && !view->def->fill) {
+        uint32_t want_w = view->def->width ? view->def->width : (uint32_t)ceil(tree->nat_w);
+        uint32_t want_h = view->def->height ? view->def->height : (uint32_t)ceil(tree->nat_h);
+        if (want_w && want_h)
+            shell_surface_set_size(surface, stretch_w(view->def) ? 0 : want_w,
+                stretch_h(view->def) ? 0 : want_h);
+    }
+}
+
+static void union_rect(double into[4], const double r[4]) {
+    if (r[2] <= 0 || r[3] <= 0) return;
+    if (into[2] <= 0 || into[3] <= 0) {
+        memcpy(into, r, 4 * sizeof(double));
+        return;
+    }
+    double x2 = fmax(into[0] + into[2], r[0] + r[2]), y2 = fmax(into[1] + into[3], r[1] + r[3]);
+    into[0] = fmin(into[0], r[0]);
+    into[1] = fmin(into[1], r[1]);
+    into[2] = x2 - into[0];
+    into[3] = y2 - into[1];
+}
+
+/* Redraw only what changes (buffer pixels in rect), when that can be told:
+ * on a frame that only moves springs, where the animated nodes were and are
+ * drawn; on a change, also the widgets that differ from the tree on screen.
+ * The springs advance here, and a pass that paints nothing records where
+ * the animated nodes go. False paints the whole surface. */
+static bool view_damage(void *data, struct shell_surface *surface, cairo_t *cr, double rect[4]) {
+    struct view *view = data;
+    if (!view->tree || view->closing || view->def->shader) return false;
+    struct ui_defaults defaults;
+    ui_defaults(&defaults);
+    double changed[4] = { 0, 0, 0, 0 };
+    if (!surface->repaint_only) {
+        /* Hover styles are not in the tree, and the first tree of a size
+         * has nothing to compare with. */
+        if (!view->pending || view->hover_serial != view->painted_hover) return false;
+        struct ui_node *tree = view->pending;
+        uint32_t w = surface->width, h = surface->height;
+        view_layout(view, surface, cr, tree, w, h, &defaults);
+        if (surface->requested_width != w && surface->requested_width != 0) return false;
+        if (surface->requested_height != h && surface->requested_height != 0) return false;
+        if (!ui_tree_diff(view->tree, tree, changed)) return false;
+        for (int i = 0; i < 4; i++) changed[i] *= surface->scale;
+        ui_free(view->lua->L, view->tree);
+        view->tree = tree;
+        view->pending = NULL;
+        view->painted_hash = view->pending_hash;
+        view->hovered = view->pointer_in ? ui_hit(tree, view->px, view->py, false) : NULL;
+    }
+    ui_anims_begin_frame(view->anims);
+    double dt = step_time(view);
+    bool moving = ui_anims_step(view->anims, view->tree, view->hovered, &defaults, dt, false);
+    view->stepping = moving;
+    surface->animating = moving;
+    view->stepped = true;
+    cairo_save(cr);
+    cairo_rectangle(cr, 0, 0, 0, 0);
+    cairo_clip(cr);
+    ui_draw_recording = true;
+    ui_draw(cr, view->tree, view->hovered, &defaults);
+    ui_draw_recording = false;
+    cairo_restore(cr);
+    double springs[4];
+    ui_anims_damage(view->anims, springs);
+    rect[0] = rect[1] = rect[2] = rect[3] = 0;
+    union_rect(rect, changed);
+    union_rect(rect, springs);
+    return true;
+}
+
 static void view_draw(void *data, struct shell_surface *surface, cairo_t *cr,
         double width, double height) {
     struct view *view = data;
@@ -411,36 +525,35 @@ static void view_draw(void *data, struct shell_surface *surface, cairo_t *cr,
 
     /* Frames that only move springs, and a closing popup's frames, redraw
      * the last tree without running the view. */
-    bool reuse = view->tree && (surface->repaint_only || view->closing);
+    bool reuse = view->tree && (surface->repaint_only || view->closing || view->stepped);
     if (!reuse) {
         ui_free(L, view->tree);
         view->tree = NULL;
         view->hovered = NULL;
-        struct ui_node *tree = build_tree(view, width, height);
+        struct ui_node *tree = view->pending ? view->pending : build_tree(view, width, height);
+        view->pending = NULL;
+        view->painted_hash = view->pending_hash;
+        view->painted = tree != NULL;
+        view->painted_hover = view->hover_serial;
         if (!tree) {
             view->stepping = false;
             return;
         }
-        ui_measure(cr, tree, &defaults);
-        /* Text narrowed by layout may wrap onto more lines and measure again,
-         * so popups size themselves from the result. */
-        ui_arrange(cr, tree, &defaults, 0, 0, width, height);
-        if (view->def->popup && !view->def->fill) {
-            /* Popups without a fixed size follow their content. */
-            uint32_t want_w = view->def->width ? view->def->width : (uint32_t)ceil(tree->nat_w);
-            uint32_t want_h = view->def->height ? view->def->height : (uint32_t)ceil(tree->nat_h);
-            if (want_w && want_h)
-                shell_surface_set_size(surface, stretch_w(view->def) ? 0 : want_w,
-                    stretch_h(view->def) ? 0 : want_h);
-        }
+        view_layout(view, surface, cr, tree, width, height, &defaults);
         view->tree = tree;
         if (view->pointer_in) view->hovered = ui_hit(tree, view->px, view->py, false);
     }
-    double dt = step_time(view);
-    bool moving = ui_anims_step(view->anims, view->tree, view->hovered, &defaults, dt,
-        view->closing);
-    view->stepping = moving;
-    surface->animating = moving;
+    bool moving = view->stepping;
+    if (view->stepped) {
+        view->stepped = false;
+    } else {
+        ui_anims_begin_frame(view->anims);
+        double dt = step_time(view);
+        moving = ui_anims_step(view->anims, view->tree, view->hovered, &defaults, dt,
+            view->closing);
+        view->stepping = moving;
+        surface->animating = moving;
+    }
     ui_draw(cr, view->tree, view->hovered, &defaults);
     collect_effects(view, surface, view->tree, width, height);
     const struct ui_node *caret = view->def->text_input ? find_caret(view->tree) : NULL;
@@ -479,6 +592,7 @@ static void close_view(struct view *view) {
 static void set_hover(struct view *view, struct ui_node *node) {
     if (node == view->hovered) return;
     view->hovered = node;
+    view->hover_serial++;
     snprintf(view->hover_id, sizeof(view->hover_id), "%s", node && node->id ? node->id : "");
     shell_surface_redraw(view->surface);
 }
@@ -643,6 +757,8 @@ static void view_closed(void *data, struct shell_surface *surface) {
 
 static const struct shell_surface_handler view_handler = {
     .draw = view_draw,
+    .prepare = view_prepare,
+    .damage = view_damage,
     .closed = view_closed,
     .pointer_motion = view_motion,
     .pointer_leave = view_leave,
@@ -698,6 +814,7 @@ static void view_destroy(struct view *view) {
     luaL_unref(L, LUA_REGISTRYINDEX, view->drag);
     free(view->preedit);
     shell_surface_destroy(view->surface);
+    ui_free(L, view->pending);
     ui_free(L, view->tree);
     ui_anims_destroy(view->anims);
     if (view->args != LUA_NOREF) luaL_unref(L, LUA_REGISTRYINDEX, view->args);

@@ -30,7 +30,7 @@ shady.set("layout", "scrolling")
 shady.set("layout_gap", 10)
 shady.set("layout_default_width", 0.5)
 shady.set("layout_center_single", true)
-shady.set("layout_animation", 16)
+shady.set("layout_animation", 22)
 shady.set("gesture_fingers", 3)
 
 -- Windows draw no title bars of their own (prefer-no-csd) and get none from

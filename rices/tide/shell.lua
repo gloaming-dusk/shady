@@ -23,6 +23,9 @@ local P = {
 }
 local WHITE = "#FFFFFF"
 local BAR, ISLAND = 44, 32
+-- Springs for values the user drives (sliders, OSD): quick enough to read
+-- as following the hand, short so few frames are drawn.
+local QUICK = { stiffness = 1600, damping = 80 }
 local POP = { opacity = 0, scale = 0.97, translate = { 0, -8 } }
 
 local function text(s, props)
@@ -300,7 +303,7 @@ local function island(props)
     props.padding = props.padding or { 0, 12 }
     props.gap = props.gap or 10
     props.align = "center"
-    props.background = glass(0.78)
+    props.background = glass(0.88)
     props.border = a(P.text, 0.07)
     props.animate = "snappy"
     return shell.row(props)
@@ -456,10 +459,14 @@ shell.bar {
 
 -- A slider is a row of two growing parts, the filled share and the rest,
 -- with the knob between them: no widget needs to know the track's width.
+local dragging = {}
+
 local function slider(ctx, id, icon, value, max, on_set, on_icon, muted)
     local f = value and clamp(value / max, 0, 1) or 0
     local hovered = ctx.hovered == id
     local fill = muted and P.dim or P.accent
+    -- While dragged the fill is drawn where the pointer is, without a spring.
+    local motion = not dragging[id] and QUICK or false
     return shell.row {
         height = 40, gap = 12, align = "center",
         shell.row {
@@ -470,15 +477,19 @@ local function slider(ctx, id, icon, value, max, on_set, on_icon, muted)
         },
         shell.row {
             id = id, grow = 1, height = 26, align = "center", gap = 0,
-            on_drag = function(info) on_set(info.fx * max) end,
-            on_scroll = function(dy) on_set((value or 0) - dy / 4 * max / 100) end,
+            on_drag = function(info)
+                dragging[id] = not info.done or nil
+                on_set(info.fx * max)
+                shell.redraw()
+            end,
+            on_scroll = function(dy) on_set((value or 0) - dy / 4 * max / 100); shell.redraw() end,
             shell.box { key = id .. ":a", grow = math.max(f, 0.0001), height = 8, radius = 4,
-                animate = "snappy",
+                animate = motion,
                 background = shell.gradient("horizontal", fill, muted and P.dim or P.accent_2) },
             shell.box { key = id .. ":knob", width = hovered and 16 or 12, height = hovered and 16 or 12,
-                radius = 8, animate = "snappy", background = WHITE },
+                radius = 8, animate = motion, background = WHITE },
             shell.box { key = id .. ":b", grow = math.max(1 - f, 0.0001), height = 8, radius = 4,
-                animate = "snappy", background = a(P.text, 0.10) },
+                animate = motion, background = a(P.text, 0.10) },
         },
         text(value and tostring(math.floor(value + 0.5)) or "–", { width = 30, text_align = 1,
             font = font("SemiBold", 9), color = P.dim }),
@@ -597,7 +608,7 @@ shell.popup {
         local list = {}
         for _, n in ipairs(shell.notifications()) do
             if n.active and #list < 3 then
-                list[#list + 1] = note(ctx, n, { prefix = "toast:", background = glass(0.9), width = 300 })
+                list[#list + 1] = note(ctx, n, { prefix = "toast:", background = glass(0.96), width = 300 })
             end
         end
         return shell.column { align = "stretch", gap = 8, list }
@@ -707,7 +718,7 @@ local function control_view(ctx)
     end
 
     return card {
-        width = 380, padding = 16, gap = 14,
+        width = 380, padding = 16, gap = 14, background = glass(0.95),
         header,
         shell.column { align = "stretch", gap = 2,
             slider(ctx, "s:volume", muted and "mute" or "volume", volume, 100, act.volume, act.mute, muted),
@@ -1068,15 +1079,15 @@ shell.popup {
         local icon = osd.kind == "brightness" and "sun" or (osd.muted and "mute" or "volume")
         local f = clamp(osd.value / 100, 0, 1)
         return card {
-            width = 260, padding = { 12, 16 }, radius = 22,
+            width = 260, padding = { 12, 16 }, radius = 22, background = glass(0.95),
             shell.row { gap = 12, align = "center",
                 shell.icon(icon, { size = 18, color = osd.muted and P.dim or P.text }),
                 shell.row { grow = 1, height = 6, gap = 0, align = "center",
-                    shell.box { key = "osd:a", grow = math.max(f, 0.0001), height = 6, radius = 3, animate = "snappy",
+                    shell.box { key = "osd:a", grow = math.max(f, 0.0001), height = 6, radius = 3, animate = QUICK,
                         background = shell.gradient("horizontal", osd.muted and P.dim or P.accent,
                             osd.muted and P.dim or P.accent_2) },
                     shell.box { key = "osd:b", grow = math.max(1 - f, 0.0001), height = 6, radius = 3,
-                        animate = "snappy", background = a(P.text, 0.12) },
+                        animate = QUICK, background = a(P.text, 0.12) },
                 },
                 text(tostring(math.floor(osd.value + 0.5)), { width = 28, text_align = 1, font = font("Bold", 9.5) }),
             },

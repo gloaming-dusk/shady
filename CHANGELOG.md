@@ -42,6 +42,17 @@ New:
   with the session, and restarts the shell if it crashes.
 - A lock whose client died no longer keeps the session locked for good: a
   new locker takes over (`session.lock` is published as `abandoned`).
+- The scrolling layout sends a window its bounds only when they change:
+  every arrangement (each focus change and layout key) had sent every
+  window a configure, so browsers laid themselves out again each time.
+- shady-shell paints less: a surface whose widget tree did not change is
+  not painted or committed at all (before, any change anywhere repainted
+  every surface, the full-screen wallpaper included); with the GL renderer
+  a repaint clears, draws and uploads only what changed, on spring frames
+  too; text shares Pango contexts instead of looking fonts up on every
+  paint; and fading widgets no longer allocate a buffer the size of the
+  surface. Holding a volume key with the control center open costs about
+  40% less CPU. `SHADY_SHELL_PAINT_STATS=1` shows what paints.
 - `bad-apple` plugin (`Super+A`, loaded by Afterglow and Horizon): the
   screen turns into a board of flip-dot tiles with the desktop on their
   fronts and black on their backs, and plays a video on them, Bad Apple!!

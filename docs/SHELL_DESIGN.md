@@ -199,6 +199,20 @@ not faster than the compositor's frame callbacks, so a burst of protocol
 events costs one repaint. `draw()` receives a cairo context already scaled
 to the surface's buffer scale, so all UI code works in logical pixels.
 
+Repaints are kept to what changed. Before a repaint for a change, the view
+runs and its widget tree is hashed: a tree the surface already shows (most
+surfaces, when one value changes) is not painted or committed at all. With
+the GL renderer, which keeps its buffer, a repaint then clears and draws
+only the damage: the widgets that differ from the tree on screen, and on
+frames that only move springs, where animated widgets were and are drawn
+(a pass of `ui_draw` that paints nothing records it). Only those rows are
+uploaded. Hover changes, scaled or rotated widgets, plugin-drawn widgets
+and surface shaders still repaint the whole surface. Text shares one Pango
+context per scale, so fonts are not looked up again on every paint.
+`SHADY_SHELL_PAINT_STATS=1` logs, every two seconds, how often each surface
+painted, how many paints were skipped and how much of the surface they
+covered; `SHADY_SHELL_NO_DAMAGE=1` paints whole surfaces, to compare.
+
 The compositor side gained one fix here: layer surfaces are re-configured
 whenever the output layout changes, so any layer-shell bar (not only this
 one) follows mode and scale changes.

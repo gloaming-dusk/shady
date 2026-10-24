@@ -24,6 +24,9 @@ struct shell_renderer;
 
 struct shell_renderer_impl {
     const char *name;
+    /* begin() hands back the buffer with what was painted last, so a paint
+     * may redraw only part of it. */
+    bool retains;
     void (*destroy)(struct shell_renderer *renderer);
     /* A cairo image surface of the given buffer size to paint into. */
     cairo_surface_t *(*begin)(struct shell_renderer *renderer,

@@ -16,6 +16,7 @@
 #include <pango/pangocairo.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #include "effects.h"
 
@@ -164,6 +165,14 @@ struct ui_defaults {
  * error, writing a message to `error`. */
 struct ui_node *ui_build(lua_State *L, int index, char *error, size_t error_size);
 void ui_free(lua_State *L, struct ui_node *node);
+/* A hash of everything a tree draws (not its handlers' references, which
+ * differ on every build). Sets *dynamic when the tree holds a plugin-drawn
+ * widget, whose look can change without the tree changing. */
+uint64_t ui_tree_hash(const struct ui_node *node, uint64_t seed, bool *dynamic);
+/* The part of the surface (logical px) that differs between two laid-out
+ * trees; false when it cannot tell (a transformed or plugin-drawn widget),
+ * and the whole surface should be painted. */
+bool ui_tree_diff(const struct ui_node *before, const struct ui_node *after, double rect[4]);
 
 /* Natural size of the tree, then positions within (x, y, w, h). ui_layout
  * returns false when wrapped text got narrower than it was measured at and
@@ -179,6 +188,9 @@ void ui_resolve_style(const struct ui_node *node, const struct ui_node *hovered,
 /* Copy into `out` the fields `over` sets. */
 void ui_merge_style(struct ui_style *out, const struct ui_style *over);
 /* `hovered` may be NULL. Animated nodes draw from their ui_anim state. */
+/* While set, ui_draw only records where animated nodes go (see
+ * ui_anims_begin_frame); paint with an empty clip. */
+extern bool ui_draw_recording;
 void ui_draw(cairo_t *cr, const struct ui_node *node, const struct ui_node *hovered,
     const struct ui_defaults *defaults);
 
