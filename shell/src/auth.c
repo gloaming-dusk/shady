@@ -26,6 +26,8 @@ struct shell_auth {
     char buffer[1024];
     size_t length;
     bool finished;
+    bool ok;
+    char reason[256];
 };
 
 static void helper_path(char *out, size_t size) {
@@ -53,15 +55,25 @@ static void auth_free(struct shell_auth *auth) {
     free(auth);
 }
 
+/* Note the result; the reader reports it and frees the attempt once it is
+ * done with the buffer (the reason may point into it). */
 static void finish(struct shell_auth *auth, bool ok, const char *reason) {
     if (auth->finished) return;
     auth->finished = true;
+    auth->ok = ok;
+    snprintf(auth->reason, sizeof(auth->reason), "%s", reason);
+}
+
+static void report(struct shell_auth *auth) {
     if (auth->pid > 0) {
         waitpid(auth->pid, NULL, 0);
         auth->pid = -1;
     }
     const struct shell_auth_handler *handler = auth->handler;
     void *data = auth->data;
+    bool ok = auth->ok;
+    char reason[sizeof(auth->reason)];
+    memcpy(reason, auth->reason, sizeof(reason));
     auth_free(auth);
     handler->done(data, ok, reason);
 }
@@ -86,7 +98,10 @@ static void readable(int fd, short revents, void *data) {
                 handle_line(auth, start);
                 start = nl + 1;
             }
-            if (auth->finished) return; /* freed */
+            if (auth->finished) {
+                report(auth); /* frees it */
+                return;
+            }
             auth->length = strlen(start);
             memmove(auth->buffer, start, auth->length + 1);
             if (auth->length == sizeof(auth->buffer) - 1) auth->length = 0;
@@ -95,6 +110,7 @@ static void readable(int fd, short revents, void *data) {
         if (n < 0 && errno == EINTR) return;
     }
     finish(auth, false, "The authentication helper stopped");
+    report(auth);
 }
 
 struct shell_auth *shell_auth_start(struct shell_core *core, const char *service,

@@ -1309,7 +1309,9 @@ static bool layout_pointer_axis(struct shady_server *server,
 		struct wlr_pointer_axis_event *event, uint32_t modifiers) {
 	static double accumulated;
 	static uint32_t last_step_ms;
-	if (!shady_layout_active(server)) return false;
+	/* Nothing behind the lock screen may move or take the focus. */
+	if (!shady_layout_active(server) || shady_desktop_state(server)->session_locked)
+		return false;
 	const uint32_t mask = WLR_MODIFIER_ALT | WLR_MODIFIER_SHIFT |
 		WLR_MODIFIER_CTRL | WLR_MODIFIER_LOGO;
 	uint32_t mods = modifiers & mask;
@@ -1362,7 +1364,8 @@ static bool layout_pointer_button(struct shady_server *server,
 		struct wlr_pointer_button_event *event, uint32_t modifiers) {
 	(void)modifiers;
 	struct shady_layout_state *state = shady_layout_state_for(server);
-	if (state && state->overview && event->state == WL_POINTER_BUTTON_STATE_PRESSED)
+	if (state && state->overview && event->state == WL_POINTER_BUTTON_STATE_PRESSED &&
+			!shady_desktop_state(server)->session_locked)
 		wl_event_loop_add_idle(wl_display_get_event_loop(server->wl_display),
 			overview_leave_idle, server);
 	return false;

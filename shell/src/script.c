@@ -431,7 +431,10 @@ static bool view_prepare(void *data, struct shell_surface *surface) {
         if (lua_isfunction(L, -1)) dynamic = true;
         lua_pop(L, 1);
     }
-    if (dynamic || !view->painted || h != view->painted_hash) return true;
+    if (dynamic || !view->painted || h != view->painted_hash || !view->tree) return true;
+    /* Same look: keep the laid-out tree, but with the new handlers, whose
+     * closures may hold newer values. */
+    if (!ui_tree_take_handlers(view->tree, view->pending)) return true;
     ui_free(L, view->pending);
     view->pending = NULL;
     return false;

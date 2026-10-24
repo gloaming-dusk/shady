@@ -1583,3 +1583,18 @@ bool ui_tree_diff(const struct ui_node *before, const struct ui_node *after, dou
     if (!before || !after) return false;
     return diff_node(before, after, rect, &any);
 }
+
+bool ui_tree_take_handlers(struct ui_node *shown, struct ui_node *fresh) {
+    if (!shown || !fresh || shown->kind != fresh->kind || shown->child_count != fresh->child_count)
+        return false;
+    for (size_t i = 0; i < shown->child_count; i++)
+        if (!ui_tree_take_handlers(shown->children[i], fresh->children[i])) return false;
+    int click = shown->on_click, scroll = shown->on_scroll, drag = shown->on_drag;
+    shown->on_click = fresh->on_click;
+    shown->on_scroll = fresh->on_scroll;
+    shown->on_drag = fresh->on_drag;
+    fresh->on_click = click;
+    fresh->on_scroll = scroll;
+    fresh->on_drag = drag;
+    return true;
+}

@@ -272,6 +272,10 @@ void focus_toplevel(struct shady_toplevel *toplevel) {
 		return;
 	}
 	struct shady_server *server = toplevel->server;
+	/* The lock surface keeps the keyboard until the session is unlocked,
+	 * whatever asks for a window to be focused meanwhile. */
+	struct shady_desktop_state *desktop = shady_desktop_state(server);
+	if (desktop && desktop->session_locked) return;
 	struct wlr_seat *seat = server->seat;
 	struct wlr_surface *prev_surface = seat->keyboard_state.focused_surface;
 	struct wlr_surface *surface = toplevel->xdg_toplevel->base->surface;

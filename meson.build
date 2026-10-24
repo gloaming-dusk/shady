@@ -304,6 +304,14 @@ if shell_enabled
     executable('shady-auth', 'shell/src/auth_helper.c',
       dependencies: [shell_pam],
       install: true)
+    # Next to shady-auth, where auth.c looks for the helper.
+    shell_auth_test = executable('shell-auth-test',
+      ['tests/shell-auth-test.c', 'shell/src/auth.c',
+       ext_session_lock_client_header, text_input_client_header, layer_shell_protocol_header],
+      include_directories: include_directories('shell/src'),
+      dependencies: [wayland_client, cairo, shell_xkbcommon],
+      install: false)
+    test('shell-auth', shell_auth_test)
   endif
 
   # Native shell plugins (include/shady/shell_plugin.h).

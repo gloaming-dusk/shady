@@ -173,6 +173,10 @@ uint64_t ui_tree_hash(const struct ui_node *node, uint64_t seed, bool *dynamic);
  * trees; false when it cannot tell (a transformed or plugin-drawn widget),
  * and the whole surface should be painted. */
 bool ui_tree_diff(const struct ui_node *before, const struct ui_node *after, double rect[4]);
+/* Give `shown` the handlers of `fresh`, a tree with the same hash: the look
+ * is the same but the closures may capture newer values. `fresh` gets the
+ * old ones, to be freed with it. False if the shapes differ after all. */
+bool ui_tree_take_handlers(struct ui_node *shown, struct ui_node *fresh);
 
 /* Natural size of the tree, then positions within (x, y, w, h). ui_layout
  * returns false when wrapped text got narrower than it was measured at and
