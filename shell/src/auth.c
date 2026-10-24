@@ -31,6 +31,12 @@ struct shell_auth {
 };
 
 static void helper_path(char *out, size_t size) {
+    /* Tests point this at a helper that misbehaves. */
+    const char *env = getenv("SHADY_AUTH_HELPER");
+    if (env && *env) {
+        snprintf(out, size, "%s", env);
+        return;
+    }
     char self[PATH_MAX - 16];
     ssize_t n = readlink("/proc/self/exe", self, sizeof(self) - 1);
     if (n > 0) {
@@ -127,6 +133,18 @@ struct shell_auth *shell_auth_start(struct shell_core *core, const char *service
         close(in[1]);
         return NULL;
     }
+    /* The password goes into the pipe before the helper exists. A pipe
+     * holds far more than a password, so this never blocks, and with the
+     * read end still ours it cannot meet a helper that already exited
+     * (exec failed, PAM refused without asking): that write would raise
+     * SIGPIPE and end the shell under its own lock screen. */
+    if (password) {
+        size_t length = strlen(password);
+        if (write(in[1], password, length) < 0 || write(in[1], "\n", 1) < 0) {
+            close(in[0]); close(in[1]); close(out[0]); close(out[1]);
+            return NULL;
+        }
+    }
     pid_t pid = fork();
     if (pid < 0) {
         close(in[0]); close(in[1]); close(out[0]); close(out[1]);
@@ -140,11 +158,6 @@ struct shell_auth *shell_auth_start(struct shell_core *core, const char *service
     }
     close(in[0]);
     close(out[1]);
-    if (password) {
-        size_t length = strlen(password);
-        /* A pipe holds far more than a password: this never blocks. */
-        if (write(in[1], password, length) < 0 || write(in[1], "\n", 1) < 0) { /* the helper fails */ }
-    }
     close(in[1]);
 
     struct shell_auth *auth = calloc(1, sizeof(*auth));

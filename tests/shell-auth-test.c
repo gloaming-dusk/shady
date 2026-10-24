@@ -1,3 +1,4 @@
+#define _POSIX_C_SOURCE 200809L
 #include <poll.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -25,7 +26,10 @@ static void finished(void *d, bool ok, const char *reason) {
     (void)d;
     char copy[256];
     snprintf(copy, sizeof(copy), "%s", reason); /* read it: ASan checks the memory */
-    printf("done ok=%d reason=%s\n", ok, copy);
+    if (ok) {
+        printf("authenticated by a helper that should fail: %s\n", copy);
+        exit(1);
+    }
     done = 1;
 }
 static const struct shell_auth_handler handler = { message, finished };
@@ -34,6 +38,18 @@ int main(void) {
     for (int round = 0; round < 3; round++) {
         done = 0;
         if (!shell_auth_start(&core, "other", round == 1 ? NULL : "wrong", &handler, NULL)) return 1;
+        while (!done && active) {
+            struct pollfd p = { active->fd, POLLIN, 0 };
+            if (poll(&p, 1, 5000) <= 0) { puts("timeout"); return 1; }
+            active->fn(p.fd, p.revents, active->data);
+        }
+    }
+    /* A helper that cannot even start: the attempt fails, and nothing
+     * (SIGPIPE from writing the password to it) ends the process. */
+    setenv("SHADY_AUTH_HELPER", "/nonexistent/shady-auth", 1);
+    for (int round = 0; round < 50; round++) {
+        done = 0;
+        if (!shell_auth_start(&core, "other", "wrong", &handler, NULL)) return 1;
         while (!done && active) {
             struct pollfd p = { active->fd, POLLIN, 0 };
             if (poll(&p, 1, 5000) <= 0) { puts("timeout"); return 1; }
