@@ -17,6 +17,15 @@ New:
   pw-play, paplay or aplay (`SHADY_BAD_APPLE_PLAYER` for another), and
   the frames follow the clock from the moment it starts; over the full
   3:39 a headless recording stayed on the source frames with no drift.
+- shady-shell: a popup anchored to both edges of an axis, without a size
+  along it, is stretched between them, for side panels the height of the
+  output (`anchor = { "top", "right", "bottom" }`, `width = 300`).
+- shady-shell: `shell.apps()` entries carry the `.desktop` file's
+  `categories`.
+- Plugin window shaders receive `u_uv_rect`, the part of the client's
+  texture that is the window, so they can leave out the shadows a client
+  draws around itself as the built-in shader does. The title bar pass is
+  drawn with the whole title bar texture.
 
 Fixes from testing on hardware:
 

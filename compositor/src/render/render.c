@@ -416,6 +416,10 @@ static bool plugin_shader_draw_window(struct shady_server *server,
 		rounded_frame ? pipeline.frame_px[1] : 0.f);
 	loc = glGetUniformLocation(slot->program, "u_frame_shape");
 	if (loc >= 0) glUniform2f(loc, pipeline.frame_radius, pipeline.frame_border);
+	/* The part of the texture that is the window, without the shadows a
+	 * client draws around itself (see window.frag). */
+	loc = glGetUniformLocation(slot->program, "u_uv_rect");
+	if (loc >= 0) glUniform4fv(loc, 1, pipeline.uv_rect);
 	bool frame_clips = rounded_frame && pipeline.frame_radius > 0.f &&
 		glGetUniformLocation(slot->program, "u_frame_px") >= 0;
 
@@ -2930,6 +2934,8 @@ void shady_render_output_frame(
 		}
 
 		if (frame_has_titlebar) {
+			/* The title bar texture is ours: all of it is the title bar. */
+			shady_gl_pipeline_set_uv_rect(&pipeline, NULL);
 			struct wlr_gles2_texture_attribs title_attribs;
 			wlr_gles2_texture_get_attribs(toplevel->titlebar_texture, &title_attribs);
 			if (title_attribs.target == GL_TEXTURE_2D) {

@@ -65,6 +65,18 @@ struct view_def {
     bool text_input; /* take text from input methods (text-input-v3) */
 };
 
+/* A popup anchored to both edges of an axis, without a size along it, is
+ * stretched between them by the compositor (a layer-shell size of 0). */
+static bool stretch_w(const struct view_def *def) {
+    uint32_t both = ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT | ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT;
+    return !def->width && (def->anchor & both) == both;
+}
+
+static bool stretch_h(const struct view_def *def) {
+    uint32_t both = ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP | ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM;
+    return !def->height && (def->anchor & both) == both;
+}
+
 /* A live surface showing one view_def. */
 struct view {
     struct wl_list link;
@@ -394,7 +406,9 @@ static void view_draw(void *data, struct shell_surface *surface, cairo_t *cr,
             /* Popups without a fixed size follow their content. */
             uint32_t want_w = view->def->width ? view->def->width : (uint32_t)ceil(tree->nat_w);
             uint32_t want_h = view->def->height ? view->def->height : (uint32_t)ceil(tree->nat_h);
-            if (want_w && want_h) shell_surface_set_size(surface, want_w, want_h);
+            if (want_w && want_h)
+                shell_surface_set_size(surface, stretch_w(view->def) ? 0 : want_w,
+                    stretch_h(view->def) ? 0 : want_h);
         }
         view->tree = tree;
         if (view->pointer_in) view->hovered = ui_hit(tree, view->px, view->py, false);
@@ -732,7 +746,10 @@ static bool measure_popup(struct shell_lua *lua, struct view_def *def,
     ui_free(lua->L, tree);
     cairo_destroy(cr);
     cairo_surface_destroy(scratch);
-    return *width > 0 && *height > 0;
+    if (!*width || !*height) return false;
+    if (stretch_w(def)) *width = 0;
+    if (stretch_h(def)) *height = 0;
+    return true;
 }
 
 /* ---- the `shell` API: declarations ------------------------------------ */
@@ -1088,6 +1105,8 @@ static int l_apps(lua_State *L) {
         lua_setfield(L, -2, "name");
         lua_pushstring(L, app->exec);
         lua_setfield(L, -2, "exec");
+        lua_pushstring(L, app->categories);
+        lua_setfield(L, -2, "categories");
         lua_rawseti(L, -2, (lua_Integer)i + 1);
     }
     return 1;

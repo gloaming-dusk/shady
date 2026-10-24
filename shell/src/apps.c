@@ -54,6 +54,7 @@ static void add_desktop_file(struct shell *shell, const char *path) {
     if (!f) return;
 
     char line[1024], name[APP_NAME_MAX] = {0}, exec[APP_EXEC_MAX] = {0};
+    char categories[APP_CATEGORIES_MAX] = {0};
     bool in_entry = false, hidden = false, nodisplay = false, application = true;
     while (fgets(line, sizeof(line), f)) {
         size_t len = strlen(line);
@@ -68,6 +69,7 @@ static void add_desktop_file(struct shell *shell, const char *path) {
         *eq++ = '\0';
         if (!strcmp(line, "Name")) copy_text(name, sizeof(name), eq);
         else if (!strcmp(line, "Exec")) copy_text(exec, sizeof(exec), eq);
+        else if (!strcmp(line, "Categories")) copy_text(categories, sizeof(categories), eq);
         else if (!strcmp(line, "Hidden")) hidden = desktop_truthy(eq);
         else if (!strcmp(line, "NoDisplay")) nodisplay = desktop_truthy(eq);
         else if (!strcmp(line, "Type")) application = strcmp(eq, "Application") == 0;
@@ -78,6 +80,7 @@ static void add_desktop_file(struct shell *shell, const char *path) {
     struct launcher_app *app = &shell->apps[shell->app_count];
     copy_text(app->name, sizeof(app->name), name);
     sanitize_exec(app->exec, sizeof(app->exec), exec);
+    copy_text(app->categories, sizeof(app->categories), categories);
     if (!app->exec[0]) return;
     shell->app_count++;
 }

@@ -169,6 +169,7 @@ If declared by the shader, Shady automatically supplies:
 | `u_light_dir` | vec3 | compositor light direction |
 | `u_frame_px` | vec2 | decorated frame (title bar + client) size in logical px; `0,0` when the rounded frame does not apply |
 | `u_frame_shape` | vec2 | rounded-frame corner radius and border width, both in px |
+| `u_uv_rect` | vec4 | the part of `u_tex` that is the window (x, y, width, height in 0..1), without the shadows a client draws around itself; sample `u_uv_rect.xy + uv * u_uv_rect.zw` |
 | `u_params` | vec4[4] | per-window values set by the shader's owner with `window_set_shader_params`; zero otherwise |
 
 Uniforms are optional. Shady checks whether each uniform exists before assigning it.

@@ -91,7 +91,10 @@ empty key name, like typed text. Mark the widget where text goes with
 `caret = true`, so the input method places its candidate window next to it.
 
 Without `width` or `height` the popup takes its content's natural size and
-follows it as the content changes. `on_key` receives the xkb key name
+follows it as the content changes, except along an axis it is anchored to
+at both ends (`anchor = { "top", "bottom", "right" }` without `height`):
+there the compositor stretches it between the two edges, like a side panel
+running the full height of the output. `on_key` receives the xkb key name
 (`"Escape"`, `"Return"`, `"Up"`, `"BackSpace"`, `"a"`) and the text it
 types (`""` for none).
 
@@ -277,7 +280,7 @@ Window arguments may also be the window tables themselves.
 | `shell.date(format)` | `strftime` of the local time; views using it repaint each minute, or each second if the format shows seconds |
 | `shell.poll(command, ms[, fallback])` | the trimmed output of `sh -c command`, rerun every `ms` (at least 100); `fallback` or `""` until the first run ends |
 | `shell.listen(command[, fallback])` | the latest line printed by a long-running command, restarted if it exits |
-| `shell.apps(query, limit)` | `.desktop` applications matching the query: `{name, exec}` |
+| `shell.apps(query, limit)` | `.desktop` applications matching the query: `{name, exec, categories}`, `categories` being the entry's `Categories=` as written (`"Network;WebBrowser;"`, or `""`) |
 | `shell.launch(app)` / `shell.spawn(command)` | run an app or a command |
 | `shell.theme` | the palette: `accent`, `accent_2`, `accent_deep`, `surface`, `text`, `text_dim`, `danger` (from the `SHADY_SHELL_*` variables) |
 | `shell.mix(a, b, t)` | blend two colours |

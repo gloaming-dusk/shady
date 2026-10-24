@@ -21,6 +21,7 @@
 #define MAX_APPS 512
 #define APP_NAME_MAX 128
 #define APP_EXEC_MAX 512
+#define APP_CATEGORIES_MAX 256
 
 struct shady_shell_v1;
 struct shell_lua;
@@ -38,6 +39,7 @@ struct shell_window {
 struct launcher_app {
     char name[APP_NAME_MAX];
     char exec[APP_EXEC_MAX];
+    char categories[APP_CATEGORIES_MAX]; /* Categories=, as written */
 };
 
 struct shell {
