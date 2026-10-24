@@ -215,7 +215,8 @@ static bool desktop_protocols_init(struct shady_server *server) {
 		wlr_server_decoration_manager_create(server->wl_display);
 	if (state->server_decoration_manager) {
 		wlr_server_decoration_manager_set_default_mode(state->server_decoration_manager,
-			server->config.window_titlebar ? WLR_SERVER_DECORATION_MANAGER_MODE_SERVER
+			server->config.window_titlebar || server->config.prefer_no_csd
+				? WLR_SERVER_DECORATION_MANAGER_MODE_SERVER
 				: WLR_SERVER_DECORATION_MANAGER_MODE_CLIENT);
 		state->new_server_decoration.notify = new_server_decoration;
 		wl_signal_add(&state->server_decoration_manager->events.new_decoration,

@@ -31,6 +31,7 @@ A rice pairs the compositor with a shell and a look. Pick one with
 |---|---|
 | [![Horizon](rices/horizon/preview.jpg)](rices/horizon/README.md) **[Horizon](rices/horizon/README.md)**, the default: the shell lives in the sky, with a 3D-turned glass control center and a constellation launcher. | [![Objects](rices/objects/preview.jpg)](rices/objects/README.md) **[Objects](rices/objects/README.md)**: chunky ink-outlined cards on a paper sunset, a desk clock, a dock and a launcher that fans the apps out like a hand of cards. |
 | [![Afterglow](rices/afterglow/preview.jpg)](rices/afterglow/README.md) **[Afterglow](rices/afterglow/README.md)**: the desktop above an open sea at sunset, cycling through four hours with `Super+T`, its frosted shell following the sky. | [![Neon Transit](rices/neon-transit/preview.jpg)](rices/neon-transit/README.md) **[Neon Transit](rices/neon-transit/README.md)**: a near-black world with a violet horizon and an electric-cyan grid, with the 3D overview and opt-in water, depth, magnetic and portal modes. |
+| [![Tide](rices/tide/preview.jpg)](rices/tide/README.md) **[Tide](rices/tide/README.md)**: for every day. niri's scrolling columns and keys under a glass bar with a minimap of the strip, a control center, launcher, lock screen and greeter of its own. | |
 
 ## Highlights
 
@@ -38,6 +39,7 @@ A rice pairs the compositor with a shell and a look. Pick one with
 - Windows with physics: gravity, wobble, collision with authored OBJ environments, first-person navigation, picking up and throwing
 - Window bodies defined by plugins: cubes, jelly, folded paper and origami share one shape for drawing, picking and collision
 - `shady-shell`, a separate shell whose bars, panels, launcher and notifications are a hot-reloaded Lua config, with GLSL effects, frosted glass and 3D-placed layer surfaces
+- A scrolling tiling layout (`layout = "scrolling"`): niri's strip of columns, with touchpad swipes, animated scrolling and workspace slides, and a 3D overview of the strip
 - Rewind: the desktop records each layout it settles into; `Super+BackSpace` scrubs back through them, the world fading like an old photograph, and `Return` restores that moment
 - A shortcut overlay (`Super+Shift+/`) listing every key of the session: the compositor's, the rice's and each plugin's
 - Lua 5.4 for configuration (`config.lua`), runtime scripting (`init.lua`) and headless UI automation

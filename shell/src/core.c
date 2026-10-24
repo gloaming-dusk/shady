@@ -195,10 +195,76 @@ static const struct zwlr_layer_surface_v1_listener layer_listener = {
     .closed = layer_closed,
 };
 
+static void lock_surface_configure(void *data, struct ext_session_lock_surface_v1 *lock_surface,
+        uint32_t serial, uint32_t width, uint32_t height) {
+    struct shell_surface *surface = data;
+    ext_session_lock_surface_v1_ack_configure(lock_surface, serial);
+    if (!surface->configured || width != surface->width || height != surface->height)
+        fprintf(stderr, "shady-shell: %s (lock) size %ux%u\n", surface->name, width, height);
+    surface->width = width;
+    surface->height = height;
+    surface->configured = true;
+    shell_surface_redraw(surface);
+}
+
+static const struct ext_session_lock_surface_v1_listener lock_surface_listener = {
+    .configure = lock_surface_configure,
+};
+
+static struct {
+    void (*finished)(void *data);
+    void *data;
+} lock_callbacks;
+
+static void lock_locked(void *data, struct ext_session_lock_v1 *lock) {
+    (void)lock;
+    struct shell_core *core = data;
+    core->lock_confirmed = true;
+    fprintf(stderr, "shady-shell: session locked\n");
+}
+
+static void lock_finished(void *data, struct ext_session_lock_v1 *lock) {
+    struct shell_core *core = data;
+    fprintf(stderr, "shady-shell: the compositor ended the session lock\n");
+    if (core->lock == lock) {
+        ext_session_lock_v1_destroy(lock);
+        core->lock = NULL;
+        core->lock_confirmed = false;
+    }
+    if (lock_callbacks.finished) lock_callbacks.finished(lock_callbacks.data);
+}
+
+static const struct ext_session_lock_v1_listener lock_listener = {
+    .locked = lock_locked,
+    .finished = lock_finished,
+};
+
+bool shell_core_lock(struct shell_core *core, void (*finished)(void *data), void *data) {
+    if (!core->lock_manager || core->lock) return false;
+    core->lock = ext_session_lock_manager_v1_lock(core->lock_manager);
+    if (!core->lock) return false;
+    core->lock_confirmed = false;
+    lock_callbacks.finished = finished;
+    lock_callbacks.data = data;
+    ext_session_lock_v1_add_listener(core->lock, &lock_listener, core);
+    return true;
+}
+
+void shell_core_unlock(struct shell_core *core) {
+    if (!core->lock) return;
+    if (core->lock_confirmed) ext_session_lock_v1_unlock_and_destroy(core->lock);
+    else ext_session_lock_v1_destroy(core->lock);
+    core->lock = NULL;
+    core->lock_confirmed = false;
+    wl_display_flush(core->display);
+    fprintf(stderr, "shady-shell: session unlocked\n");
+}
+
 struct shell_surface *shell_surface_create(struct shell_core *core,
         const struct shell_surface_config *config,
         const struct shell_surface_handler *handler, void *data) {
-    if (!core->compositor || !core->layer_shell) return NULL;
+    if (!core->compositor || (!config->lock && !core->layer_shell)) return NULL;
+    if (config->lock && (!core->lock || !config->output)) return NULL;
     struct shell_surface *surface = calloc(1, sizeof(*surface));
     if (!surface) return NULL;
     surface->core = core;
@@ -214,6 +280,24 @@ struct shell_surface *shell_surface_create(struct shell_core *core,
         return NULL;
     }
     wl_surface_add_listener(surface->wl_surface, &surface_listener, surface);
+    if (config->lock) {
+        surface->lock_surface = ext_session_lock_v1_get_lock_surface(core->lock,
+            surface->wl_surface, config->output->wl_output);
+        if (!surface->lock_surface) {
+            wl_surface_destroy(surface->wl_surface);
+            free(surface);
+            return NULL;
+        }
+        ext_session_lock_surface_v1_add_listener(surface->lock_surface,
+            &lock_surface_listener, surface);
+        surface->wants_text_input = config->text_input;
+        wl_list_insert(core->surfaces.prev, &surface->link);
+        surface_update_scale(surface);
+        /* No commit: a lock surface may not commit before its first
+         * configure, which the compositor sends unasked. */
+        surface->dirty = false;
+        return surface;
+    }
     surface->layer_surface = zwlr_layer_shell_v1_get_layer_surface(core->layer_shell,
         surface->wl_surface, config->output ? config->output->wl_output : NULL,
         config->layer, config->name_space);
@@ -252,7 +336,8 @@ void shell_surface_destroy(struct shell_surface *surface) {
     if (core->keyboard_focus == surface) core->keyboard_focus = NULL;
     if (core->renderer) core->renderer->impl->surface_finish(core->renderer, surface);
     if (surface->frame) wl_callback_destroy(surface->frame);
-    zwlr_layer_surface_v1_destroy(surface->layer_surface);
+    if (surface->lock_surface) ext_session_lock_surface_v1_destroy(surface->lock_surface);
+    if (surface->layer_surface) zwlr_layer_surface_v1_destroy(surface->layer_surface);
     shell_effects_finish(&surface->effects);
     wl_surface_destroy(surface->wl_surface);
     wl_list_remove(&surface->link);
@@ -264,7 +349,8 @@ void shell_surface_redraw(struct shell_surface *surface) {
 }
 
 void shell_surface_set_size(struct shell_surface *surface, uint32_t width, uint32_t height) {
-    if (!surface || (surface->requested_width == width && surface->requested_height == height))
+    if (!surface || !surface->layer_surface ||
+            (surface->requested_width == width && surface->requested_height == height))
         return;
     surface->requested_width = width;
     surface->requested_height = height;
@@ -274,7 +360,7 @@ void shell_surface_set_size(struct shell_surface *surface, uint32_t width, uint3
 
 void shell_surface_set_keyboard(struct shell_surface *surface,
         enum zwlr_layer_surface_v1_keyboard_interactivity keyboard) {
-    if (!surface) return;
+    if (!surface || !surface->layer_surface) return;
     zwlr_layer_surface_v1_set_keyboard_interactivity(surface->layer_surface, keyboard);
     wl_surface_commit(surface->wl_surface);
 }
@@ -613,6 +699,9 @@ static void registry_global(void *data, struct wl_registry *registry, uint32_t n
     } else if (!strcmp(interface, zwp_text_input_manager_v3_interface.name)) {
         core->text_input_manager = wl_registry_bind(registry, name,
             &zwp_text_input_manager_v3_interface, 1);
+    } else if (!strcmp(interface, ext_session_lock_manager_v1_interface.name)) {
+        core->lock_manager = wl_registry_bind(registry, name,
+            &ext_session_lock_manager_v1_interface, 1);
     } else if (!strcmp(interface, zwlr_layer_shell_v1_interface.name)) {
         core->layer_shell = wl_registry_bind(registry, name, &zwlr_layer_shell_v1_interface,
             min_u32(version, 4));
@@ -930,6 +1019,8 @@ void shell_core_finish(struct shell_core *core) {
     if (core->keyboard) wl_keyboard_release(core->keyboard);
     if (core->pointer) wl_pointer_release(core->pointer);
     if (core->seat) wl_seat_release(core->seat);
+    if (core->lock) ext_session_lock_v1_destroy(core->lock);
+    if (core->lock_manager) ext_session_lock_manager_v1_destroy(core->lock_manager);
     if (core->layer_shell) zwlr_layer_shell_v1_destroy(core->layer_shell);
     if (core->shm) wl_shm_destroy(core->shm);
     if (core->compositor) wl_compositor_destroy(core->compositor);

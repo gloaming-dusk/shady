@@ -48,6 +48,7 @@ struct wlr_layer_surface_v1;
 struct wlr_scene_layer_surface_v1;
 struct wlr_keyboard;
 struct wlr_input_device;
+struct wlr_pointer_gestures_v1;
 
 enum shady_cursor_mode {
 	SHADY_CURSOR_PASSTHROUGH,
@@ -106,6 +107,25 @@ struct shady_config {
 	int cursor_size;
 	bool touchpad_tap;
 	bool touchpad_natural_scroll;
+	/* Fingers of the touchpad swipe that scrolls the layout; 0 turns it off. */
+	int gesture_fingers;
+	/* `layout = "scrolling"` tiles windows in scrolling columns (see
+	 * modules/layout); "floating", the default, leaves them where they open. */
+	bool layout_scrolling;
+	float layout_gap;
+	float layout_default_width;
+	bool layout_center_single;
+	/* Spring rate of layout motion, per second; 0 moves at once. */
+	float layout_animation;
+	/* Ask clients to leave out their title bars even when Shady draws none. */
+	bool prefer_no_csd;
+	/* Keyboard layout (xkb), e.g. "us,kr" and "grp:alt_shift_toggle". */
+	char xkb_layout[64];
+	char xkb_variant[64];
+	char xkb_options[128];
+	bool numlock;
+	int repeat_rate;
+	int repeat_delay;
 	/* Static 3D environment, loaded by the plugin registered for the
 	 * path's extension (see docs/ENVIRONMENT_API.md). */
 	bool environment;
@@ -161,6 +181,12 @@ struct shady_server {
 	struct wl_listener cursor_button;
 	struct wl_listener cursor_axis;
 	struct wl_listener cursor_frame;
+	struct wlr_pointer_gestures_v1 *pointer_gestures;
+	struct wl_listener swipe_begin, swipe_update, swipe_end;
+	struct wl_listener pinch_begin, pinch_update, pinch_end;
+	struct wl_listener hold_begin, hold_end;
+	/* The swipe in progress belongs to the layout, not a client. */
+	bool swipe_ours;
 
 	struct wlr_seat *seat;
 	struct wl_listener new_input;
@@ -189,6 +215,8 @@ struct shady_server {
 	void *motion_owner;
 	/* Spatial builds only; created and destroyed with the spatial module. */
 	struct shady_environment *environment;
+	/* Idle timeouts and inhibitors (idle.c). */
+	struct shady_idle *idle;
 	/* Compositor IPC socket (src/ipc); NULL when unavailable. */
 	struct shady_ipc *ipc;
 
@@ -396,6 +424,10 @@ void shady_input_automation_pointer_button(struct shady_server *server,
 	uint32_t button, bool pressed);
 void shady_input_automation_pointer_axis(struct shady_server *server,
 	enum wl_pointer_axis orientation, double delta, int32_t discrete);
+
+/* gestures.c */
+bool shady_gestures_init(struct shady_server *server);
+void shady_gestures_finish(struct shady_server *server);
 
 /* output.c */
 void server_new_output(struct wl_listener *listener, void *data);

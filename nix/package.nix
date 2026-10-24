@@ -19,6 +19,7 @@
   pango,
   fontconfig,
   systemd,
+  linux-pam,
   adwaita-icon-theme,
 }:
 
@@ -52,7 +53,7 @@ stdenv.mkDerivation {
   nativeBuildInputs = [ meson ninja pkg-config wayland-scanner ];
   buildInputs = [
     wlroots wayland wayland-protocols wlr-protocols libxkbcommon libinput
-    pixman libdrm libGL lua5_4 cairo pango fontconfig systemd
+    pixman libdrm libGL lua5_4 cairo pango fontconfig systemd linux-pam
   ];
 
   mesonBuildType = "release";

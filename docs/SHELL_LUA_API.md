@@ -286,6 +286,7 @@ Window arguments may also be the window tables themselves.
 | `shell.mix(a, b, t)` | blend two colours |
 | `shell.alpha(colour, a)` | multiply a colour's alpha |
 | `shell.log(...)` | write to the shell's log |
+| `shell.after(ms, fn)` | run `fn` once after `ms` milliseconds; returns an id for `shell.cancel(id)` |
 | `shell.key(keys)` | press a compositor shortcut such as `"Super+t"` (the IPC `key` command); false when not connected |
 | `shell.shortcuts()` | the compositor's shortcut list as of its last `shortcuts` event: `{keys, group, description}` each (see Shortcut overlay) |
 | `shell.toggle_shortcuts()` | ask the compositor to toggle the shortcut overlay; false when not connected |
@@ -336,6 +337,36 @@ shell.on("notifications", function()
 end)
 ```
 
+## Lock screen
+
+A popup with `lock = true` is a lock screen: while the session is locked
+(ext-session-lock-v1) one copy covers every output, above everything, with
+the keyboard. Its anchors, layer and size are ignored.
+
+| Function | |
+|---|---|
+| `shell.lock()` | lock the session and show the `lock` popups; false when the compositor has no session lock |
+| `shell.unlock()` | unlock and close them |
+| `shell.locked()` | whether this shell holds the lock |
+| `shell.authenticate(password, fn[, options])` | check the password of the user running the shell with PAM, in the `shady-auth` helper; calls `fn(ok, reason)` once. `password` nil answers no password, for a fingerprint-only service. Options: `service` (default: the first of `shady-lock`, `swaylock`, `login` in `/etc/pam.d`), `on_message = function(kind, text)` for what PAM says on the way ("Place your finger…"). Returns an id for `shell.cancel_authentication(id)` |
+
+If the compositor ends the lock itself, the `unlocked` event follows.
+When a locking shell dies the session stays locked, and the compositor
+publishes `session.lock` = `"abandoned"`; a shell started then can lock
+again and take over (Tide's does).
+
+```lua
+shell.popup {
+    name = "lock", lock = true, keyboard = "exclusive",
+    view = function(ctx) return shell.text(shell.date("%H:%M")) end,
+    on_key = function(key, text)
+        if key == "Return" then
+            shell.authenticate(typed, function(ok) if ok then shell.unlock() end end)
+        end
+    end,
+}
+```
+
 ## Events
 
 `shell.on(name, fn)` registers a handler:
@@ -347,6 +378,7 @@ end)
 | `"notifications"` | a notification arrived, expired, closed or was replaced (see Notifications) |
 | `"shortcuts"` | the compositor asked for the shortcut overlay (Super+Shift+/) and sent its list |
 | `"value"` | a published compositor value changed; the handler gets `(key, value)`, `value` nil when removed. Values already set are replayed when the shell connects |
+| `"unlocked"` | the compositor ended the session lock this shell held |
 
 ## Shortcut overlay
 

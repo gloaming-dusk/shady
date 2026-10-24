@@ -9,9 +9,19 @@
 export SHADY_ROOT
 export XDG_SESSION_TYPE=wayland
 export XDG_CURRENT_DESKTOP=shady-greeter
-export SHADY_LUA_INIT="$SHADY_ROOT/greeter/init.lua"
-export SHADY_SHELL_CONFIG="$SHADY_ROOT/greeter/shell.lua"
-. "$SHADY_ROOT/rices/afterglow/theme.sh"
+# SHADY_GREETER_THEME picks the look: afterglow (the default) or tide.
+case "${SHADY_GREETER_THEME:-afterglow}" in
+    tide)
+        greeter="$SHADY_ROOT/greeter/tide"
+        . "$SHADY_ROOT/rices/tide/theme.sh"
+        ;;
+    *)
+        greeter="$SHADY_ROOT/greeter"
+        . "$SHADY_ROOT/rices/afterglow/theme.sh"
+        ;;
+esac
+export SHADY_LUA_INIT="$greeter/init.lua"
+export SHADY_SHELL_CONFIG="$greeter/shell.lua"
 
 # The greeter account usually has no writable home; keep caches in the
 # runtime directory instead.
@@ -21,6 +31,6 @@ fi
 
 if [ "${SHADY_SESSION_LOG:-journal}" = journal ] && command -v systemd-cat >/dev/null 2>&1; then
     exec systemd-cat --identifier=shady-greeter -- \
-        "@bindir@/shady" -c "$SHADY_ROOT/greeter/config.lua" -s "@bindir@/shady-shell" "$@"
+        "@bindir@/shady" -c "$greeter/config.lua" -s "@bindir@/shady-shell" "$@"
 fi
-exec "@bindir@/shady" -c "$SHADY_ROOT/greeter/config.lua" -s "@bindir@/shady-shell" "$@"
+exec "@bindir@/shady" -c "$greeter/config.lua" -s "@bindir@/shady-shell" "$@"

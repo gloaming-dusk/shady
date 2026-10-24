@@ -7,6 +7,41 @@ between releases. Breaking changes are called out here.
 
 New:
 
+- The scrolling layout: `shady.set("layout", "scrolling")` tiles each
+  workspace as a strip of columns that scrolls sideways, as niri does. New
+  windows open beside the focused one, the strip glides to keep the focus
+  on screen (centring a column that does not fit next to the previous
+  one), columns stack windows, and widths step through presets. Dialogs
+  and fixed-size windows float; `shady.rule{floating=, width=}` decides
+  otherwise. Commands are `shady.layout.*` (focus, move, consume or expel,
+  widths and heights, full width, centre, floating, workspace steps); a
+  three-finger swipe scrolls the strip or changes workspace, Super+wheel
+  does too, and workspaces slide vertically. In the GL renderer
+  `shady.layout.overview()` pulls the camera back over the whole strip.
+  The bars step aside for a focused fullscreen window. The strip's shape
+  is published as `layout.strip` for bars.
+- Tide, an everyday rice: the scrolling layout with niri's keys, a glass
+  bar with a minimap of the strip, control center, launcher with a
+  calculator, power menu, OSD, notifications, and its own lock screen and
+  greeter theme (`programs.shady.greeter.theme = "tide"`).
+- shady-shell: lock screens (`shell.popup{lock = true}`, `shell.lock()`,
+  `shell.unlock()`) over ext-session-lock-v1, and
+  `shell.authenticate(password, fn)`, which checks a password with PAM in
+  the new `shady-auth` helper and can listen to a fingerprint reader at the
+  same time. `shell.after(ms, fn)` runs a function later.
+- Idle: `shady.idle(seconds, on_idle, on_resume)`, `shady.idle_inhibit()`,
+  `shady.output_power(on)` (DPMS, woken by any input), and
+  idle-inhibit-unstable-v1, so a playing video keeps the screen awake.
+- pointer-gestures-unstable-v1: pinches and swipes reach clients.
+- Keyboard configuration: `xkb_layout`, `xkb_variant`, `xkb_options`,
+  `numlock`, `repeat_rate`, `repeat_delay`. `prefer_no_csd` asks clients to
+  drop their title bars.
+- shady-session starts `shady-session.target` (bound to
+  graphical-session.target, and wanting XDG autostart), so user services
+  such as a polkit agent and autostarted programs such as fcitx5 start
+  with the session, and restarts the shell if it crashes.
+- A lock whose client died no longer keeps the session locked for good: a
+  new locker takes over (`session.lock` is published as `abandoned`).
 - `bad-apple` plugin (`Super+A`, loaded by Afterglow and Horizon): the
   screen turns into a board of flip-dot tiles with the desktop on their
   fronts and black on their backs, and plays a video on them, Bad Apple!!

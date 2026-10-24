@@ -148,3 +148,7 @@ int shady_render_layer_pick(struct shady_server *server, double lx, double ly,
 bool shady_render_layer_is_transformed(struct shady_server *server, struct wlr_surface *surface) {
 	(void)server; (void)surface; return false;
 }
+
+void shady_render_plugin_owner_changed(void *owner) {
+	(void)owner;
+}

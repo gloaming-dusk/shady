@@ -41,6 +41,7 @@
 #include "render/render.h"
 #include "module/module.h"
 #include "config_lua.h"
+#include "idle.h"
 #include "ipc/ipc.h"
 #include "ipc/shortcuts.h"
 #include "ipc/values.h"
@@ -152,6 +153,8 @@ static void cleanup_server_after_setup(struct shady_server *server,
 	wl_list_remove(&server->cursor_button.link);
 	wl_list_remove(&server->cursor_axis.link);
 	wl_list_remove(&server->cursor_frame.link);
+	shady_gestures_finish(server);
+	shady_idle_finish(server);
 	wl_list_remove(&server->new_input.link);
 	wl_list_remove(&server->request_cursor.link);
 	wl_list_remove(&server->pointer_focus_change.link);
@@ -404,6 +407,10 @@ int main(int argc, char *argv[]) {
 	wl_signal_add(&server.cursor->events.axis, &server.cursor_axis);
 	server.cursor_frame.notify = server_cursor_frame;
 	wl_signal_add(&server.cursor->events.frame, &server.cursor_frame);
+	if (!shady_idle_init(&server))
+		wlr_log(WLR_ERROR, "failed to create idle inhibit manager");
+	if (!shady_gestures_init(&server))
+		wlr_log(WLR_ERROR, "failed to create pointer gestures");
 
 	server.new_input.notify = server_new_input;
 	wl_signal_add(&server.backend->events.new_input, &server.new_input);
@@ -490,6 +497,8 @@ int main(int argc, char *argv[]) {
 	wl_list_remove(&server.cursor_button.link);
 	wl_list_remove(&server.cursor_axis.link);
 	wl_list_remove(&server.cursor_frame.link);
+	shady_gestures_finish(&server);
+	shady_idle_finish(&server);
 
 	wl_list_remove(&server.new_input.link);
 	wl_list_remove(&server.request_cursor.link);

@@ -37,17 +37,27 @@ if [ -n "$rice_dir" ] && [ -f "$rice_dir/theme.sh" ]; then
     . "$rice_dir/theme.sh"
 fi
 
-# Portals and other D-Bus activated services need to find this session.
+# The shell, started again if it crashes (a few times, not forever).
+# Portals and other D-Bus activated services need to find this session, and
+# user services of a graphical session (a polkit agent) start with
+# shady-session.target.
 if [ -z "${SHADY_STARTUP:-}" ]; then
-    SHADY_STARTUP="@bindir@/shady-shell"
+    SHADY_STARTUP="for try in 1 2 3 4 5; do '@bindir@/shady-shell' && break; sleep 1; done"
     if command -v dbus-update-activation-environment >/dev/null 2>&1; then
-        SHADY_STARTUP="dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_TYPE; $SHADY_STARTUP"
+        SHADY_STARTUP="dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_TYPE XDG_SESSION_DESKTOP SHADY_SOCKET; systemctl --user start shady-session.target 2>/dev/null; $SHADY_STARTUP"
     fi
 fi
 
-# Login managers usually drop session output; keep it in the journal
-# (journalctl -t shady) unless SHADY_SESSION_LOG=stderr.
-if [ "${SHADY_SESSION_LOG:-journal}" = journal ] && command -v systemd-cat >/dev/null 2>&1; then
-    exec systemd-cat --identifier=shady -- "@bindir@/shady" -s "$SHADY_STARTUP" "$@"
-fi
-exec "@bindir@/shady" -s "$SHADY_STARTUP" "$@"
+run() {
+    # Login managers usually drop session output; keep it in the journal
+    # (journalctl -t shady) unless SHADY_SESSION_LOG=stderr.
+    if [ "${SHADY_SESSION_LOG:-journal}" = journal ] && command -v systemd-cat >/dev/null 2>&1; then
+        systemd-cat --identifier=shady -- "@bindir@/shady" -s "$SHADY_STARTUP" "$@"
+    else
+        "@bindir@/shady" -s "$SHADY_STARTUP" "$@"
+    fi
+}
+run "$@"
+status=$?
+systemctl --user stop shady-session.target 2>/dev/null
+exit $status

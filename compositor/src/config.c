@@ -48,6 +48,12 @@ void shady_config_defaults(struct shady_config *c) {
 		.window_titlebar_focus_color = { 0.055f, 0.16f, 0.22f },
 		.window_titlebar_text_color = { 0.90f, 0.96f, 1.0f },
 		.touchpad_tap = true,
+		.gesture_fingers = 3,
+		.layout_gap = 12.0f,
+		.layout_default_width = 0.5f,
+		.layout_animation = 14.0f,
+		.repeat_rate = 25,
+		.repeat_delay = 600,
 		.environment = false,
 		.environment_path = "",
 		.bind_quit = { XKB_KEY_Escape, 0 },
@@ -179,6 +185,21 @@ bool shady_config_set(struct shady_config *c,const char *key,const char *value){
 	if(!strcmp(key,"window_titlebar_color"))return parse_color(value,c->window_titlebar_color);
 	if(!strcmp(key,"window_titlebar_focus_color"))return parse_color(value,c->window_titlebar_focus_color);
 	if(!strcmp(key,"window_titlebar_text_color"))return parse_color(value,c->window_titlebar_text_color);
+	if(!strcmp(key,"layout")){
+		if(!strcmp(value,"scrolling"))c->layout_scrolling=true;
+		else if(!strcmp(value,"floating"))c->layout_scrolling=false;
+		else return false;
+		return true;
+	}
+	if(!strcmp(key,"layout_gap"))return parse_float_range(value,0.f,128.f,&c->layout_gap);
+	if(!strcmp(key,"layout_default_width"))return parse_float_range(value,0.1f,1.f,&c->layout_default_width);
+	if(!strcmp(key,"layout_animation"))return parse_float_range(value,0.f,100.f,&c->layout_animation);
+	if(!strcmp(key,"gesture_fingers")){float v;if(!parse_float_range(value,0.f,5.f,&v))return false;c->gesture_fingers=(int)v;return true;}
+	if(!strcmp(key,"repeat_rate")){float v;if(!parse_float_range(value,0.f,200.f,&v))return false;c->repeat_rate=(int)v;return true;}
+	if(!strcmp(key,"repeat_delay")){float v;if(!parse_float_range(value,50.f,5000.f,&v))return false;c->repeat_delay=(int)v;return true;}
+	if(!strcmp(key,"xkb_layout")){snprintf(c->xkb_layout,sizeof(c->xkb_layout),"%s",value);return true;}
+	if(!strcmp(key,"xkb_variant")){snprintf(c->xkb_variant,sizeof(c->xkb_variant),"%s",value);return true;}
+	if(!strcmp(key,"xkb_options")){snprintf(c->xkb_options,sizeof(c->xkb_options),"%s",value);return true;}
 	/* environment_obj* are the pre-loader-plugin spellings, kept as aliases. */
 	if(!strcmp(key,"environment_path")||!strcmp(key,"environment_obj_path")){snprintf(c->environment_path,sizeof(c->environment_path),"%s",value);return true;}
 #define BIND_SET(name,field) if(!strcmp(key,"bind." name))return parse_keybind(value,&c->field);
@@ -201,6 +222,8 @@ bool shady_config_set(struct shady_config *c,const char *key,const char *value){
 	BOOL_SET("fps_mode",fps_mode) BOOL_SET("sky",sky) BOOL_SET("environment",environment) BOOL_SET("environment_obj",environment)
 	BOOL_SET("window_titlebar",window_titlebar)
 	BOOL_SET("touchpad_tap",touchpad_tap) BOOL_SET("touchpad_natural_scroll",touchpad_natural_scroll)
+	BOOL_SET("layout_center_single",layout_center_single) BOOL_SET("prefer_no_csd",prefer_no_csd)
+	BOOL_SET("numlock",numlock)
 #undef BOOL_SET
 	return false;
 }

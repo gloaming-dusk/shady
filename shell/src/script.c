@@ -23,6 +23,7 @@
 
 #include "shady-shell-v1-client-protocol.h"
 #include "anim.h"
+#include "auth.h"
 #include "compositor.h"
 #include "notify.h"
 #include "plugins.h"
@@ -63,6 +64,7 @@ struct view_def {
     bool fill; /* a popup that covers its whole output */
     bool input_widgets; /* take the pointer only over interactive widgets */
     bool text_input; /* take text from input methods (text-input-v3) */
+    bool lock; /* a lock surface on every output while the session is locked */
 };
 
 /* A popup anchored to both edges of an axis, without a size along it, is
@@ -132,7 +134,28 @@ struct shell_lua {
     struct wl_list polls; /* poll.link */
     int handlers; /* registry ref: event name -> list of functions */
     struct shell_timer *date_timer;
+    struct wl_list afters; /* after.link */
+    struct wl_list auths; /* lua_auth.link */
+    int next_after;
     int in_view; /* >0 while a view function runs */
+};
+
+/* shell.authenticate: one attempt and its callbacks. */
+struct lua_auth {
+    struct wl_list link;
+    struct shell_lua *lua;
+    struct shell_auth *auth;
+    int done, message; /* registry refs */
+    int id;
+};
+
+/* shell.after(ms, fn): run fn once, later. */
+struct after {
+    struct wl_list link;
+    struct shell_lua *lua;
+    struct shell_timer *timer;
+    int ref;
+    int id;
 };
 
 /* Config file location and reload watching outlive generations. */
@@ -657,6 +680,7 @@ static struct view *view_create(struct shell_lua *lua, struct view_def *def,
         .keyboard = def->keyboard,
         .output = output,
         .text_input = def->text_input,
+        .lock = def->lock,
     };
     view->surface = shell_surface_create(&lua->shell->core, &config, &view_handler, view);
     if (!view->surface) {
@@ -704,7 +728,7 @@ static bool showing_on(struct shell_lua *lua, const struct view_def *def,
 static void ensure_persistent(struct shell_lua *lua, struct shell_output *output) {
     for (size_t i = 0; i < lua->def_count; i++) {
         struct view_def *def = &lua->defs[i];
-        if (!def->popup || !def->persistent) continue;
+        if (!def->popup || !def->persistent || def->lock) continue;
         if (def->every_output ? showing_on(lua, def, output) : find_popup(lua, def->name) != NULL)
             continue;
         uint32_t width = 0, height = 0;
@@ -715,7 +739,20 @@ static void ensure_persistent(struct shell_lua *lua, struct shell_output *output
     }
 }
 
+/* While the session is locked, every output shows the lock popups. */
+static void ensure_lock(struct shell_lua *lua, struct shell_output *output) {
+    if (!lua->shell->core.lock) return;
+    for (size_t i = 0; i < lua->def_count; i++) {
+        struct view_def *def = &lua->defs[i];
+        if (!def->popup || !def->lock || showing_on(lua, def, output)) continue;
+        if (view_create(lua, def, output, LUA_NOREF, def->margin, 0, 0))
+            fprintf(stderr, "shady-shell: %s on %s\n", def->name,
+                output->name[0] ? output->name : "output");
+    }
+}
+
 static void create_bars(struct shell_lua *lua, struct shell_output *output) {
+    ensure_lock(lua, output);
     for (size_t i = 0; i < lua->def_count; i++) {
         struct view_def *def = &lua->defs[i];
         if (def->popup || !def_wants_output(def, output)) continue;
@@ -916,6 +953,10 @@ static int l_popup(lua_State *L) {
     lua_getfield(L, 1, "text_input");
     def->text_input = lua_toboolean(L, -1);
     lua_pop(L, 1);
+    lua_getfield(L, 1, "lock");
+    def->lock = lua_toboolean(L, -1);
+    lua_pop(L, 1);
+    if (def->lock) def->persistent = def->every_output = false;
     lua_getfield(L, 1, "input");
     const char *input = luaL_optstring(L, -1, "all");
     if (!strcmp(input, "widgets")) def->input_widgets = true;
@@ -1660,8 +1701,207 @@ static const char *prelude =
     "  return { gradient = direction, ... }\n"
     "end\n";
 
+/* ---- session lock ------------------------------------------------------ */
+
+static void destroy_lock_views(struct shell_lua *lua) {
+    struct view *view, *tmp;
+    wl_list_for_each_safe(view, tmp, &lua->views, link)
+        if (view->def->lock) view_destroy(view);
+}
+
+static void lock_finished(void *data) {
+    struct shell *shell = data;
+    if (!shell->lua) return;
+    destroy_lock_views(shell->lua);
+    shell_lua_emit(shell, "unlocked");
+}
+
+/* shell.lock(): lock the session and show the `lock` popups on every
+ * output. False when the compositor has no session lock or it is held. */
+static int l_lock(lua_State *L) {
+    no_view(L, "shell.lock");
+    struct shell_lua *lua = lua_of(L);
+    struct shell_core *core = &lua->shell->core;
+    if (core->lock) {
+        lua_pushboolean(L, 1);
+        return 1;
+    }
+    if (!shell_core_lock(core, lock_finished, lua->shell)) {
+        lua_pushboolean(L, 0);
+        return 1;
+    }
+    struct shell_output *output;
+    wl_list_for_each(output, &core->outputs, link)
+        if (output->ready) ensure_lock(lua, output);
+    wl_display_flush(core->display);
+    lua_pushboolean(L, 1);
+    return 1;
+}
+
+static int l_unlock(lua_State *L) {
+    no_view(L, "shell.unlock");
+    struct shell_lua *lua = lua_of(L);
+    destroy_lock_views(lua);
+    shell_core_unlock(&lua->shell->core);
+    return 0;
+}
+
+static int l_locked(lua_State *L) {
+    lua_pushboolean(L, lua_of(L)->shell->core.lock != NULL);
+    return 1;
+}
+
+static void lua_auth_free(struct lua_auth *auth) {
+    lua_State *L = auth->lua->L;
+    luaL_unref(L, LUA_REGISTRYINDEX, auth->done);
+    luaL_unref(L, LUA_REGISTRYINDEX, auth->message);
+    wl_list_remove(&auth->link);
+    free(auth);
+}
+
+static void auth_message(void *data, bool error, const char *text) {
+    struct lua_auth *auth = data;
+    if (auth->message == LUA_NOREF) return;
+    lua_State *L = auth->lua->L;
+    lua_rawgeti(L, LUA_REGISTRYINDEX, auth->message);
+    lua_pushstring(L, error ? "error" : "info");
+    lua_pushstring(L, text);
+    call(L, 2, 0, "authenticate", NULL, 0);
+    redraw_all(auth->lua);
+}
+
+static void auth_done(void *data, bool ok, const char *reason) {
+    struct lua_auth *auth = data;
+    struct shell_lua *lua = auth->lua;
+    lua_State *L = lua->L;
+    lua_rawgeti(L, LUA_REGISTRYINDEX, auth->done);
+    lua_auth_free(auth);
+    lua_pushboolean(L, ok);
+    lua_pushstring(L, reason);
+    call(L, 2, 0, "authenticate", NULL, 0);
+    redraw_all(lua);
+}
+
+static const struct shell_auth_handler auth_handler = {
+    .message = auth_message,
+    .done = auth_done,
+};
+
+/* The first PAM service of these that is installed. */
+static const char *default_pam_service(void) {
+    static const char *const services[] = { "shady-lock", "swaylock", "login" };
+    char path[64];
+    for (size_t i = 0; i < sizeof(services) / sizeof(services[0]); i++) {
+        snprintf(path, sizeof(path), "/etc/pam.d/%s", services[i]);
+        if (access(path, R_OK) == 0) return services[i];
+    }
+    return "login";
+}
+
+/* shell.authenticate(password | nil, function(ok, reason) end[,
+ *   {service = "shady-lock", on_message = function(kind, text) end}]) -> id */
+static int l_authenticate(lua_State *L) {
+    const char *password = lua_isnoneornil(L, 1) ? NULL : luaL_checkstring(L, 1);
+    luaL_checktype(L, 2, LUA_TFUNCTION);
+    const char *service = default_pam_service();
+    int message = LUA_NOREF;
+    if (lua_istable(L, 3)) {
+        lua_getfield(L, 3, "service");
+        if (lua_isstring(L, -1)) service = lua_tostring(L, -1);
+        lua_pop(L, 1); /* the table keeps it alive */
+        lua_getfield(L, 3, "on_message");
+        if (lua_isfunction(L, -1)) message = luaL_ref(L, LUA_REGISTRYINDEX);
+        else lua_pop(L, 1);
+    }
+    struct shell_lua *lua = lua_of(L);
+    struct lua_auth *auth = calloc(1, sizeof(*auth));
+    if (!auth) return luaL_error(L, "out of memory");
+    auth->lua = lua;
+    auth->message = message;
+    auth->id = ++lua->next_after;
+    lua_pushvalue(L, 2);
+    auth->done = luaL_ref(L, LUA_REGISTRYINDEX);
+    wl_list_insert(&lua->auths, &auth->link);
+    auth->auth = shell_auth_start(&lua->shell->core, service, password, &auth_handler, auth);
+    if (!auth->auth) {
+        lua_auth_free(auth);
+        return luaL_error(L, "could not start the authentication helper");
+    }
+    lua_pushinteger(L, auth->id);
+    return 1;
+}
+
+static int l_cancel_authentication(lua_State *L) {
+    lua_Integer id = luaL_checkinteger(L, 1);
+    struct shell_lua *lua = lua_of(L);
+    struct lua_auth *auth;
+    wl_list_for_each(auth, &lua->auths, link) {
+        if (auth->id != id) continue;
+        shell_auth_cancel(auth->auth);
+        lua_auth_free(auth);
+        return 0;
+    }
+    return 0;
+}
+
+static void after_fire(void *data) {
+    struct after *after = data;
+    struct shell_lua *lua = after->lua;
+    wl_list_remove(&after->link);
+    lua_State *L = lua->L;
+    lua_rawgeti(L, LUA_REGISTRYINDEX, after->ref);
+    luaL_unref(L, LUA_REGISTRYINDEX, after->ref);
+    free(after);
+    call(L, 0, 0, "after", NULL, 0);
+    redraw_all(lua);
+}
+
+static int l_after(lua_State *L) {
+    lua_Integer ms = luaL_checkinteger(L, 1);
+    luaL_checktype(L, 2, LUA_TFUNCTION);
+    struct shell_lua *lua = lua_of(L);
+    struct after *after = calloc(1, sizeof(*after));
+    if (!after) return luaL_error(L, "out of memory");
+    after->lua = lua;
+    after->id = ++lua->next_after;
+    after->timer = shell_timer_add(&lua->shell->core, ms < 0 ? 0 : (uint32_t)ms, after_fire, after);
+    if (!after->timer) {
+        free(after);
+        return luaL_error(L, "out of memory");
+    }
+    lua_pushvalue(L, 2);
+    after->ref = luaL_ref(L, LUA_REGISTRYINDEX);
+    wl_list_insert(&lua->afters, &after->link);
+    lua_pushinteger(L, after->id);
+    return 1;
+}
+
+static int l_cancel(lua_State *L) {
+    lua_Integer id = luaL_checkinteger(L, 1);
+    struct shell_lua *lua = lua_of(L);
+    struct after *after;
+    wl_list_for_each(after, &lua->afters, link) {
+        if (after->id != id) continue;
+        shell_timer_cancel(after->timer);
+        wl_list_remove(&after->link);
+        luaL_unref(L, LUA_REGISTRYINDEX, after->ref);
+        free(after);
+        lua_pushboolean(L, 1);
+        return 1;
+    }
+    lua_pushboolean(L, 0);
+    return 1;
+}
+
 static const luaL_Reg api[] = {
     { "log", l_log },
+    { "after", l_after },
+    { "lock", l_lock },
+    { "unlock", l_unlock },
+    { "locked", l_locked },
+    { "authenticate", l_authenticate },
+    { "cancel_authentication", l_cancel_authentication },
+    { "cancel", l_cancel },
     { "bar", l_bar },
     { "popup", l_popup },
     { "open", l_open },
@@ -1738,6 +1978,18 @@ static void generation_free(struct shell_lua *lua) {
     }
     for (size_t i = 0; i < lua->def_count; i++) free(lua->defs[i].shader);
     shell_timer_cancel(lua->date_timer);
+    struct lua_auth *auth, *autmp;
+    wl_list_for_each_safe(auth, autmp, &lua->auths, link) {
+        shell_auth_cancel(auth->auth);
+        wl_list_remove(&auth->link);
+        free(auth);
+    }
+    struct after *after, *atmp;
+    wl_list_for_each_safe(after, atmp, &lua->afters, link) {
+        shell_timer_cancel(after->timer);
+        wl_list_remove(&after->link);
+        free(after);
+    }
     if (lua->L) lua_close(lua->L);
     free(lua);
 }
@@ -1748,6 +2000,8 @@ static struct shell_lua *generation_load(struct shell *shell, const char *path) 
     lua->shell = shell;
     wl_list_init(&lua->views);
     wl_list_init(&lua->polls);
+    wl_list_init(&lua->afters);
+    wl_list_init(&lua->auths);
     lua_State *L = lua->L = luaL_newstate();
     if (!L) {
         free(lua);

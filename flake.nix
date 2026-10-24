@@ -47,7 +47,7 @@
           buildInputs = [ wlroots ] ++ (with pkgs; [
             wayland wayland-protocols libxkbcommon pixman libdrm
             mesa libglvnd libffi libxau libxdmcp lua5_4
-            cairo cairo.dev pango pango.dev
+            cairo cairo.dev pango pango.dev linux-pam
           ]);
           packages = with pkgs; [ stdenv.cc gdb foot seatd wlr-randr grim wtype ];
           # tools/build.sh builds with this cursor theme (meson -Dcursor_path).

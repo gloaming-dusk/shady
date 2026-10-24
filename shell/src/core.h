@@ -18,6 +18,7 @@
 #include <wayland-client.h>
 #include <xkbcommon/xkbcommon.h>
 
+#include "ext-session-lock-v1-client-protocol.h"
 #include "text-input-unstable-v3-client-protocol.h"
 #include "wlr-layer-shell-unstable-v1-protocol.h"
 
@@ -55,6 +56,11 @@ struct shell_core {
     struct wl_pointer *pointer;
     struct wl_keyboard *keyboard;
     struct zwlr_layer_shell_v1 *layer_shell;
+    /* The session lock (ext-session-lock-v1): while `lock` is set, lock
+     * surfaces cover every output and have the keyboard. */
+    struct ext_session_lock_manager_v1 *lock_manager;
+    struct ext_session_lock_v1 *lock;
+    bool lock_confirmed; /* the compositor said "locked" */
     struct xkb_context *xkb_context;
     struct xkb_keymap *xkb_keymap;
     struct xkb_state *xkb_state;
@@ -91,6 +97,15 @@ int shell_core_run(struct shell_core *core);
 void shell_core_stop(struct shell_core *core);
 void shell_core_finish(struct shell_core *core);
 
+/* ---- session lock ----------------------------------------------------- */
+
+/* Lock the session: false when the compositor offers no session lock or a
+ * lock is already held. Create lock surfaces (config.lock) for every output
+ * right after. `finished` runs if the compositor ends the lock itself. */
+bool shell_core_lock(struct shell_core *core, void (*finished)(void *data), void *data);
+/* Unlock; destroy the lock surfaces first. */
+void shell_core_unlock(struct shell_core *core);
+
 /* ---- timers and fd watches -------------------------------------------- */
 
 struct shell_timer;
@@ -119,6 +134,9 @@ struct shell_surface_config {
     enum zwlr_layer_surface_v1_keyboard_interactivity keyboard;
     struct shell_output *output; /* NULL: the compositor chooses */
     bool text_input; /* take text from input methods while focused */
+    /* A lock surface on `output` instead of a layer surface; the layer
+     * fields are ignored. Only while shell_core_lock() holds a lock. */
+    bool lock;
 };
 
 struct shell_surface_handler {
@@ -148,6 +166,7 @@ struct shell_surface {
     struct shell_core *core;
     struct wl_surface *wl_surface;
     struct zwlr_layer_surface_v1 *layer_surface;
+    struct ext_session_lock_surface_v1 *lock_surface;
     struct shell_output *output;
     const struct shell_surface_handler *handler;
     void *data;

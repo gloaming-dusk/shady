@@ -14,6 +14,10 @@ programs.shady.enable = true;
 programs.shady.greeter.enable = true;
 ```
 
+`programs.shady.greeter.theme = "tide";` gives it Tide's night sea and a
+card that matches Tide's lock screen (`greeter/tide/`), instead of
+Afterglow's sky; elsewhere, set `SHADY_GREETER_THEME=tide`.
+
 This enables greetd with `shady-greeter` as its default session, run as the
 `greeter` user, and keeps the last user and session in
 `/var/lib/shady-greeter/last`. `programs.shady.greeter.hint` adds a line under

@@ -31,6 +31,8 @@
 #include "../close_animation/close_animation.h"
 #include "../workspace/workspace.h"
 #include "../workspace/state.h"
+#include "../layout/layout.h"
+#include "../../idle.h"
 #include <string.h>
 #include <wlr/types/wlr_keyboard.h>
 #include <wlr/types/wlr_xdg_shell.h>
@@ -74,7 +76,7 @@ static void push_window(lua_State *L,struct shady_toplevel *t);
 static void push_output(lua_State *L,struct shady_output *o);
 static void push_seat(lua_State *L,struct wlr_seat *seat);
 static void push_module(lua_State *L,const struct shady_module *module);
-#define SHADY_LUA_MAX_BINDS 32
+#define SHADY_LUA_MAX_BINDS 256
 #define SHADY_LUA_MAX_RULES 64
 #define SHADY_LUA_RULE_TEXT_MAX 128
 struct lua_bind { xkb_keysym_t sym; uint32_t modifiers; int ref; };
@@ -91,6 +93,9 @@ struct lua_window_rule {
 	bool maximized;
 	bool has_fullscreen;
 	bool fullscreen;
+	bool has_floating;
+	bool floating;
+	float width;
 };
 static struct lua_window_rule lua_rules[SHADY_LUA_MAX_RULES];
 static size_t lua_rule_count;
@@ -186,10 +191,21 @@ static int l_shady_rule(lua_State *L) {
 		return luaL_error(L, "rule.maximized must be boolean");
 	if (!rule_bool_field(L, 1, "fullscreen", &rule.fullscreen, &rule.has_fullscreen))
 		return luaL_error(L, "rule.fullscreen must be boolean");
+	if (!rule_bool_field(L, 1, "floating", &rule.floating, &rule.has_floating))
+		return luaL_error(L, "rule.floating must be boolean");
+	lua_getfield(L, 1, "width");
+	if (!lua_isnil(L, -1)) {
+		if (!lua_isnumber(L, -1)) return luaL_error(L, "rule.width must be a number");
+		rule.width = (float)lua_tonumber(L, -1);
+		if (!(rule.width > 0.f && rule.width <= 1.f))
+			return luaL_error(L, "rule.width must be a share of the screen, 0..1");
+	}
+	lua_pop(L, 1);
 	if (!rule.has_app_id && !rule.has_title)
 		return luaL_error(L, "rule requires app_id and/or title match");
-	if (!rule.has_workspace && !rule.has_maximized && !rule.has_fullscreen)
-		return luaL_error(L, "rule requires workspace, maximized, or fullscreen action");
+	if (!rule.has_workspace && !rule.has_maximized && !rule.has_fullscreen &&
+			!rule.has_floating && rule.width <= 0.f)
+		return luaL_error(L, "rule requires workspace, maximized, fullscreen, floating or width");
 	lua_rules[lua_rule_count++] = rule;
 	lua_pushinteger(L, (lua_Integer)lua_rule_count);
 	return 1;
@@ -202,6 +218,8 @@ void shady_lua_apply_window_rules(struct shady_toplevel *toplevel) {
 		const struct lua_window_rule *rule = &lua_rules[i];
 		if (rule->has_app_id && strcmp(rule->app_id, app_id) != 0) continue;
 		if (rule->has_title && strcmp(rule->title, title) != 0) continue;
+		if (rule->has_floating || rule->width > 0.f)
+			shady_layout_rule(toplevel, rule->has_floating ? rule->floating : -1, rule->width);
 		if (rule->has_workspace)
 			(void)shady_workspace_move_toplevel(toplevel, rule->workspace);
 		if (rule->has_fullscreen)
@@ -425,7 +443,8 @@ static int l_window_close(lua_State *L){struct lua_window_handle*h=luaL_checkuda
 static int l_window_maximize(lua_State *L){struct lua_window_handle*h=luaL_checkudata(L,1,SHADY_LUA_WINDOW_MT);if(!h->ptr||!lua_window_live(h->ptr)){lua_pushboolean(L,0);return 1;}bool enabled=lua_gettop(L)>=2?lua_toboolean(L,2):!h->ptr->maximized;shady_toplevel_set_maximized(h->ptr,enabled);lua_pushboolean(L,1);return 1;}
 static int l_window_fullscreen(lua_State *L){struct lua_window_handle*h=luaL_checkudata(L,1,SHADY_LUA_WINDOW_MT);if(!h->ptr||!lua_window_live(h->ptr)){lua_pushboolean(L,0);return 1;}bool enabled=lua_gettop(L)>=2?lua_toboolean(L,2):!h->ptr->fullscreen;shady_toplevel_set_fullscreen(h->ptr,enabled);lua_pushboolean(L,1);return 1;}
 static int l_window_move_workspace(lua_State *L){struct lua_window_handle*h=luaL_checkudata(L,1,SHADY_LUA_WINDOW_MT);const char*name=luaL_checkstring(L,2);lua_pushboolean(L,h->ptr&&lua_window_live(h->ptr)&&shady_workspace_move_toplevel(h->ptr,name));return 1;}
-static int l_window_index(lua_State *L){struct lua_window_handle*h=luaL_checkudata(L,1,SHADY_LUA_WINDOW_MT);const char*k=luaL_checkstring(L,2);if(!h->ptr||!lua_window_live(h->ptr)){lua_pushnil(L);return 1;}struct shady_toplevel*t=h->ptr;if(!strcmp(k,"title")){lua_pushstring(L,t->xdg_toplevel->title?t->xdg_toplevel->title:"");return 1;}if(!strcmp(k,"app_id")){lua_pushstring(L,t->xdg_toplevel->app_id?t->xdg_toplevel->app_id:"");return 1;}if(!strcmp(k,"mapped")){lua_pushboolean(L,t->xdg_toplevel->base->surface->mapped);return 1;}if(!strcmp(k,"x")){lua_pushinteger(L,t->scene_tree?t->scene_tree->node.x:0);return 1;}if(!strcmp(k,"y")){lua_pushinteger(L,t->scene_tree?t->scene_tree->node.y:0);return 1;}if(!strcmp(k,"width")){lua_pushinteger(L,t->xdg_toplevel->base->surface->current.width);return 1;}if(!strcmp(k,"height")){lua_pushinteger(L,t->xdg_toplevel->base->surface->current.height);return 1;}if(!strcmp(k,"visible")){lua_pushboolean(L,t->scene_tree&&t->scene_tree->node.enabled);return 1;}if(!strcmp(k,"workspace")){lua_pushstring(L,shady_workspace_toplevel_name(t));return 1;}if(!strcmp(k,"maximized")){lua_pushboolean(L,t->maximized);return 1;}if(!strcmp(k,"fullscreen")){lua_pushboolean(L,t->fullscreen);return 1;}if(!strcmp(k,"z")){const struct shady_toplevel_experimental_state*s=shady_spatial_toplevel_state_const(t);if(s)lua_pushnumber(L,s->z);else lua_pushnil(L);return 1;}if(!strcmp(k,"focus")){lua_pushcfunction(L,l_window_focus);return 1;}if(!strcmp(k,"close")){lua_pushcfunction(L,l_window_close);return 1;}if(!strcmp(k,"maximize")){lua_pushcfunction(L,l_window_maximize);return 1;}if(!strcmp(k,"set_fullscreen")){lua_pushcfunction(L,l_window_fullscreen);return 1;}if(!strcmp(k,"move_to_workspace")){lua_pushcfunction(L,l_window_move_workspace);return 1;}lua_pushnil(L);return 1;}
+static int l_window_toggle_floating(lua_State *L){struct lua_window_handle*h=luaL_checkudata(L,1,SHADY_LUA_WINDOW_MT);lua_pushboolean(L,h->ptr&&lua_window_live(h->ptr)&&shady_layout_toggle_floating(h->ptr));return 1;}
+static int l_window_index(lua_State *L){struct lua_window_handle*h=luaL_checkudata(L,1,SHADY_LUA_WINDOW_MT);const char*k=luaL_checkstring(L,2);if(!h->ptr||!lua_window_live(h->ptr)){lua_pushnil(L);return 1;}struct shady_toplevel*t=h->ptr;if(!strcmp(k,"title")){lua_pushstring(L,t->xdg_toplevel->title?t->xdg_toplevel->title:"");return 1;}if(!strcmp(k,"app_id")){lua_pushstring(L,t->xdg_toplevel->app_id?t->xdg_toplevel->app_id:"");return 1;}if(!strcmp(k,"mapped")){lua_pushboolean(L,t->xdg_toplevel->base->surface->mapped);return 1;}if(!strcmp(k,"x")){lua_pushinteger(L,t->scene_tree?t->scene_tree->node.x:0);return 1;}if(!strcmp(k,"y")){lua_pushinteger(L,t->scene_tree?t->scene_tree->node.y:0);return 1;}if(!strcmp(k,"width")){lua_pushinteger(L,t->xdg_toplevel->base->surface->current.width);return 1;}if(!strcmp(k,"height")){lua_pushinteger(L,t->xdg_toplevel->base->surface->current.height);return 1;}if(!strcmp(k,"visible")){lua_pushboolean(L,t->scene_tree&&t->scene_tree->node.enabled);return 1;}if(!strcmp(k,"workspace")){lua_pushstring(L,shady_workspace_toplevel_name(t));return 1;}if(!strcmp(k,"maximized")){lua_pushboolean(L,t->maximized);return 1;}if(!strcmp(k,"fullscreen")){lua_pushboolean(L,t->fullscreen);return 1;}if(!strcmp(k,"tiled")){lua_pushboolean(L,shady_layout_is_tiled(t));return 1;}if(!strcmp(k,"toggle_floating")){lua_pushcfunction(L,l_window_toggle_floating);return 1;}if(!strcmp(k,"z")){const struct shady_toplevel_experimental_state*s=shady_spatial_toplevel_state_const(t);if(s)lua_pushnumber(L,s->z);else lua_pushnil(L);return 1;}if(!strcmp(k,"focus")){lua_pushcfunction(L,l_window_focus);return 1;}if(!strcmp(k,"close")){lua_pushcfunction(L,l_window_close);return 1;}if(!strcmp(k,"maximize")){lua_pushcfunction(L,l_window_maximize);return 1;}if(!strcmp(k,"set_fullscreen")){lua_pushcfunction(L,l_window_fullscreen);return 1;}if(!strcmp(k,"move_to_workspace")){lua_pushcfunction(L,l_window_move_workspace);return 1;}lua_pushnil(L);return 1;}
 static int l_window_tostring(lua_State *L){struct lua_window_handle*h=luaL_checkudata(L,1,SHADY_LUA_WINDOW_MT);if(!h->ptr||!lua_window_live(h->ptr)){lua_pushliteral(L,"Window<dead>");return 1;}lua_pushfstring(L,"Window<%s>",h->ptr->xdg_toplevel->app_id?h->ptr->xdg_toplevel->app_id:"");return 1;}
 
 static int l_output_index(lua_State *L){struct lua_output_handle*h=luaL_checkudata(L,1,SHADY_LUA_OUTPUT_MT);const char*k=luaL_checkstring(L,2);if(!h->ptr||!lua_output_live(h->ptr)){lua_pushnil(L);return 1;}struct wlr_output*o=h->ptr->wlr_output;if(!strcmp(k,"name")){lua_pushstring(L,o->name?o->name:"");return 1;}if(!strcmp(k,"scale")){lua_pushnumber(L,o->scale);return 1;}if(!strcmp(k,"width")||!strcmp(k,"height")){int w=0,hg=0;wlr_output_effective_resolution(o,&w,&hg);lua_pushinteger(L,!strcmp(k,"width")?w:hg);return 1;}lua_pushnil(L);return 1;}
@@ -759,6 +778,146 @@ static int l_automation_screenshot(lua_State *L) {
 	lua_pushinteger(L, (lua_Integer)pid);
 	return 1;
 }
+/* shady.layout: the scrolling layout (config `layout = "scrolling"`). */
+static bool lua_layout_direction(const char *name, enum shady_layout_direction *out) {
+	static const struct { const char *name; enum shady_layout_direction dir; } dirs[] = {
+		{ "left", SHADY_LAYOUT_LEFT }, { "right", SHADY_LAYOUT_RIGHT },
+		{ "up", SHADY_LAYOUT_UP }, { "down", SHADY_LAYOUT_DOWN },
+		{ "first", SHADY_LAYOUT_FIRST }, { "last", SHADY_LAYOUT_LAST },
+	};
+	for (size_t i = 0; i < sizeof(dirs) / sizeof(dirs[0]); i++)
+		if (!strcmp(name, dirs[i].name)) { *out = dirs[i].dir; return true; }
+	return false;
+}
+static int l_layout_focus(lua_State *L) {
+	enum shady_layout_direction dir;
+	if (!lua_layout_direction(luaL_checkstring(L, 1), &dir)) return luaL_argerror(L, 1, "left, right, up, down, first or last");
+	lua_pushboolean(L, shady_layout_focus(lua_server, dir));
+	return 1;
+}
+static int l_layout_move(lua_State *L) {
+	enum shady_layout_direction dir;
+	if (!lua_layout_direction(luaL_checkstring(L, 1), &dir)) return luaL_argerror(L, 1, "left, right, up, down, first or last");
+	lua_pushboolean(L, shady_layout_move(lua_server, dir));
+	return 1;
+}
+static int l_layout_consume_or_expel(lua_State *L) {
+	const char *side = luaL_checkstring(L, 1);
+	if (strcmp(side, "left") && strcmp(side, "right")) return luaL_argerror(L, 1, "left or right");
+	lua_pushboolean(L, shady_layout_consume_or_expel(lua_server, !strcmp(side, "left")));
+	return 1;
+}
+static int l_layout_set_width(lua_State *L) { lua_pushboolean(L, shady_layout_set_width(lua_server, luaL_checkstring(L, 1))); return 1; }
+static int l_layout_set_height(lua_State *L) { lua_pushboolean(L, shady_layout_set_height(lua_server, luaL_checkstring(L, 1))); return 1; }
+static int l_layout_cycle_width(lua_State *L) { lua_pushboolean(L, shady_layout_cycle_width(lua_server, lua_isnone(L, 1) || lua_toboolean(L, 1))); return 1; }
+static int l_layout_reset_height(lua_State *L) { (void)L; lua_pushboolean(L, shady_layout_reset_height(lua_server)); return 1; }
+static int l_layout_full_width(lua_State *L) { lua_pushboolean(L, shady_layout_toggle_full_width(lua_server)); return 1; }
+static int l_layout_overview(lua_State *L) {
+	int enable = lua_isnoneornil(L, 1) ? -1 : lua_toboolean(L, 1);
+	lua_pushboolean(L, shady_layout_overview(lua_server, enable));
+	return 1;
+}
+static int l_layout_center(lua_State *L) { lua_pushboolean(L, shady_layout_center(lua_server)); return 1; }
+static int l_layout_workspace(lua_State *L) {
+	int delta = (int)luaL_checkinteger(L, 1);
+	lua_pushboolean(L, shady_layout_workspace_step(lua_server, delta, lua_toboolean(L, 2)));
+	return 1;
+}
+static int l_layout_toggle_floating(lua_State *L) {
+	struct shady_toplevel *t = NULL;
+	struct wlr_surface *surface = lua_server->seat->keyboard_state.focused_surface;
+	if (surface) {
+		struct wlr_xdg_toplevel *xdg = wlr_xdg_toplevel_try_from_wlr_surface(wlr_surface_get_root_surface(surface));
+		struct shady_toplevel *it;
+		wl_list_for_each(it, &lua_server->toplevels, link) if (it->xdg_toplevel == xdg) { t = it; break; }
+	}
+	lua_pushboolean(L, t && shady_layout_toggle_floating(t));
+	return 1;
+}
+static int l_layout_presets(lua_State *L) {
+	luaL_checktype(L, 1, LUA_TTABLE);
+	float presets[8];
+	size_t n = lua_rawlen(L, 1);
+	if (n == 0 || n > 8) return luaL_argerror(L, 1, "1 to 8 widths");
+	for (size_t i = 0; i < n; i++) {
+		lua_rawgeti(L, 1, (lua_Integer)i + 1);
+		presets[i] = (float)luaL_checknumber(L, -1);
+		lua_pop(L, 1);
+	}
+	if (!shady_layout_set_presets(lua_server, presets, n)) return luaL_argerror(L, 1, "widths are shares of the screen, 0..1");
+	return 0;
+}
+static int l_layout_state(lua_State *L) {
+	size_t columns, active;
+	double view, visible;
+	shady_layout_describe(lua_server, &columns, &active, &view, &visible);
+	lua_newtable(L);
+	lua_pushboolean(L, shady_layout_active(lua_server)); lua_setfield(L, -2, "scrolling");
+	lua_pushinteger(L, (lua_Integer)columns); lua_setfield(L, -2, "columns");
+	lua_pushinteger(L, (lua_Integer)active + 1); lua_setfield(L, -2, "active");
+	lua_pushnumber(L, view); lua_setfield(L, -2, "view");
+	lua_pushnumber(L, visible); lua_setfield(L, -2, "visible");
+	return 1;
+}
+/* shady.idle(seconds, on_idle[, on_resume]): run on_idle after that long
+ * without input (unless a client inhibits idling), on_resume at the next. */
+struct lua_idle_ref { int idle_ref, resume_ref; };
+static void lua_idle_call(int ref) {
+	lua_State *L = shady_lua_state_for(lua_server)->L;
+	if (!L || ref == LUA_NOREF) return;
+	lua_rawgeti(L, LUA_REGISTRYINDEX, ref);
+	if (lua_pcall(L, 0, 0, 0) != LUA_OK) {
+		wlr_log(WLR_ERROR, "[SHADY LUA] idle: %s", lua_tostring(L, -1));
+		lua_pop(L, 1);
+	}
+}
+static void lua_idle_on_idle(void *data) { lua_idle_call(((struct lua_idle_ref *)data)->idle_ref); }
+static void lua_idle_on_resume(void *data) { lua_idle_call(((struct lua_idle_ref *)data)->resume_ref); }
+static void lua_idle_release(void *data) {
+	struct lua_idle_ref *ref = data;
+	lua_State *L = shady_lua_state_for(lua_server)->L;
+	if (L) {
+		luaL_unref(L, LUA_REGISTRYINDEX, ref->idle_ref);
+		luaL_unref(L, LUA_REGISTRYINDEX, ref->resume_ref);
+	}
+	free(ref);
+}
+static int l_shady_idle(lua_State *L) {
+	double seconds = luaL_checknumber(L, 1);
+	luaL_checktype(L, 2, LUA_TFUNCTION);
+	if (!lua_isnoneornil(L, 3)) luaL_checktype(L, 3, LUA_TFUNCTION);
+	if (seconds < 1.0) return luaL_argerror(L, 1, "at least one second");
+	struct lua_idle_ref *ref = calloc(1, sizeof(*ref));
+	if (!ref) return luaL_error(L, "out of memory");
+	lua_pushvalue(L, 2);
+	ref->idle_ref = luaL_ref(L, LUA_REGISTRYINDEX);
+	if (lua_isfunction(L, 3)) { lua_pushvalue(L, 3); ref->resume_ref = luaL_ref(L, LUA_REGISTRYINDEX); }
+	else ref->resume_ref = LUA_NOREF;
+	int id = shady_idle_add(lua_server, (uint32_t)(seconds * 1000.0), lua_idle_on_idle,
+		lua_idle_on_resume, ref);
+	if (!id) { lua_idle_release(ref); return luaL_error(L, "too many idle timeouts"); }
+	lua_pushinteger(L, id);
+	return 1;
+}
+static int l_shady_idle_clear(lua_State *L) { (void)L; shady_idle_clear(lua_server, lua_idle_release); return 0; }
+static int l_shady_idle_inhibit(lua_State *L) { shady_idle_set_inhibit(lua_server, lua_toboolean(L, 1)); return 0; }
+static int l_shady_idle_inhibited(lua_State *L) { lua_pushboolean(L, shady_idle_inhibited(lua_server)); return 1; }
+static int l_shady_output_power(lua_State *L) { shady_idle_output_power(lua_server, lua_toboolean(L, 1)); return 0; }
+static void install_layout_api(lua_State *L) {
+	static const luaL_Reg fns[] = {
+		{ "focus", l_layout_focus }, { "move", l_layout_move },
+		{ "consume_or_expel", l_layout_consume_or_expel },
+		{ "set_width", l_layout_set_width }, { "set_height", l_layout_set_height },
+		{ "cycle_width", l_layout_cycle_width }, { "reset_height", l_layout_reset_height },
+		{ "full_width", l_layout_full_width }, { "center", l_layout_center },
+		{ "overview", l_layout_overview },
+		{ "workspace", l_layout_workspace }, { "toggle_floating", l_layout_toggle_floating },
+		{ "presets", l_layout_presets }, { "state", l_layout_state },
+		{ NULL, NULL },
+	};
+	luaL_newlib(L, fns);
+	lua_setfield(L, -2, "layout");
+}
 static void install_api(lua_State *L){
 	register_object_types(L);
 	lua_newtable(L);
@@ -787,6 +946,12 @@ static void install_api(lua_State *L){
 	lua_pushcfunction(L,l_shady_current_workspace);lua_setfield(L,-2,"current_workspace");
 	lua_pushcfunction(L,l_shady_workspace);lua_setfield(L,-2,"workspace");
 	lua_pushcfunction(L,l_shady_has_capability);lua_setfield(L,-2,"has_capability");
+	install_layout_api(L);
+	lua_pushcfunction(L,l_shady_idle);lua_setfield(L,-2,"idle");
+	lua_pushcfunction(L,l_shady_idle_clear);lua_setfield(L,-2,"idle_clear");
+	lua_pushcfunction(L,l_shady_idle_inhibited);lua_setfield(L,-2,"idle_inhibited");
+	lua_pushcfunction(L,l_shady_idle_inhibit);lua_setfield(L,-2,"idle_inhibit");
+	lua_pushcfunction(L,l_shady_output_power);lua_setfield(L,-2,"output_power");
 	lua_newtable(L);
 	lua_pushcfunction(L,l_automation_after);lua_setfield(L,-2,"after");
 	lua_pushcfunction(L,l_automation_key);lua_setfield(L,-2,"key");
@@ -869,6 +1034,7 @@ void shady_lua_fini(struct shady_server *server){
 		if(L)luaL_unref(L,LUA_REGISTRYINDEX,watch->callback_ref);
 		free(watch);
 	}
+	shady_idle_clear(server,lua_idle_release);
 	if(L){lua_close(L);shady_lua_state_for(server)->L=NULL;}lua_bind_count=0;lua_rule_count=0;lua_next_handler_id=1;
 	shady_shortcuts_forget_owner(LUA_SHORTCUT_OWNER);
 }

@@ -46,6 +46,25 @@ it exports both variables so clients draw the same cursor.
 
 `touchpad_tap` (default on) turns tap-to-click on for touchpads, and
 `touchpad_natural_scroll` (default off) reverses their scrolling.
+`xkb_layout`, `xkb_variant` and `xkb_options` set the keyboard layout
+(`"us,kr"`, `"grp:alt_shift_toggle"`; empty follows `XKB_DEFAULT_*`),
+`numlock` turns Num Lock on at start, and `repeat_rate` / `repeat_delay`
+(25/s and 600 ms by default) set key repeat. Set these in `config.lua`:
+keyboards are set up when they appear.
+
+`prefer_no_csd` asks clients to leave out their own title bars even with
+`window_titlebar` off, as niri's option of that name does: windows get a
+border from Shady and nothing else.
+
+`layout` chooses how windows are placed: `"floating"` (the default) leaves
+them where they open; `"scrolling"` tiles them in a strip of columns per
+workspace that scrolls sideways, as in niri (see [`shady.layout`](#scrolling-layout)).
+`layout_gap` (12) is the space around and between tiles,
+`layout_default_width` (0.5) a new column's share of the screen,
+`layout_center_single` centres a workspace's only column, and
+`layout_animation` (14) the spring rate of the strip's motion, 0 for none.
+`gesture_fingers` (3) is the touchpad swipe that scrolls the strip
+sideways and changes workspace up and down; 0 leaves all swipes to clients.
 
 The spatial environment is configured the same way. `environment_path` is
 dispatched to the loader plugin registered for its extension, and can be
@@ -107,6 +126,11 @@ shady.rule({
     maximized = true,
 })
 ```
+
+With the scrolling layout, `floating = true` keeps a window out of the
+strip (dialogs and fixed-size windows float anyway), `floating = false`
+tiles one that would float, and `width = 0.33` sets the share of the
+screen its column opens with.
 
 The first matching rule is applied, while the window maps and before it is focused.
 Each workspace also remembers its last focused window and focuses it again when you
@@ -251,6 +275,7 @@ A `Window` exposes:
 - `workspace`
 - `maximized`
 - `fullscreen`
+- `tiled`: in the scrolling layout's strip
 
 ### Window methods
 
@@ -260,6 +285,7 @@ window:close()                  -- -> boolean
 window:maximize([enabled])      -- -> boolean
 window:set_fullscreen([enabled])-- -> boolean
 window:move_to_workspace(name)  -- -> boolean
+window:toggle_floating()        -- -> boolean, scrolling layout only
 ```
 
 If `enabled` is omitted for maximize/fullscreen, the state toggles.
@@ -315,6 +341,65 @@ Return the active workspace name.
 ### `shady.workspace(name) -> boolean`
 
 Switch workspace.
+
+## Scrolling layout
+
+With `shady.set("layout", "scrolling")` every workspace is a strip of
+columns, wider than the screen when it needs to be, and the screen shows a
+window's worth of it. A new window opens as a column right of the focused
+one; moving the focus scrolls the strip so the focused column is on
+screen, centring it when it cannot be shown next to the previous one
+(niri's `center-focused-column "on-overflow"`). A column stacks one or more
+windows. The strip lives on the output connected first.
+
+`shady.layout` holds the commands; each returns false when there was
+nothing to do:
+
+| Function | |
+|---|---|
+| `focus(dir)` | `"left"`, `"right"` (columns), `"up"`, `"down"` (windows in the column), `"first"`, `"last"` |
+| `move(dir)` | the same directions: move the column, or the window within its column |
+| `consume_or_expel(side)` | `"left"`/`"right"`: put the window into the column on that side, or out of its column into a new one |
+| `set_width(spec)` | `"+10%"`, `"-10%"`, `"50%"` (of the screen), `"900"` or `"+40"` (pixels) |
+| `set_height(spec)` | the same for the window's share of its column |
+| `cycle_width([forward])` | step through the preset widths (⅓, ½, ⅔) |
+| `presets{...}` | set the preset widths, shares of the screen |
+| `reset_height()` | even heights in the column |
+| `full_width()` | toggle the column filling the screen (a maximize request from a client does the same) |
+| `center()` | centre the focused column |
+| `toggle_floating()` | lift the focused window out of the strip, or put it back |
+| `workspace(delta[, take])` | the workspace above or below; numbered workspaces (`"1"`, `"2"`) are made as needed, but not past an empty one; with `take` the focused window goes along |
+| `overview([on])` | GL renderer: pull the camera back over the whole strip, tilted; a click picks a window and flies back to it |
+| `state()` | `{scrolling, columns, active, view, visible}` |
+
+Dragging a tiled window lifts it out of the strip; dragging a tiled
+window's edge resizes its column. A fullscreen window takes the whole
+output, and the bars (top layer) step aside while it has the focus. Super
+and the mouse wheel change workspace, Super+Shift+wheel the column, and a
+three-finger swipe scrolls the strip (sideways) or changes workspace.
+
+The layout publishes `layout.strip` for bars: `"<screen width> <view>
+<active column>"` followed by `"|<x> <width> <windows>"` for each column,
+in logical pixels of the strip; Tide's bar draws its minimap from it.
+`layout.overview` is `"1"` while the overview shows.
+
+## Idle
+
+### `shady.idle(seconds, on_idle[, on_resume]) -> id`
+
+Run `on_idle` after that long without input, and `on_resume` at the next
+input. A client inhibiting idle (a playing video) holds it back, as does
+`shady.idle_inhibit(true)`. `shady.idle_clear()` removes them all;
+`shady.idle_inhibited()` tells whether anything holds idling back.
+
+### `shady.output_power(on)`
+
+Turn every output's panel off or back on. Any input turns them on again.
+
+```lua
+shady.idle(300, lock_the_screen)
+shady.idle(330, function() shady.output_power(false) end)
+```
 
 ## Events
 
