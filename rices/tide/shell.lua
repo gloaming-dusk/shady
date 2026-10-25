@@ -1101,15 +1101,20 @@ shell.popup {
 -- types into the field; Enter checks it, Escape clears it.
 
 local LK = { password = "", busy = false, message = "", error = false, shake = 0,
-    fingerprint = nil, at = 0 }
+    fingerprint = nil, checking = nil, at = 0 }
 local function file_exists(p) local f = io.open(p, "r"); if f then f:close() end; return f ~= nil end
 local FINGERPRINT_SERVICE = "shady-lock-fingerprint"
 
+local function cancel_auth(field)
+    if LK[field] then shell.cancel_authentication(LK[field]); LK[field] = nil end
+end
+
 local function listen_fingerprint()
-    if LK.fingerprint or not file_exists("/etc/pam.d/" .. FINGERPRINT_SERVICE) then return end
+    if LK.fingerprint or not shell.locked() or not file_exists("/etc/pam.d/" .. FINGERPRINT_SERVICE) then return end
     LK.fingerprint = shell.authenticate(nil, function(ok)
         LK.fingerprint = nil
         if ok then
+            cancel_auth("checking")
             shell.unlock()
         elseif shell.locked() then
             -- Wrong finger or a timeout: listen again a little later.
@@ -1144,10 +1149,10 @@ local function submit()
     if LK.busy or LK.password == "" then return end
     LK.busy, LK.message, LK.error = true, "Checking…", false
     local password = LK.password
-    shell.authenticate(password, function(ok, reason)
-        LK.busy = false
+    LK.checking = shell.authenticate(password, function(ok, reason)
+        LK.checking, LK.busy = nil, false
         if ok then
-            if LK.fingerprint then shell.cancel_authentication(LK.fingerprint); LK.fingerprint = nil end
+            cancel_auth("fingerprint")
             reset_lock()
             shell.unlock()
         else
@@ -1158,8 +1163,10 @@ local function submit()
     end)
 end
 
+-- Whatever unlocked, attempts begun under this lock must not answer the next.
 shell.on("unlocked", function()
-    if LK.fingerprint then shell.cancel_authentication(LK.fingerprint); LK.fingerprint = nil end
+    cancel_auth("fingerprint")
+    cancel_auth("checking")
     reset_lock()
 end)
 

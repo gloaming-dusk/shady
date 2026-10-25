@@ -917,6 +917,7 @@ bool shady_layout_consume_or_expel(struct shady_server *server, bool left) {
 	struct shady_toplevel *t = col->rows[r];
 	if (col->count > 1) {
 		/* Expel into a column of its own on that side. */
+		if (ws->count >= SHADY_LAYOUT_MAX_COLUMNS) return false;
 		float proportion = col->proportion;
 		int width = col->width;
 		remove_row(col, r);
