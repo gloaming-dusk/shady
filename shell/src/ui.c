@@ -1560,6 +1560,19 @@ static bool transformed(const struct ui_node *n) {
         (n->style.has_rotate && n->style.rotate != 0.0);
 }
 
+/* A changed node and everything drawn under it: children are not clipped
+ * to their parent, so they may overflow it. False when one is scaled or
+ * rotated (repaint all). */
+static bool diff_grow_tree(double rect[4], bool *any, const struct ui_node *n, double ox, double oy) {
+    if (n->hidden) return true;
+    if (transformed(n)) return false;
+    diff_grow(rect, any, n, ox, oy);
+    if (n->style.has_translate) { ox += n->style.translate[0]; oy += n->style.translate[1]; }
+    for (size_t i = 0; i < n->child_count; i++)
+        if (!diff_grow_tree(rect, any, n->children[i], ox, oy)) return false;
+    return true;
+}
+
 static bool diff_node(const struct ui_node *a, const struct ui_node *b, double rect[4], bool *any,
         double ox, double oy) {
     if (a->hidden != b->hidden || transformed(a) || transformed(b)) return false;
@@ -1571,9 +1584,7 @@ static bool diff_node(const struct ui_node *a, const struct ui_node *b, double r
     if (dynamic) return false;
     if (!same) {
         /* The whole node, children included, on both sides. */
-        diff_grow(rect, any, a, ox, oy);
-        diff_grow(rect, any, b, ox, oy);
-        return true;
+        return diff_grow_tree(rect, any, a, ox, oy) && diff_grow_tree(rect, any, b, ox, oy);
     }
     /* Same node, so the same translate on both sides. */
     if (a->style.has_translate) { ox += a->style.translate[0]; oy += a->style.translate[1]; }
