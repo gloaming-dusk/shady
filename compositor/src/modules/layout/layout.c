@@ -252,32 +252,53 @@ static void ask_size(struct shady_toplevel *toplevel, int width, int height) {
 
 static void schedule_animation(struct shady_layout_state *state);
 
-/* Hide the bars (top layer) on the output while a fullscreen window has the
- * focus, so a video or game covers the whole screen. */
+/* Where a fullscreen window is: the strip's output when tiled, else the
+ * output under its middle. */
+static struct wlr_output *fullscreen_output(struct shady_server *server,
+		struct shady_toplevel *t) {
+	if (!shady_layout_is_tiled(t) && t->scene_tree) {
+		struct wlr_box geo = t->xdg_toplevel->base->geometry;
+		struct wlr_output *output = wlr_output_layout_output_at(server->output_layout,
+			t->scene_tree->node.x + geo.width / 2.0, t->scene_tree->node.y + geo.height / 2.0);
+		if (output) return output;
+	}
+	return layout_output(server);
+}
+
+/* Hide the bars (top layer) on the output while a fullscreen window there
+ * has the focus, so a video or game covers that whole screen; the bars of
+ * the other outputs stay. */
 static void update_top_layers(struct shady_server *server) {
 	struct shady_layout_state *state = shady_layout_state_for(server);
 	struct shady_desktop_state *desktop = shady_desktop_state(server);
 	if (!state || !desktop) return;
-	bool hide = false;
+	struct wlr_output *hide_on = NULL;
 	struct wlr_surface *focus = server->seat->keyboard_state.focused_surface;
 	if (shady_layout_active(server) && focus) {
 		struct shady_toplevel *t;
 		wl_list_for_each(t, &server->toplevels, link) {
 			if (t->xdg_toplevel->base->surface != focus) continue;
-			hide = t->fullscreen && t->xdg_toplevel->base->surface->mapped &&
-				toplevel_workspace(t) == current_workspace(server);
+			if (t->fullscreen && t->xdg_toplevel->base->surface->mapped &&
+					toplevel_workspace(t) == current_workspace(server))
+				hide_on = fullscreen_output(server, t);
 			break;
 		}
 	}
-	if (hide == state->top_layers_hidden) return;
-	state->top_layers_hidden = hide;
+	/* Applied to every top-layer surface each time, so one mapped while
+	 * the bars are hidden is hidden too. */
+	bool changed = hide_on != state->top_layers_hidden_on;
+	state->top_layers_hidden_on = hide_on;
 	struct shady_layer_surface *layer;
 	wl_list_for_each(layer, &desktop->layer_surfaces, link) {
 		if (!layer->layer_surface || !layer->scene_layer) continue;
 		if (layer->layer_surface->current.layer != ZWLR_LAYER_SHELL_V1_LAYER_TOP) continue;
-		wlr_scene_node_set_enabled(&layer->scene_layer->tree->node, !hide);
+		struct wlr_scene_node *node = &layer->scene_layer->tree->node;
+		bool enabled = !hide_on || layer->layer_surface->output != hide_on;
+		if (node->enabled == enabled) continue;
+		wlr_scene_node_set_enabled(node, enabled);
+		changed = true;
 	}
-	shady_render_schedule_all_outputs(server);
+	if (changed) shady_render_schedule_all_outputs(server);
 }
 
 /* `layout.strip` for bars: "<screen width> <view> <active column>" and then

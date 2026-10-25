@@ -8,6 +8,8 @@
 #include "../../module/module.h"
 #include "../workspace/state.h"
 
+struct wlr_output;
+
 #define SHADY_LAYOUT_MAX_COLUMNS 64
 #define SHADY_LAYOUT_MAX_ROWS 8
 #define SHADY_LAYOUT_MAX_PRESETS 8
@@ -65,8 +67,9 @@ struct shady_layout_state {
 	bool camera_owned;
 	/* The last `layout.strip` value published. */
 	char published[4096];
-	/* Top-layer surfaces hidden under a fullscreen window. */
-	bool top_layers_hidden;
+	/* The output whose top-layer surfaces are hidden under a fullscreen
+	 * window, or NULL. Compared only, never dereferenced. */
+	struct wlr_output *top_layers_hidden_on;
 };
 
 struct shady_layout_toplevel {
