@@ -1882,12 +1882,14 @@ static void lua_auth_free(struct lua_auth *auth) {
 static void auth_message(void *data, bool error, const char *text) {
     struct lua_auth *auth = data;
     if (auth->message == LUA_NOREF) return;
-    lua_State *L = auth->lua->L;
+    struct shell_lua *lua = auth->lua;
+    lua_State *L = lua->L;
     lua_rawgeti(L, LUA_REGISTRYINDEX, auth->message);
     lua_pushstring(L, error ? "error" : "info");
     lua_pushstring(L, text);
+    /* It may cancel this attempt, freeing auth. */
     call(L, 2, 0, "authenticate", NULL, 0);
-    redraw_all(auth->lua);
+    redraw_all(lua);
 }
 
 static void auth_done(void *data, bool ok, const char *reason) {

@@ -17,7 +17,7 @@ struct shell_auth_handler {
 
 struct shell_auth *shell_auth_start(struct shell_core *core, const char *service,
     const char *password, const struct shell_auth_handler *handler, void *data);
-/* Stop an attempt: no callbacks follow. */
+/* Stop an attempt: no callbacks follow. Safe from its own on_message. */
 void shell_auth_cancel(struct shell_auth *auth);
 
 #endif

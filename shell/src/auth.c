@@ -26,6 +26,8 @@ struct shell_auth {
     char buffer[1024];
     size_t length;
     bool finished;
+    bool dispatching; /* inside a handler: cancelling must wait */
+    bool cancelled;
     bool ok;
     char reason[256];
 };
@@ -101,7 +103,13 @@ static void readable(int fd, short revents, void *data) {
             char *start = auth->buffer, *nl;
             while (!auth->finished && (nl = strchr(start, '\n'))) {
                 *nl = '\0';
+                auth->dispatching = true;
                 handle_line(auth, start);
+                auth->dispatching = false;
+                if (auth->cancelled) {
+                    auth_free(auth); /* cancelled from the message handler */
+                    return;
+                }
                 start = nl + 1;
             }
             if (auth->finished) {
@@ -181,5 +189,7 @@ struct shell_auth *shell_auth_start(struct shell_core *core, const char *service
 }
 
 void shell_auth_cancel(struct shell_auth *auth) {
-    if (auth && !auth->finished) auth_free(auth);
+    if (!auth || auth->finished) return;
+    if (auth->dispatching) auth->cancelled = true; /* the reader frees it */
+    else auth_free(auth);
 }
