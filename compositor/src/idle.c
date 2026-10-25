@@ -30,6 +30,9 @@ struct idle_inhibitor {
 	struct shady_idle *idle;
 	struct wlr_idle_inhibitor_v1 *inhibitor;
 	struct wl_listener destroy;
+	/* Only a mapped surface inhibits: follow it on and off screen. */
+	struct wl_listener map;
+	struct wl_listener unmap;
 };
 
 struct shady_idle {
@@ -72,13 +75,33 @@ static void update_inhibited(struct shady_idle *idle) {
 			shady_idle_inhibited(idle->server));
 }
 
+static void inhibitor_remove(struct idle_inhibitor *it) {
+	wl_list_remove(&it->link);
+	wl_list_remove(&it->destroy.link);
+	wl_list_remove(&it->map.link);
+	wl_list_remove(&it->unmap.link);
+	free(it);
+}
+
+static void inhibitor_map(struct wl_listener *listener, void *data) {
+	(void)data;
+	struct idle_inhibitor *it = wl_container_of(listener, it, map);
+	update_inhibited(it->idle);
+}
+
+static void inhibitor_unmap(struct wl_listener *listener, void *data) {
+	(void)data;
+	struct idle_inhibitor *it = wl_container_of(listener, it, unmap);
+	update_inhibited(it->idle);
+	/* Idle time starts again from when the video went away. */
+	it->idle->last_activity_ms = now_ms();
+}
+
 static void inhibitor_destroy(struct wl_listener *listener, void *data) {
 	(void)data;
 	struct idle_inhibitor *it = wl_container_of(listener, it, destroy);
 	struct shady_idle *idle = it->idle;
-	wl_list_remove(&it->link);
-	wl_list_remove(&it->destroy.link);
-	free(it);
+	inhibitor_remove(it);
 	update_inhibited(idle);
 	/* Idle time starts again from when the video stopped. */
 	idle->last_activity_ms = now_ms();
@@ -93,6 +116,10 @@ static void new_inhibitor(struct wl_listener *listener, void *data) {
 	it->inhibitor = inhibitor;
 	it->destroy.notify = inhibitor_destroy;
 	wl_signal_add(&inhibitor->events.destroy, &it->destroy);
+	it->map.notify = inhibitor_map;
+	wl_signal_add(&inhibitor->surface->events.map, &it->map);
+	it->unmap.notify = inhibitor_unmap;
+	wl_signal_add(&inhibitor->surface->events.unmap, &it->unmap);
 	wl_list_insert(&idle->inhibitors, &it->link);
 	update_inhibited(idle);
 }
@@ -138,11 +165,8 @@ void shady_idle_finish(struct shady_server *server) {
 	for (size_t i = 0; i < MAX_TIMEOUTS; i++)
 		if (idle->timeouts[i].timer) wl_event_source_remove(idle->timeouts[i].timer);
 	struct idle_inhibitor *it, *tmp;
-	wl_list_for_each_safe(it, tmp, &idle->inhibitors, link) {
-		wl_list_remove(&it->link);
-		wl_list_remove(&it->destroy.link);
-		free(it);
-	}
+	wl_list_for_each_safe(it, tmp, &idle->inhibitors, link)
+		inhibitor_remove(it);
 	wl_list_remove(&idle->new_inhibitor.link);
 	free(idle);
 	server->idle = NULL;
