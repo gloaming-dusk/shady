@@ -1536,10 +1536,12 @@ static uint64_t node_hash(const struct ui_node *n, uint64_t h, bool *dynamic, bo
     return h;
 }
 
-static void diff_grow(double rect[4], bool *any, const struct ui_node *n) {
+/* (ox, oy): what the ancestors' translates move the node by, as ui_draw
+ * composes them. */
+static void diff_grow(double rect[4], bool *any, const struct ui_node *n, double ox, double oy) {
     double pad = 6 + n->border_width +
         (n->style.has_shadow ? fabs(n->style.shadow[0]) + fabs(n->style.shadow[1]) : 0);
-    double x = n->x - pad, y = n->y - pad, w = n->w + 2 * pad, h = n->h + 2 * pad;
+    double x = ox + n->x - pad, y = oy + n->y - pad, w = n->w + 2 * pad, h = n->h + 2 * pad;
     if (n->style.has_translate) { x += n->style.translate[0]; y += n->style.translate[1]; }
     if (!*any) {
         rect[0] = x; rect[1] = y; rect[2] = w; rect[3] = h;
@@ -1558,7 +1560,8 @@ static bool transformed(const struct ui_node *n) {
         (n->style.has_rotate && n->style.rotate != 0.0);
 }
 
-static bool diff_node(const struct ui_node *a, const struct ui_node *b, double rect[4], bool *any) {
+static bool diff_node(const struct ui_node *a, const struct ui_node *b, double rect[4], bool *any,
+        double ox, double oy) {
     if (a->hidden != b->hidden || transformed(a) || transformed(b)) return false;
     if (a->hidden) return true;
     bool dynamic = false;
@@ -1568,12 +1571,14 @@ static bool diff_node(const struct ui_node *a, const struct ui_node *b, double r
     if (dynamic) return false;
     if (!same) {
         /* The whole node, children included, on both sides. */
-        diff_grow(rect, any, a);
-        diff_grow(rect, any, b);
+        diff_grow(rect, any, a, ox, oy);
+        diff_grow(rect, any, b, ox, oy);
         return true;
     }
+    /* Same node, so the same translate on both sides. */
+    if (a->style.has_translate) { ox += a->style.translate[0]; oy += a->style.translate[1]; }
     for (size_t i = 0; i < a->child_count; i++)
-        if (!diff_node(a->children[i], b->children[i], rect, any)) return false;
+        if (!diff_node(a->children[i], b->children[i], rect, any, ox, oy)) return false;
     return true;
 }
 
@@ -1581,7 +1586,7 @@ bool ui_tree_diff(const struct ui_node *before, const struct ui_node *after, dou
     bool any = false;
     rect[0] = rect[1] = rect[2] = rect[3] = 0;
     if (!before || !after) return false;
-    return diff_node(before, after, rect, &any);
+    return diff_node(before, after, rect, &any, 0, 0);
 }
 
 bool ui_tree_take_handlers(struct ui_node *shown, struct ui_node *fresh) {
