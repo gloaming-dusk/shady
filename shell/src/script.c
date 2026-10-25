@@ -1920,10 +1920,18 @@ static const char *default_pam_service(void) {
     return "login";
 }
 
+static int l_can_authenticate(lua_State *L) {
+    lua_pushboolean(L, shell_auth_available());
+    return 1;
+}
+
 /* shell.authenticate(password | nil, function(ok, reason) end[,
  *   {service = "shady-lock", on_message = function(kind, text) end}]) -> id */
 static int l_authenticate(lua_State *L) {
-    const char *password = lua_isnoneornil(L, 1) ? NULL : luaL_checkstring(L, 1);
+    size_t length = 0;
+    const char *password = lua_isnoneornil(L, 1) ? NULL : luaL_checklstring(L, 1, &length);
+    luaL_argcheck(L, length <= SHELL_AUTH_PASSWORD_MAX && (!password || strlen(password) == length),
+        1, "password too long or not text");
     luaL_checktype(L, 2, LUA_TFUNCTION);
     const char *service = default_pam_service();
     int message = LUA_NOREF;
@@ -2021,6 +2029,7 @@ static const luaL_Reg api[] = {
     { "lock", l_lock },
     { "unlock", l_unlock },
     { "locked", l_locked },
+    { "can_authenticate", l_can_authenticate },
     { "authenticate", l_authenticate },
     { "cancel_authentication", l_cancel_authentication },
     { "cancel", l_cancel },

@@ -1136,7 +1136,8 @@ lock = function()
     if shell.locked() then return end
     reset_lock()
     LK.at = os.time()
-    if shell.lock() then
+    -- Without the helper no password would ever unlock it: swaylock instead.
+    if shell.can_authenticate() and shell.lock() then
         listen_fingerprint()
     elseif HAVE.swaylock then
         shell.spawn("pidof swaylock >/dev/null || swaylock -f -c 11111b")
@@ -1149,7 +1150,7 @@ local function submit()
     if LK.busy or LK.password == "" then return end
     LK.busy, LK.message, LK.error = true, "Checking…", false
     local password = LK.password
-    LK.checking = shell.authenticate(password, function(ok, reason)
+    local started, id = pcall(shell.authenticate, password, function(ok, reason)
         LK.checking, LK.busy = nil, false
         if ok then
             cancel_auth("fingerprint")
@@ -1161,6 +1162,12 @@ local function submit()
             LK.shake = LK.shake + 1
         end
     end)
+    if started then
+        LK.checking = id
+    else
+        LK.busy, LK.password, LK.error = false, "", true
+        LK.message = "Cannot check the password"
+    end
 end
 
 -- Whatever unlocked, attempts begun under this lock must not answer the next.

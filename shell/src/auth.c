@@ -53,6 +53,25 @@ static void helper_path(char *out, size_t size) {
     snprintf(out, size, "shady-auth");
 }
 
+bool shell_auth_available(void) {
+    char helper[PATH_MAX];
+    helper_path(helper, sizeof(helper));
+    if (strchr(helper, '/')) return access(helper, X_OK) == 0;
+    /* A bare name: execlp searches PATH for it, and so does this. */
+    const char *path = getenv("PATH");
+    if (!path || !*path) path = "/bin:/usr/bin";
+    while (*path) {
+        size_t n = strcspn(path, ":");
+        char candidate[PATH_MAX];
+        if (n > 0 && snprintf(candidate, sizeof(candidate), "%.*s/%s", (int)n, path, helper)
+                < (int)sizeof(candidate) && access(candidate, X_OK) == 0)
+            return true;
+        path += n;
+        if (*path == ':') path++;
+    }
+    return false;
+}
+
 static void auth_free(struct shell_auth *auth) {
     if (auth->watch) shell_watch_remove(auth->watch);
     if (auth->fd >= 0) close(auth->fd);
@@ -131,6 +150,7 @@ struct shell_auth *shell_auth_start(struct shell_core *core, const char *service
         const char *password, const struct shell_auth_handler *handler, void *data) {
     struct passwd *pw = getpwuid(getuid());
     if (!pw || !service) return NULL;
+    if (password && strlen(password) > SHELL_AUTH_PASSWORD_MAX) return NULL;
     char helper[PATH_MAX];
     helper_path(helper, sizeof(helper));
 
@@ -145,8 +165,10 @@ struct shell_auth *shell_auth_start(struct shell_core *core, const char *service
      * holds far more than a password, so this never blocks, and with the
      * read end still ours it cannot meet a helper that already exited
      * (exec failed, PAM refused without asking): that write would raise
-     * SIGPIPE and end the shell under its own lock screen. */
+     * SIGPIPE and end the shell under its own lock screen. Non-blocking,
+     * should a pipe ever be smaller: failing beats hanging the shell. */
     if (password) {
+        fcntl(in[1], F_SETFL, O_NONBLOCK);
         size_t length = strlen(password);
         if (write(in[1], password, length) < 0 || write(in[1], "\n", 1) < 0) {
             close(in[0]); close(in[1]); close(out[0]); close(out[1]);

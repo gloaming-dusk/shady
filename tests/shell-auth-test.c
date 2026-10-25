@@ -51,6 +51,15 @@ static void finished_after_cancel(void *d, bool ok, const char *reason) {
 static const struct shell_auth_handler cancel_handler = { cancel_on_message, finished_after_cancel };
 int main(void) {
     struct shell_core core = {0};
+    if (!shell_auth_available()) { puts("the helper next to the test is not found"); return 1; }
+    /* Longer than the helper reads, or than a pipe holds: refused at
+     * once, never a write that blocks the shell. */
+    static char huge[1 << 20];
+    memset(huge, 'x', sizeof(huge) - 1);
+    if (shell_auth_start(&core, "other", huge, &handler, NULL)) {
+        puts("started with a 1 MiB password");
+        return 1;
+    }
     for (int round = 0; round < 3; round++) {
         done = 0;
         if (!shell_auth_start(&core, "other", round == 1 ? NULL : "wrong", &handler, NULL)) return 1;
@@ -63,6 +72,7 @@ int main(void) {
     /* A helper that cannot even start: the attempt fails, and nothing
      * (SIGPIPE from writing the password to it) ends the process. */
     setenv("SHADY_AUTH_HELPER", "/nonexistent/shady-auth", 1);
+    if (shell_auth_available()) { puts("a missing helper counted as available"); return 1; }
     for (int round = 0; round < 50; round++) {
         done = 0;
         if (!shell_auth_start(&core, "other", "wrong", &handler, NULL)) return 1;

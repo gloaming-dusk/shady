@@ -348,7 +348,8 @@ the keyboard. Its anchors, layer and size are ignored.
 | `shell.lock()` | lock the session and show the `lock` popups; false when the compositor has no session lock |
 | `shell.unlock()` | unlock and close them |
 | `shell.locked()` | whether this shell holds the lock |
-| `shell.authenticate(password, fn[, options])` | check the password of the user running the shell with PAM, in the `shady-auth` helper; calls `fn(ok, reason)` once. `password` nil answers no password, for a fingerprint-only service. Options: `service` (default: the first of `shady-lock`, `swaylock`, `login` in `/etc/pam.d`), `on_message = function(kind, text)` for what PAM says on the way ("Place your finger…"). Returns an id for `shell.cancel_authentication(id)` |
+| `shell.can_authenticate()` | whether the `shady-auth` helper is installed (it is not built without libpam); check it before `shell.lock()`, or nothing will unlock |
+| `shell.authenticate(password, fn[, options])` | check the password of the user running the shell with PAM, in the `shady-auth` helper; calls `fn(ok, reason)` once. `password` nil answers no password, for a fingerprint-only service. Options: `service` (default: the first of `shady-lock`, `swaylock`, `login` in `/etc/pam.d`), `on_message = function(kind, text)` for what PAM says on the way ("Place your finger…"). Returns an id for `shell.cancel_authentication(id)`; raises an error when the helper cannot start or the password is over 1022 bytes |
 
 If the compositor ends the lock itself, the `unlocked` event follows.
 When a locking shell dies the session stays locked, and the compositor
