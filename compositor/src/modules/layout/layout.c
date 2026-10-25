@@ -88,6 +88,10 @@ static bool layout_area(struct shady_server *server, struct wlr_box *area,
 	return area->width > 0 && area->height > 0;
 }
 
+bool shady_layout_shown_on(struct shady_toplevel *toplevel, struct wlr_output *output) {
+	return !shady_layout_is_tiled(toplevel) || layout_output(toplevel->server) == output;
+}
+
 static int layout_gap(struct shady_server *server) {
 	float gap = server->config.layout_gap;
 	return gap > 0.f ? (int)(gap + 0.5f) : 0;

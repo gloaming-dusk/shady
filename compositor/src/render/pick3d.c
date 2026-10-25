@@ -15,6 +15,7 @@
 #include "render.h"
 #include "../modules/fps/fps.h"
 #include "../modules/fps/state.h"
+#include "../modules/layout/layout.h"
 
 /*
  * Which of two hit windows is in front. Windows in one plane overlap the way
@@ -63,7 +64,8 @@ struct shady_toplevel *shady_titlebar_at_3d(struct shady_server *server,
 		struct wlr_surface *surf = toplevel->xdg_toplevel->base->surface;
 		if (!surf || !surf->mapped || !toplevel->scene_tree->node.enabled ||
 				toplevel->fullscreen ||
-				!shady_toplevel_has_titlebar(toplevel) || toplevel->titlebar_height <= 0)
+				!shady_toplevel_has_titlebar(toplevel) || toplevel->titlebar_height <= 0 ||
+				!shady_layout_shown_on(toplevel, wlr_output))
 			continue;
 		if (shady_spatial_state(server)->runtime.camera.first_person &&
 				!shady_fps_toplevel_state_const(toplevel)->expanded)
@@ -145,7 +147,8 @@ struct shady_toplevel *shady_resize_edge_at_3d(struct shady_server *server,
 	wl_list_for_each(toplevel, &server->toplevels, link) {
 		struct wlr_surface *surf = toplevel->xdg_toplevel->base->surface;
 		if (!surf || !surf->mapped || !toplevel->scene_tree->node.enabled ||
-				toplevel->fullscreen || toplevel->maximized)
+				toplevel->fullscreen || toplevel->maximized ||
+				!shady_layout_shown_on(toplevel, wlr_output))
 			continue;
 		struct wlr_box content = shady_toplevel_content_box(toplevel);
 		float tw = (float)content.width, th = (float)content.height;
@@ -229,7 +232,8 @@ struct shady_toplevel *shady_toplevel_at_3d(struct shady_server *server,
 	wl_list_for_each(screen_toplevel, &server->toplevels, link) {
 		if (shady_spatial_state(server)->runtime.camera.first_person ||
 				(!screen_toplevel->fullscreen && !screen_toplevel->maximized) || !screen_toplevel->scene_tree ||
-				!screen_toplevel->scene_tree->node.enabled) continue;
+				!screen_toplevel->scene_tree->node.enabled ||
+				!shady_layout_shown_on(screen_toplevel, wlr_output)) continue;
 		struct wlr_surface *root = screen_toplevel->xdg_toplevel->base->surface;
 		if (!root || !root->mapped) continue;
 		/* The node is the content box's top-left. */
@@ -262,7 +266,8 @@ struct shady_toplevel *shady_toplevel_at_3d(struct shady_server *server,
 	struct shady_toplevel *toplevel;
 	wl_list_for_each(toplevel, &server->toplevels, link) {
 		struct wlr_surface *surf = toplevel->xdg_toplevel->base->surface;
-		if (!surf->mapped || !toplevel->scene_tree->node.enabled) {
+		if (!surf->mapped || !toplevel->scene_tree->node.enabled ||
+				!shady_layout_shown_on(toplevel, wlr_output)) {
 			continue;
 		}
 
@@ -409,7 +414,8 @@ struct shady_toplevel *shady_toplevel_at_camera_center_hit_output(
 		struct shady_toplevel *toplevel;
 		wl_list_for_each(toplevel, &server->toplevels, link) {
 			struct wlr_surface *surf = toplevel->xdg_toplevel->base->surface;
-			if (!surf->mapped || !toplevel->scene_tree->node.enabled) continue;
+			if (!surf->mapped || !toplevel->scene_tree->node.enabled ||
+					!shady_layout_shown_on(toplevel, wlr_output)) continue;
 			struct wlr_box content = shady_toplevel_content_box(toplevel);
 			float tw = (float)content.width;
 			float th = (float)content.height;

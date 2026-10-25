@@ -37,6 +37,7 @@
 #include "../modules/spatial/state.h"
 #include "../modules/fps/fps.h"
 #include "../modules/fps/state.h"
+#include "../modules/layout/layout.h"
 #include "../modules/physics/state.h"
 #include "../modules/close_animation/state.h"
 #include "../modules/close_animation/close_animation.h"
@@ -2611,7 +2612,8 @@ void shady_render_output_frame(
 				->base
 				->surface;
 
-		if (!surface->mapped || !toplevel->scene_tree->node.enabled) {
+		if (!surface->mapped || !toplevel->scene_tree->node.enabled ||
+				!shady_layout_shown_on(toplevel, wlr_output)) {
 			continue;
 		}
 

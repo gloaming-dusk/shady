@@ -7,6 +7,7 @@
 
 struct shady_server;
 struct shady_toplevel;
+struct wlr_output;
 
 /* The scrolling layout: with `layout = "scrolling"` each workspace is a strip
  * of columns that scrolls sideways, niri style. Every function is a no-op
@@ -23,6 +24,10 @@ enum shady_layout_direction {
 
 bool shady_layout_active(struct shady_server *server);
 bool shady_layout_is_tiled(struct shady_toplevel *toplevel);
+/* Whether the window is drawn and picked on that output. A tiled window
+ * belongs to the strip's output only: columns scrolled past its edge are
+ * off screen, not on the monitor beside it. */
+bool shady_layout_shown_on(struct shady_toplevel *toplevel, struct wlr_output *output);
 
 /* Hooks from the core. */
 void shady_layout_initial_configure(struct shady_toplevel *toplevel);
