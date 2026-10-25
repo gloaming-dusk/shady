@@ -314,13 +314,21 @@ static bool composite_surface(struct gl_renderer *gl, struct shell_surface *surf
     return true;
 }
 
-static void upload(struct gl_renderer *gl, struct gl_surface *state) {
-    const unsigned char *pixels = cairo_image_surface_get_data(state->image);
+/* Upload rows y .. y + rows of the cairo image: a paint that changed part
+ * of the surface sends only those. */
+static void upload(struct gl_renderer *gl, struct gl_surface *state, int y, int rows) {
+    if (y < 0 || rows <= 0 || y + rows > state->height ||
+            state->texture_width != state->width || state->texture_height != state->height) {
+        y = 0;
+        rows = state->height;
+    }
+    const unsigned char *pixels = cairo_image_surface_get_data(state->image) +
+        (size_t)y * (size_t)state->width * 4;
     GLenum format = GL_RGBA;
     if (gl->bgra) {
         format = GL_BGRA_EXT;
     } else {
-        size_t size = (size_t)state->width * (size_t)state->height * 4;
+        size_t size = (size_t)state->width * (size_t)rows * 4;
         if (size > gl->swizzle_size) {
             unsigned char *grown = realloc(gl->swizzle, size);
             if (!grown) return;
@@ -353,7 +361,7 @@ static void upload(struct gl_renderer *gl, struct gl_surface *state) {
         state->texture_width = state->width;
         state->texture_height = state->height;
     } else {
-        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, state->width, state->height,
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, y, state->width, rows,
             format, GL_UNSIGNED_BYTE, pixels);
     }
 }
@@ -415,7 +423,7 @@ static bool gl_end(struct shell_renderer *renderer, struct shell_surface *surfac
     struct gl_renderer *gl = (struct gl_renderer *)renderer;
     struct gl_surface *state = surface->render_data;
     if (!state || !state->image || !make_current(gl, state)) return false;
-    upload(gl, state);
+    upload(gl, state, surface->damage_y, surface->damage_height);
     return composite_surface(gl, surface, state);
 }
 
@@ -457,6 +465,7 @@ static void gl_destroy(struct shell_renderer *renderer) {
 
 static const struct shell_renderer_impl gl_impl = {
     .name = "gl",
+    .retains = true,
     .destroy = gl_destroy,
     .begin = gl_begin,
     .end = gl_end,

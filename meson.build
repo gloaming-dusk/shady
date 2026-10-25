@@ -78,6 +78,8 @@ shady_sources = [
   'compositor/src/config_lua.c',
   'compositor/src/titlebar.c',
   'compositor/src/input.c',
+  'compositor/src/gestures.c',
+  'compositor/src/idle.c',
   'compositor/src/xdg.c',
   'compositor/src/modules/window_motion/window_motion.c',
   'compositor/src/layer.c',
@@ -97,6 +99,7 @@ shady_sources = [
   'compositor/src/modules/desktop/ime.c',
   'compositor/src/modules/workspace/workspace.c',
   'compositor/src/modules/workspace/module.c',
+  'compositor/src/modules/layout/layout.c',
 ]
 
 if spatial_enabled
@@ -259,6 +262,8 @@ if shell_enabled
   )
   executable('shady-shell',
     [
+      ext_session_lock_client_header,
+      ext_session_lock_protocol_code,
       text_input_client_header,
       text_input_protocol_code,
       layer_shell_protocol_header,
@@ -278,6 +283,7 @@ if shell_enabled
       'shell/src/script.c',
       'shell/src/plugins.c',
       'shell/src/compositor.c',
+      'shell/src/auth.c',
       'compositor/src/ipc/json.c',
     ],
     include_directories: include_directories('.', 'include', 'compositor/src'),
@@ -290,6 +296,23 @@ if shell_enabled
     ],
     dependencies: [wayland_client, cairo, pangocairo, shell_pangoft2, shell_fontconfig, shell_xkbcommon, shell_sd_bus, lua, dl, cc.find_library('m')] + shell_gl_deps,
     install: true)
+
+  # Checks passwords for the lock screen (shell.authenticate) with PAM, out
+  # of the shell's process.
+  shell_pam = cc.find_library('pam', required: false)
+  if shell_pam.found()
+    executable('shady-auth', 'shell/src/auth_helper.c',
+      dependencies: [shell_pam],
+      install: true)
+    # Next to shady-auth, where auth.c looks for the helper.
+    shell_auth_test = executable('shell-auth-test',
+      ['tests/shell-auth-test.c', 'shell/src/auth.c',
+       ext_session_lock_client_header, text_input_client_header, layer_shell_protocol_header],
+      include_directories: include_directories('shell/src'),
+      dependencies: [wayland_client, cairo, shell_xkbcommon],
+      install: false)
+    test('shell-auth', shell_auth_test)
+  endif
 
   # Native shell plugins (include/shady/shell_plugin.h).
   shared_module('shady-shell-plugin-sysinfo',
@@ -797,7 +820,7 @@ install_subdir('shell', install_dir: shady_data_install_dir,
 install_subdir('greeter', install_dir: shady_data_install_dir,
   exclude_directories: ['src'])
 install_subdir('plugins/shaders', install_dir: join_paths(shady_data_install_dir, 'plugins'))
-foreach rice : ['horizon', 'afterglow', 'objects', 'neon-transit']
+foreach rice : ['horizon', 'afterglow', 'objects', 'neon-transit', 'tide']
   rice_files = []
   foreach file : ['config.lua', 'init.lua', 'shell.lua', 'theme.sh', 'README.md']
     if import('fs').is_file(join_paths('rices', rice, file))
@@ -806,11 +829,14 @@ foreach rice : ['horizon', 'afterglow', 'objects', 'neon-transit']
   endforeach
   install_data(rice_files,
     install_dir: join_paths(shady_data_install_dir, 'rices', rice))
-  # Typefaces the rice's shell.lua loads with shell.fonts("fonts").
-  if import('fs').is_dir(join_paths('rices', rice, 'fonts'))
-    install_subdir(join_paths('rices', rice, 'fonts'),
-      install_dir: join_paths(shady_data_install_dir, 'rices', rice))
-  endif
+  # Typefaces the rice's shell.lua loads with shell.fonts("fonts"), and
+  # its shaders.
+  foreach dir : ['fonts', 'shaders']
+    if import('fs').is_dir(join_paths('rices', rice, dir))
+      install_subdir(join_paths('rices', rice, dir),
+        install_dir: join_paths(shady_data_install_dir, 'rices', rice))
+    endif
+  endforeach
 endforeach
 # Rice configs load plugins from $SHADY_ROOT/build, as they do in a checkout.
 install_symlink('build',
@@ -826,6 +852,8 @@ configure_file(input: 'data/shady-session.in', output: 'shady-session',
 configure_file(input: 'data/shady-greeter.in', output: 'shady-greeter',
   configuration: session_conf,
   install: true, install_dir: get_option('bindir'), install_mode: 'rwxr-xr-x')
+install_data('data/shady-session.target',
+  install_dir: join_paths(get_option('prefix'), 'lib', 'systemd', 'user'))
 foreach session : ['shady', 'shady-safe']
   configure_file(input: 'data/@0@.desktop.in'.format(session),
     output: '@0@.desktop'.format(session),

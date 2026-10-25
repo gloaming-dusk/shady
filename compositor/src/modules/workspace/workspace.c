@@ -11,6 +11,7 @@
 #include "../../event/event.h"
 #include "../../render/render.h"
 #include "state.h"
+#include "../layout/layout.h"
 
 static ssize_t find_workspace(struct shady_workspace_state *state,
 		const char *name) {
@@ -121,6 +122,7 @@ bool shady_workspace_move_toplevel(struct shady_toplevel *toplevel,
 	bool visible = window->workspace == state->current;
 	if (toplevel->scene_tree)
 		wlr_scene_node_set_enabled(&toplevel->scene_tree->node, visible);
+	shady_layout_workspace_changed(toplevel, old_workspace);
 
 	if (was_visible && !visible) {
 		struct wlr_surface *surface = toplevel->xdg_toplevel->base->surface;

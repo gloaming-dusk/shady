@@ -33,7 +33,12 @@ Besides xdg-shell and layer-shell, Shady implements:
   virtual keyboard (`wtype` works);
 - output management (`wlr-randr`), data control (clipboard managers), idle
   notification, pointer constraints and relative pointer (games), and xdg
-  decorations.
+  decorations;
+- `idle-inhibit-unstable-v1`, so a playing video keeps the screen awake
+  (and holds back `shady.idle` timeouts);
+- `pointer-gestures-unstable-v1`: touchpad pinches and swipes reach the
+  client under the pointer, except the swipe the scrolling layout takes
+  (`gesture_fingers`).
 
 ## Other bars and shells
 

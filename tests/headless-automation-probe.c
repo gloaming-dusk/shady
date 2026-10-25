@@ -366,8 +366,11 @@ int main(void) {
 	const char *title = getenv("SHADY_AUTOMATION_PROBE_TITLE");
 	xdg_toplevel_set_title(p.toplevel,
 		title && *title ? title : "Shady Automation Probe");
-	xdg_toplevel_set_min_size(p.toplevel, WIDTH, HEIGHT);
-	xdg_toplevel_set_max_size(p.toplevel, WIDTH, HEIGHT);
+	/* Fixed size unless a test wants a window that tiles. */
+	if (!getenv("SHADY_AUTOMATION_PROBE_RESIZABLE")) {
+		xdg_toplevel_set_min_size(p.toplevel, WIDTH, HEIGHT);
+		xdg_toplevel_set_max_size(p.toplevel, WIDTH, HEIGHT);
+	}
 	wl_surface_commit(p.surface);
 
 	/* SHADY_AUTOMATION_PROBE_RETITLE="title" renames the window after

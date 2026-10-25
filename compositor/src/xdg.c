@@ -19,6 +19,7 @@
 #include "plugin/plugin.h"
 #include "titlebar.h"
 #include "modules/desktop/state.h"
+#include "modules/layout/layout.h"
 
 static void set_scene_buffer_opacity(struct wlr_scene_buffer *buffer,
 		int sx, int sy, void *data) {
@@ -271,6 +272,10 @@ void focus_toplevel(struct shady_toplevel *toplevel) {
 		return;
 	}
 	struct shady_server *server = toplevel->server;
+	/* The lock surface keeps the keyboard until the session is unlocked,
+	 * whatever asks for a window to be focused meanwhile. */
+	struct shady_desktop_state *desktop = shady_desktop_state(server);
+	if (desktop && desktop->session_locked) return;
 	struct wlr_seat *seat = server->seat;
 	struct wlr_surface *prev_surface = seat->keyboard_state.focused_surface;
 	struct wlr_surface *surface = toplevel->xdg_toplevel->base->surface;
@@ -303,6 +308,7 @@ void shady_toplevel_begin_interactive(struct shady_toplevel *toplevel,
 		enum shady_cursor_mode mode, uint32_t edges) {
 	if (toplevel->fullscreen) return;
 	struct shady_server *server = toplevel->server;
+	if (shady_layout_begin_interactive(toplevel, mode == SHADY_CURSOR_MOVE)) return;
 
 	if (mode == SHADY_CURSOR_MOVE && toplevel->maximized) {
 		/*
@@ -334,7 +340,7 @@ void shady_toplevel_begin_interactive(struct shady_toplevel *toplevel,
 			int y = (int)(server->cursor->y + title_h * 0.5);
 			wlr_scene_node_set_position(&toplevel->scene_tree->node, x, y);
 		}
-	} else if (toplevel->maximized) {
+	} else if (toplevel->maximized && !shady_layout_is_tiled(toplevel)) {
 		return;
 	}
 
@@ -500,7 +506,9 @@ void shady_toplevel_update_decoration(struct shady_toplevel *toplevel) {
 	struct wlr_xdg_toplevel_decoration_v1 *decoration = toplevel->decoration;
 	if (decoration) {
 		enum wlr_xdg_toplevel_decoration_v1_mode mode = decoration->requested_mode;
-		if (!server->config.window_titlebar)
+		if (server->config.prefer_no_csd)
+			mode = WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE;
+		else if (!server->config.window_titlebar)
 			mode = WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_CLIENT_SIDE;
 		else if (mode == WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_NONE)
 			mode = WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE;
@@ -563,6 +571,8 @@ static void xdg_toplevel_commit(struct wl_listener *listener, void *data) {
 	if (toplevel->xdg_toplevel->base->initial_commit) {
 		wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, 0, 0);
 		send_toplevel_bounds(toplevel);
+		/* A window that will be tiled opens at its column's size. */
+		shady_layout_initial_configure(toplevel);
 		/* xdg_toplevel.wm_capabilities was added in xdg-shell v5. */
 		if (toplevel->xdg_toplevel->base->client->shell->version >= 5) {
 			wlr_xdg_toplevel_set_wm_capabilities(toplevel->xdg_toplevel,
@@ -582,6 +592,8 @@ static void xdg_toplevel_commit(struct wl_listener *listener, void *data) {
 	/* A resize from the left or top keeps the opposite edge still: the
 	 * window moves only once the client has drawn the new size, and keeps
 	 * following until it has drawn the last size asked for. */
+	if (toplevel->resize_anchor_edges && shady_layout_is_tiled(toplevel))
+		toplevel->resize_anchor_edges = 0;
 	if (toplevel->resize_anchor_edges) {
 		struct shady_server *server = toplevel->server;
 		struct wlr_box *geo = &toplevel->xdg_toplevel->base->geometry;

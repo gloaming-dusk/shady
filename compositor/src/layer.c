@@ -9,6 +9,7 @@
 #include "shady.h"
 #include "modules/desktop/state.h"
 #include "modules/workspace/workspace.h"
+#include "modules/layout/layout.h"
 #include "render/render.h"
 
 static struct wlr_output *fallback_output(struct shady_server *server) {
@@ -80,11 +81,14 @@ static void refresh_maximized_for_output(struct shady_server *server,
 		struct wlr_output *output) {
 	struct shady_toplevel *toplevel;
 	wl_list_for_each(toplevel, &server->toplevels, link) {
-		if (!toplevel->maximized || toplevel->fullscreen) continue;
+		if (!toplevel->maximized || toplevel->fullscreen ||
+				shady_layout_is_tiled(toplevel)) continue;
 		struct wlr_output *current = wlr_output_layout_output_at(server->output_layout,
 			toplevel->scene_tree->node.x, toplevel->scene_tree->node.y);
 		if (!current || current == output) shady_toplevel_refresh_state(toplevel);
 	}
+	/* The work area may have changed under the tiled windows. */
+	shady_layout_arrange(server);
 }
 
 static void focus_layer_surface(struct shady_layer_surface *layer) {

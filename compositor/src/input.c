@@ -15,6 +15,7 @@
 #include <wlr/types/wlr_primary_selection.h>
 #include <wlr/types/wlr_data_device.h>
 #include <wlr/types/wlr_input_device.h>
+#include <wlr/interfaces/wlr_keyboard.h>
 #include <wlr/types/wlr_keyboard.h>
 #include <wlr/types/wlr_pointer.h>
 #include <wlr/types/wlr_virtual_keyboard_v1.h>
@@ -28,10 +29,12 @@
 #include <xkbcommon/xkbcommon.h>
 
 #include "shady.h"
+#include "idle.h"
 #include "ipc/ipc.h"
 #include "module/module.h"
 #include "modules/desktop/ime.h"
 #include "modules/desktop/state.h"
+#include "modules/layout/layout.h"
 #include <wlr/types/wlr_layer_shell_v1.h>
 #include "render/render.h"
 #if SHADY_HAS_SPATIAL
@@ -103,6 +106,8 @@ static void process_cursor_resize(struct shady_server *server) {
 	if (current->max_width > 0 && width > current->max_width) width = current->max_width;
 	if (current->max_height > 0 && height > current->max_height) height = current->max_height;
 
+	if (shady_layout_interactive_resize(toplevel, width, height, server->resize_edges))
+		return;
 	/* Moving the window here, before the client has drawn the new size,
 	 * would make the opposite edge jitter: the commit handler keeps that
 	 * edge where it was grabbed once the new size arrives. */
@@ -402,9 +407,7 @@ static void keyboard_handle_key(
 	struct shady_server *server = keyboard->server;
 	struct wlr_keyboard_key_event *event = data;
 	struct wlr_seat *seat = server->seat;
-	if (shady_desktop_state(server)->idle_notifier) {
-		wlr_idle_notifier_v1_notify_activity(shady_desktop_state(server)->idle_notifier, server->seat);
-	}
+	shady_idle_activity(server);
 
 	uint32_t keycode = event->keycode + 8;
 	if (event->state == WL_KEYBOARD_KEY_STATE_PRESSED &&
@@ -483,13 +486,30 @@ void shady_input_add_keyboard(struct shady_server *server,
 	bool is_virtual = wlr_input_device_get_virtual_keyboard(device) != NULL;
 	if (!is_virtual) {
 		struct xkb_context *context = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
-		struct xkb_keymap *keymap = xkb_keymap_new_from_names(context, NULL,
+		/* Empty fields fall back to XKB_DEFAULT_* and then "us". */
+		const struct shady_config *c = &server->config;
+		const struct xkb_rule_names names = {
+			.layout = c->xkb_layout[0] ? c->xkb_layout : NULL,
+			.variant = c->xkb_variant[0] ? c->xkb_variant : NULL,
+			.options = c->xkb_options[0] ? c->xkb_options : NULL,
+		};
+		struct xkb_keymap *keymap = xkb_keymap_new_from_names(context, &names,
 			XKB_KEYMAP_COMPILE_NO_FLAGS);
+		if (!keymap) {
+			wlr_log(WLR_ERROR, "input: invalid xkb layout '%s', using the default",
+				c->xkb_layout);
+			keymap = xkb_keymap_new_from_names(context, NULL, XKB_KEYMAP_COMPILE_NO_FLAGS);
+		}
 		keyboard->binding_state = xkb_state_new(keymap);
 		wlr_keyboard_set_keymap(wlr_keyboard, keymap);
+		if (c->numlock) {
+			xkb_mod_index_t num = xkb_keymap_mod_get_index(keymap, XKB_MOD_NAME_NUM);
+			if (num != XKB_MOD_INVALID)
+				wlr_keyboard_notify_modifiers(wlr_keyboard, 0, 0, 1u << num, 0);
+		}
 		xkb_keymap_unref(keymap);
 		xkb_context_unref(context);
-		wlr_keyboard_set_repeat_info(wlr_keyboard, 25, 600);
+		wlr_keyboard_set_repeat_info(wlr_keyboard, c->repeat_rate, c->repeat_delay);
 	}
 
 	keyboard->modifiers.notify = keyboard_handle_modifiers;
@@ -634,9 +654,7 @@ void server_cursor_motion(struct wl_listener *listener, void *data) {
 	struct shady_server *server =
 		wl_container_of(listener, server, cursor_motion);
 	struct wlr_pointer_motion_event *event = data;
-	if (shady_desktop_state(server)->idle_notifier) {
-		wlr_idle_notifier_v1_notify_activity(shady_desktop_state(server)->idle_notifier, server->seat);
-	}
+	shady_idle_activity(server);
 	if (shady_desktop_state(server)->relative_pointer_manager) {
 		wlr_relative_pointer_manager_v1_send_relative_motion(
 			shady_desktop_state(server)->relative_pointer_manager, server->seat,
@@ -660,9 +678,7 @@ void server_cursor_motion_absolute(
 	struct shady_server *server =
 		wl_container_of(listener, server, cursor_motion_absolute);
 	struct wlr_pointer_motion_absolute_event *event = data;
-	if (shady_desktop_state(server)->idle_notifier) {
-		wlr_idle_notifier_v1_notify_activity(shady_desktop_state(server)->idle_notifier, server->seat);
-	}
+	shady_idle_activity(server);
 	if (shady_modules_pointer_motion_absolute(server, event))
 		return;
 	wlr_cursor_warp_absolute(server->cursor, &event->pointer->base, event->x,
@@ -784,9 +800,7 @@ void server_cursor_button(struct wl_listener *listener, void *data) {
 	struct shady_server *server =
 		wl_container_of(listener, server, cursor_button);
 	struct wlr_pointer_button_event *event = data;
-	if (shady_desktop_state(server)->idle_notifier) {
-		wlr_idle_notifier_v1_notify_activity(shady_desktop_state(server)->idle_notifier, server->seat);
-	}
+	shady_idle_activity(server);
 	handle_pointer_button(server, event);
 }
 
@@ -794,9 +808,7 @@ void server_cursor_axis(struct wl_listener *listener, void *data) {
 	struct shady_server *server =
 		wl_container_of(listener, server, cursor_axis);
 	struct wlr_pointer_axis_event *event = data;
-	if (shady_desktop_state(server)->idle_notifier) {
-		wlr_idle_notifier_v1_notify_activity(shady_desktop_state(server)->idle_notifier, server->seat);
-	}
+	shady_idle_activity(server);
 
 	uint32_t mods = seat_modifiers(server);
 	if (shady_modules_pointer_axis(server, event, mods))

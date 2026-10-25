@@ -8,6 +8,7 @@
 #include <wlr/util/log.h>
 
 #include "shady.h"
+#include "ipc/values.h"
 #include "session_lock.h"
 #include "render/render.h"
 #include "modules/desktop/state.h"
@@ -236,6 +237,7 @@ static void lock_unlock(struct wl_listener *listener, void *data) {
 	desktop->session_lock = NULL;
 	desktop->session_lock_pending_locked_event = false;
 	reset_output_waits(server);
+	shady_values_set(server, desktop, "session.lock", NULL);
 	if (desktop->session_lock_tree) {
 		wlr_scene_node_destroy(&desktop->session_lock_tree->node);
 		desktop->session_lock_tree = NULL;
@@ -257,6 +259,9 @@ static void lock_destroy(struct wl_listener *listener, void *data) {
 	desktop->session_lock = NULL;
 	desktop->session_lock_pending_locked_event = false;
 	reset_output_waits(server);
+	/* Still locked: the client died without unlocking. */
+	if (!lock->unlocked && desktop->session_locked)
+		shady_values_set(server, desktop, "session.lock", "abandoned");
 	free(lock);
 }
 
@@ -266,7 +271,9 @@ void server_new_session_lock(struct wl_listener *listener, void *data) {
 	struct shady_server *server = desktop->server;
 	struct wlr_session_lock_v1 *wlr_lock = data;
 
-	if (desktop->session_locked) {
+	/* A lock whose client went away (crashed) keeps the session locked;
+	 * a new locker takes over from it, so the screen can be unlocked. */
+	if (desktop->session_locked && desktop->session_lock) {
 		wlr_session_lock_v1_destroy(wlr_lock);
 		return;
 	}
@@ -295,6 +302,7 @@ void server_new_session_lock(struct wl_listener *listener, void *data) {
 	desktop->session_locked = true;
 	desktop->session_lock_pending_locked_event = true;
 	desktop->session_lock_pending_outputs = 0;
+	shady_values_set(server, desktop, "session.lock", "locked");
 
 	lock->new_surface.notify = lock_new_surface;
 	wl_signal_add(&wlr_lock->events.new_surface, &lock->new_surface);

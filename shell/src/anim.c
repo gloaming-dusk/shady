@@ -327,3 +327,46 @@ bool ui_tree_has_exit(const struct ui_node *tree) {
         if (ui_tree_has_exit(tree->children[i])) return true;
     return false;
 }
+
+void ui_anims_begin_frame(struct ui_anims *anims) {
+    if (!anims) return;
+    for (size_t i = 0; i < anims->count; i++) {
+        struct ui_anim *a = anims->states[i];
+        memcpy(a->last_drawn, a->drawn, sizeof(a->drawn));
+        a->had_drawn = a->has_drawn;
+        a->has_drawn = false;
+    }
+}
+
+static void grow(double rect[4], bool *any, const double r[4]) {
+    if (!*any) {
+        memcpy(rect, r, 4 * sizeof(double));
+        *any = true;
+        return;
+    }
+    double x2 = fmax(rect[0] + rect[2], r[0] + r[2]);
+    double y2 = fmax(rect[1] + rect[3], r[1] + r[3]);
+    rect[0] = fmin(rect[0], r[0]);
+    rect[1] = fmin(rect[1], r[1]);
+    rect[2] = x2 - rect[0];
+    rect[3] = y2 - rect[1];
+}
+
+bool ui_anims_damage(struct ui_anims *anims, double rect[4]) {
+    bool any = false;
+    if (!anims) return false;
+    for (size_t i = 0; i < anims->count; i++) {
+        struct ui_anim *a = anims->states[i];
+        if (a->has_drawn == a->had_drawn &&
+                (!a->has_drawn || !memcmp(a->drawn, a->last_drawn, sizeof(a->drawn))) &&
+                !memcmp(a->value, a->target, sizeof(a->value)))
+            continue;
+        if (a->had_drawn) grow(rect, &any, a->last_drawn);
+        if (a->has_drawn) grow(rect, &any, a->drawn);
+    }
+    if (!any) {
+        rect[0] = rect[1] = rect[2] = rect[3] = 0;
+        return true; /* nothing moved: an empty damage */
+    }
+    return true;
+}

@@ -195,10 +195,76 @@ static const struct zwlr_layer_surface_v1_listener layer_listener = {
     .closed = layer_closed,
 };
 
+static void lock_surface_configure(void *data, struct ext_session_lock_surface_v1 *lock_surface,
+        uint32_t serial, uint32_t width, uint32_t height) {
+    struct shell_surface *surface = data;
+    ext_session_lock_surface_v1_ack_configure(lock_surface, serial);
+    if (!surface->configured || width != surface->width || height != surface->height)
+        fprintf(stderr, "shady-shell: %s (lock) size %ux%u\n", surface->name, width, height);
+    surface->width = width;
+    surface->height = height;
+    surface->configured = true;
+    shell_surface_redraw(surface);
+}
+
+static const struct ext_session_lock_surface_v1_listener lock_surface_listener = {
+    .configure = lock_surface_configure,
+};
+
+static struct {
+    void (*finished)(void *data);
+    void *data;
+} lock_callbacks;
+
+static void lock_locked(void *data, struct ext_session_lock_v1 *lock) {
+    (void)lock;
+    struct shell_core *core = data;
+    core->lock_confirmed = true;
+    fprintf(stderr, "shady-shell: session locked\n");
+}
+
+static void lock_finished(void *data, struct ext_session_lock_v1 *lock) {
+    struct shell_core *core = data;
+    fprintf(stderr, "shady-shell: the compositor ended the session lock\n");
+    if (core->lock == lock) {
+        ext_session_lock_v1_destroy(lock);
+        core->lock = NULL;
+        core->lock_confirmed = false;
+    }
+    if (lock_callbacks.finished) lock_callbacks.finished(lock_callbacks.data);
+}
+
+static const struct ext_session_lock_v1_listener lock_listener = {
+    .locked = lock_locked,
+    .finished = lock_finished,
+};
+
+bool shell_core_lock(struct shell_core *core, void (*finished)(void *data), void *data) {
+    if (!core->lock_manager || core->lock) return false;
+    core->lock = ext_session_lock_manager_v1_lock(core->lock_manager);
+    if (!core->lock) return false;
+    core->lock_confirmed = false;
+    lock_callbacks.finished = finished;
+    lock_callbacks.data = data;
+    ext_session_lock_v1_add_listener(core->lock, &lock_listener, core);
+    return true;
+}
+
+void shell_core_unlock(struct shell_core *core) {
+    if (!core->lock) return;
+    if (core->lock_confirmed) ext_session_lock_v1_unlock_and_destroy(core->lock);
+    else ext_session_lock_v1_destroy(core->lock);
+    core->lock = NULL;
+    core->lock_confirmed = false;
+    wl_display_flush(core->display);
+    fprintf(stderr, "shady-shell: session unlocked\n");
+}
+
 struct shell_surface *shell_surface_create(struct shell_core *core,
         const struct shell_surface_config *config,
         const struct shell_surface_handler *handler, void *data) {
-    if (!core->compositor || !core->layer_shell) return NULL;
+    if (!core->compositor || (!config->lock && !core->layer_shell)) return NULL;
+    if (config->lock && (!core->lock || !config->output)) return NULL;
     struct shell_surface *surface = calloc(1, sizeof(*surface));
     if (!surface) return NULL;
     surface->core = core;
@@ -214,6 +280,24 @@ struct shell_surface *shell_surface_create(struct shell_core *core,
         return NULL;
     }
     wl_surface_add_listener(surface->wl_surface, &surface_listener, surface);
+    if (config->lock) {
+        surface->lock_surface = ext_session_lock_v1_get_lock_surface(core->lock,
+            surface->wl_surface, config->output->wl_output);
+        if (!surface->lock_surface) {
+            wl_surface_destroy(surface->wl_surface);
+            free(surface);
+            return NULL;
+        }
+        ext_session_lock_surface_v1_add_listener(surface->lock_surface,
+            &lock_surface_listener, surface);
+        surface->wants_text_input = config->text_input;
+        wl_list_insert(core->surfaces.prev, &surface->link);
+        surface_update_scale(surface);
+        /* No commit: a lock surface may not commit before its first
+         * configure, which the compositor sends unasked. */
+        surface->dirty = false;
+        return surface;
+    }
     surface->layer_surface = zwlr_layer_shell_v1_get_layer_surface(core->layer_shell,
         surface->wl_surface, config->output ? config->output->wl_output : NULL,
         config->layer, config->name_space);
@@ -252,7 +336,8 @@ void shell_surface_destroy(struct shell_surface *surface) {
     if (core->keyboard_focus == surface) core->keyboard_focus = NULL;
     if (core->renderer) core->renderer->impl->surface_finish(core->renderer, surface);
     if (surface->frame) wl_callback_destroy(surface->frame);
-    zwlr_layer_surface_v1_destroy(surface->layer_surface);
+    if (surface->lock_surface) ext_session_lock_surface_v1_destroy(surface->lock_surface);
+    if (surface->layer_surface) zwlr_layer_surface_v1_destroy(surface->layer_surface);
     shell_effects_finish(&surface->effects);
     wl_surface_destroy(surface->wl_surface);
     wl_list_remove(&surface->link);
@@ -264,7 +349,8 @@ void shell_surface_redraw(struct shell_surface *surface) {
 }
 
 void shell_surface_set_size(struct shell_surface *surface, uint32_t width, uint32_t height) {
-    if (!surface || (surface->requested_width == width && surface->requested_height == height))
+    if (!surface || !surface->layer_surface ||
+            (surface->requested_width == width && surface->requested_height == height))
         return;
     surface->requested_width = width;
     surface->requested_height = height;
@@ -274,7 +360,7 @@ void shell_surface_set_size(struct shell_surface *surface, uint32_t width, uint3
 
 void shell_surface_set_keyboard(struct shell_surface *surface,
         enum zwlr_layer_surface_v1_keyboard_interactivity keyboard) {
-    if (!surface) return;
+    if (!surface || !surface->layer_surface) return;
     zwlr_layer_surface_v1_set_keyboard_interactivity(surface->layer_surface, keyboard);
     wl_surface_commit(surface->wl_surface);
 }
@@ -348,14 +434,48 @@ static void paint(struct shell_surface *surface) {
     int width = (int)surface->width * surface->scale;
     int height = (int)surface->height * surface->scale;
     if (width <= 0 || height <= 0) return;
+    if (!surface->repaint_only && surface->handler->prepare &&
+            !surface->handler->prepare(surface->data, surface)) {
+        surface->stats_skipped++;
+        return;
+    }
     cairo_surface_t *image = core->renderer->impl->begin(core->renderer, surface, width, height);
     if (!image) return;
     cairo_t *cr = cairo_create(image);
+    cairo_scale(cr, surface->scale, surface->scale);
+    double area = 1.0;
+    double rect[4];
+    static int no_damage = -1;
+    if (no_damage < 0) {
+        const char *env = getenv("SHADY_SHELL_NO_DAMAGE");
+        no_damage = env && *env && strcmp(env, "0") != 0;
+    }
+    if (!no_damage && surface->handler->damage && core->renderer->impl->retains &&
+            surface->retained_width == width && surface->retained_height == height &&
+            surface->handler->damage(surface->data, surface, cr, rect)) {
+        /* Something still moves below a pixel: a token damage keeps the
+         * frame callbacks, and so the animation, going. */
+        if (rect[2] <= 0 || rect[3] <= 0) rect[0] = rect[1] = 0, rect[2] = rect[3] = 1;
+        double s = surface->scale;
+        cairo_rectangle(cr, rect[0] / s, rect[1] / s, rect[2] / s, rect[3] / s);
+        cairo_clip(cr);
+        area = rect[2] * rect[3] / ((double)width * height);
+        int y0 = (int)floor(rect[1]), y1 = (int)ceil(rect[1] + rect[3]);
+        if (y0 < 0) y0 = 0;
+        if (y1 > height) y1 = height;
+        surface->damage_y = y0;
+        surface->damage_height = y1 > y0 ? y1 - y0 : 0;
+    } else {
+        surface->retained_width = width;
+        surface->retained_height = height;
+        surface->damage_y = 0;
+        surface->damage_height = height;
+    }
+    surface->stats_area += area > 1.0 ? 1.0 : area;
     cairo_set_operator(cr, CAIRO_OPERATOR_SOURCE);
     cairo_set_source_rgba(cr, 0, 0, 0, 0);
     cairo_paint(cr);
     cairo_set_operator(cr, CAIRO_OPERATOR_OVER);
-    cairo_scale(cr, surface->scale, surface->scale);
     surface->handler->draw(surface->data, surface, cr, surface->width, surface->height);
     cairo_destroy(cr);
     cairo_surface_flush(image);
@@ -385,11 +505,44 @@ static void composite(struct shell_surface *surface) {
 
 /* Paint every dirty or animating surface that is configured and not
  * waiting on a frame, and re-composite ones with animated shaders. */
+/* SHADY_SHELL_PAINT_STATS=1: every two seconds, how often each surface was
+ * painted, from a change (views ran) or for animation only. */
+static void paint_stats(struct shell_core *core, struct shell_surface *painted, bool changed) {
+    static int enabled = -1;
+    static uint64_t since;
+    if (enabled < 0) {
+        const char *env = getenv("SHADY_SHELL_PAINT_STATS");
+        enabled = env && *env && strcmp(env, "0") != 0;
+    }
+    if (!enabled) return;
+    if (painted) {
+        if (changed) painted->stats_changed++;
+        else painted->stats_animated++;
+    }
+    uint64_t now = now_ms();
+    if (!since) since = now;
+    if (now - since < 2000) return;
+    since = now;
+    struct shell_surface *surface;
+    wl_list_for_each(surface, &core->surfaces, link) {
+        if (!surface->stats_changed && !surface->stats_animated) continue;
+        unsigned paints = surface->stats_changed + surface->stats_animated;
+        fprintf(stderr, "shady-shell: paints %s: %u changed (%u unchanged, skipped), "
+            "%u animated in 2 s, %.0f%% of the surface on average\n",
+            surface->name, surface->stats_changed, surface->stats_skipped, surface->stats_animated,
+            paints ? surface->stats_area * 100.0 / paints : 0.0);
+        surface->stats_changed = surface->stats_animated = surface->stats_skipped = 0;
+        surface->stats_area = 0;
+    }
+}
+
 static void paint_dirty(struct shell_core *core) {
     struct shell_surface *surface;
+    paint_stats(core, NULL, false);
     wl_list_for_each(surface, &core->surfaces, link) {
         if (!surface->configured || surface->frame) continue;
         if (surface->dirty || surface->animating) {
+            paint_stats(core, surface, surface->dirty);
             surface->repaint_only = !surface->dirty;
             surface->dirty = false;
             surface->animating = false;
@@ -613,6 +766,9 @@ static void registry_global(void *data, struct wl_registry *registry, uint32_t n
     } else if (!strcmp(interface, zwp_text_input_manager_v3_interface.name)) {
         core->text_input_manager = wl_registry_bind(registry, name,
             &zwp_text_input_manager_v3_interface, 1);
+    } else if (!strcmp(interface, ext_session_lock_manager_v1_interface.name)) {
+        core->lock_manager = wl_registry_bind(registry, name,
+            &ext_session_lock_manager_v1_interface, 1);
     } else if (!strcmp(interface, zwlr_layer_shell_v1_interface.name)) {
         core->layer_shell = wl_registry_bind(registry, name, &zwlr_layer_shell_v1_interface,
             min_u32(version, 4));
@@ -930,6 +1086,8 @@ void shell_core_finish(struct shell_core *core) {
     if (core->keyboard) wl_keyboard_release(core->keyboard);
     if (core->pointer) wl_pointer_release(core->pointer);
     if (core->seat) wl_seat_release(core->seat);
+    if (core->lock) ext_session_lock_v1_destroy(core->lock);
+    if (core->lock_manager) ext_session_lock_manager_v1_destroy(core->lock_manager);
     if (core->layer_shell) zwlr_layer_shell_v1_destroy(core->layer_shell);
     if (core->shm) wl_shm_destroy(core->shm);
     if (core->compositor) wl_compositor_destroy(core->compositor);

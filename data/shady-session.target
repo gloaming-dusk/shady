@@ -1,0 +1,12 @@
+# Started by shady-session once the compositor runs, so user services that
+# belong to a graphical session (a polkit agent) and XDG autostart entries
+# (an input method such as fcitx5, gnome-keyring) start with it, and stopped
+# when the session ends.
+[Unit]
+Description=Shady session
+Documentation=https://github.com/gloaming-dusk/shady
+BindsTo=graphical-session.target
+Wants=graphical-session-pre.target
+After=graphical-session-pre.target
+Wants=xdg-desktop-autostart.target
+Before=xdg-desktop-autostart.target

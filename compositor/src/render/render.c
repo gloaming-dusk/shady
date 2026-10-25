@@ -37,6 +37,7 @@
 #include "../modules/spatial/state.h"
 #include "../modules/fps/fps.h"
 #include "../modules/fps/state.h"
+#include "../modules/layout/layout.h"
 #include "../modules/physics/state.h"
 #include "../modules/close_animation/state.h"
 #include "../modules/close_animation/close_animation.h"
@@ -1984,6 +1985,9 @@ int shady_render_layer_pick(struct shady_server *server, double lx, double ly,
 		wl_list_for_each(layer, &desktop->layer_surfaces, link) {
 			struct wlr_layer_surface_v1 *ls = layer->layer_surface;
 			if ((int)ls->current.layer != z || !ls->surface->mapped || !ls->output) continue;
+			/* Hidden, like the bars under a fullscreen window: not drawn,
+			 * so not hit either. */
+			if (!layer->scene_layer || !layer->scene_layer->tree->node.enabled) continue;
 			int nx = 0, ny = 0;
 			wlr_scene_node_coords(&layer->scene_layer->tree->node, &nx, &ny);
 			double x = lx - nx, y = ly - ny;
@@ -2608,7 +2612,8 @@ void shady_render_output_frame(
 				->base
 				->surface;
 
-		if (!surface->mapped || !toplevel->scene_tree->node.enabled) {
+		if (!surface->mapped || !toplevel->scene_tree->node.enabled ||
+				!shady_layout_shown_on(toplevel, wlr_output)) {
 			continue;
 		}
 

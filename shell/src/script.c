@@ -23,6 +23,7 @@
 
 #include "shady-shell-v1-client-protocol.h"
 #include "anim.h"
+#include "auth.h"
 #include "compositor.h"
 #include "notify.h"
 #include "plugins.h"
@@ -63,6 +64,7 @@ struct view_def {
     bool fill; /* a popup that covers its whole output */
     bool input_widgets; /* take the pointer only over interactive widgets */
     bool text_input; /* take text from input methods (text-input-v3) */
+    bool lock; /* a lock surface on every output while the session is locked */
 };
 
 /* A popup anchored to both edges of an axis, without a size along it, is
@@ -103,6 +105,13 @@ struct view {
     int drag;
     double drag_box[4];
     char *preedit; /* what the input method is composing, for ctx.preedit */
+    /* A tree built by view_prepare for the paint that follows, and what
+     * the surface shows: unchanged trees are not painted again. */
+    struct ui_node *pending;
+    uint64_t pending_hash, painted_hash;
+    bool painted;
+    unsigned hover_serial, painted_hover;
+    bool stepped; /* view_damage already advanced the springs for this paint */
 };
 
 /* shell.poll / shell.listen: a command whose output is a string value. */
@@ -132,7 +141,28 @@ struct shell_lua {
     struct wl_list polls; /* poll.link */
     int handlers; /* registry ref: event name -> list of functions */
     struct shell_timer *date_timer;
+    struct wl_list afters; /* after.link */
+    struct wl_list auths; /* lua_auth.link */
+    int next_after;
     int in_view; /* >0 while a view function runs */
+};
+
+/* shell.authenticate: one attempt and its callbacks. */
+struct lua_auth {
+    struct wl_list link;
+    struct shell_lua *lua;
+    struct shell_auth *auth;
+    int done, message; /* registry refs */
+    int id;
+};
+
+/* shell.after(ms, fn): run fn once, later. */
+struct after {
+    struct wl_list link;
+    struct shell_lua *lua;
+    struct shell_timer *timer;
+    int ref;
+    int id;
 };
 
 /* Config file location and reload watching outlive generations. */
@@ -379,6 +409,116 @@ static double step_time(struct view *view) {
     return dt;
 }
 
+/* Run the view; when what it returns is what the surface already shows
+ * (same tree, size, scale and hover), skip the paint. A plugin-drawn widget,
+ * a shader whose uniforms come from a function, springs still moving or a
+ * closing popup always paint. */
+static bool view_prepare(void *data, struct shell_surface *surface) {
+    struct view *view = data;
+    lua_State *L = view->lua->L;
+    if (view->closing || view->stepping) return true;
+    ui_free(L, view->pending);
+    view->pending = build_tree(view, surface->width, surface->height);
+    if (!view->pending) return true;
+    bool dynamic = false;
+    uint64_t h = ui_tree_hash(view->pending, 1469598103934665603ull, &dynamic);
+    const uint32_t size[3] = { surface->width, surface->height, (uint32_t)surface->scale };
+    for (size_t i = 0; i < sizeof(size); i++) h = (h ^ ((const unsigned char *)size)[i]) * 1099511628211ull;
+    h = (h ^ view->hover_serial) * 1099511628211ull;
+    view->pending_hash = h;
+    if (view->def->uniforms != LUA_NOREF) {
+        lua_rawgeti(L, LUA_REGISTRYINDEX, view->def->uniforms);
+        if (lua_isfunction(L, -1)) dynamic = true;
+        lua_pop(L, 1);
+    }
+    if (dynamic || !view->painted || h != view->painted_hash || !view->tree) return true;
+    /* Same look: keep the laid-out tree, but with the new handlers, whose
+     * closures may hold newer values. */
+    if (!ui_tree_take_handlers(view->tree, view->pending)) return true;
+    ui_free(L, view->pending);
+    view->pending = NULL;
+    return false;
+}
+
+/* Lay out a new tree for the surface; popups without a fixed size follow
+ * their content. */
+static void view_layout(struct view *view, struct shell_surface *surface, cairo_t *cr,
+        struct ui_node *tree, double width, double height, const struct ui_defaults *defaults) {
+    ui_measure(cr, tree, defaults);
+    /* Text narrowed by layout may wrap onto more lines and measure again,
+     * so popups size themselves from the result. */
+    ui_arrange(cr, tree, defaults, 0, 0, width, height);
+    if (view->def->popup && !view->def->fill) {
+        uint32_t want_w = view->def->width ? view->def->width : (uint32_t)ceil(tree->nat_w);
+        uint32_t want_h = view->def->height ? view->def->height : (uint32_t)ceil(tree->nat_h);
+        if (want_w && want_h)
+            shell_surface_set_size(surface, stretch_w(view->def) ? 0 : want_w,
+                stretch_h(view->def) ? 0 : want_h);
+    }
+}
+
+static void union_rect(double into[4], const double r[4]) {
+    if (r[2] <= 0 || r[3] <= 0) return;
+    if (into[2] <= 0 || into[3] <= 0) {
+        memcpy(into, r, 4 * sizeof(double));
+        return;
+    }
+    double x2 = fmax(into[0] + into[2], r[0] + r[2]), y2 = fmax(into[1] + into[3], r[1] + r[3]);
+    into[0] = fmin(into[0], r[0]);
+    into[1] = fmin(into[1], r[1]);
+    into[2] = x2 - into[0];
+    into[3] = y2 - into[1];
+}
+
+/* Redraw only what changes (buffer pixels in rect), when that can be told:
+ * on a frame that only moves springs, where the animated nodes were and are
+ * drawn; on a change, also the widgets that differ from the tree on screen.
+ * The springs advance here, and a pass that paints nothing records where
+ * the animated nodes go. False paints the whole surface. */
+static bool view_damage(void *data, struct shell_surface *surface, cairo_t *cr, double rect[4]) {
+    struct view *view = data;
+    if (!view->tree || view->closing || view->def->shader) return false;
+    struct ui_defaults defaults;
+    ui_defaults(&defaults);
+    double changed[4] = { 0, 0, 0, 0 };
+    if (!surface->repaint_only) {
+        /* Hover styles are not in the tree, and the first tree of a size
+         * has nothing to compare with. */
+        if (!view->pending || view->hover_serial != view->painted_hover) return false;
+        struct ui_node *tree = view->pending;
+        uint32_t w = surface->width, h = surface->height;
+        view_layout(view, surface, cr, tree, w, h, &defaults);
+        if (surface->requested_width != w && surface->requested_width != 0) return false;
+        if (surface->requested_height != h && surface->requested_height != 0) return false;
+        if (!ui_tree_diff(view->tree, tree, changed)) return false;
+        for (int i = 0; i < 4; i++) changed[i] *= surface->scale;
+        ui_free(view->lua->L, view->tree);
+        view->tree = tree;
+        view->pending = NULL;
+        view->painted_hash = view->pending_hash;
+        view->hovered = view->pointer_in ? ui_hit(tree, view->px, view->py, false) : NULL;
+    }
+    ui_anims_begin_frame(view->anims);
+    double dt = step_time(view);
+    bool moving = ui_anims_step(view->anims, view->tree, view->hovered, &defaults, dt, false);
+    view->stepping = moving;
+    surface->animating = moving;
+    view->stepped = true;
+    cairo_save(cr);
+    cairo_rectangle(cr, 0, 0, 0, 0);
+    cairo_clip(cr);
+    ui_draw_recording = true;
+    ui_draw(cr, view->tree, view->hovered, &defaults);
+    ui_draw_recording = false;
+    cairo_restore(cr);
+    double springs[4];
+    ui_anims_damage(view->anims, springs);
+    rect[0] = rect[1] = rect[2] = rect[3] = 0;
+    union_rect(rect, changed);
+    union_rect(rect, springs);
+    return true;
+}
+
 static void view_draw(void *data, struct shell_surface *surface, cairo_t *cr,
         double width, double height) {
     struct view *view = data;
@@ -388,36 +528,35 @@ static void view_draw(void *data, struct shell_surface *surface, cairo_t *cr,
 
     /* Frames that only move springs, and a closing popup's frames, redraw
      * the last tree without running the view. */
-    bool reuse = view->tree && (surface->repaint_only || view->closing);
+    bool reuse = view->tree && (surface->repaint_only || view->closing || view->stepped);
     if (!reuse) {
         ui_free(L, view->tree);
         view->tree = NULL;
         view->hovered = NULL;
-        struct ui_node *tree = build_tree(view, width, height);
+        struct ui_node *tree = view->pending ? view->pending : build_tree(view, width, height);
+        view->pending = NULL;
+        view->painted_hash = view->pending_hash;
+        view->painted = tree != NULL;
+        view->painted_hover = view->hover_serial;
         if (!tree) {
             view->stepping = false;
             return;
         }
-        ui_measure(cr, tree, &defaults);
-        /* Text narrowed by layout may wrap onto more lines and measure again,
-         * so popups size themselves from the result. */
-        ui_arrange(cr, tree, &defaults, 0, 0, width, height);
-        if (view->def->popup && !view->def->fill) {
-            /* Popups without a fixed size follow their content. */
-            uint32_t want_w = view->def->width ? view->def->width : (uint32_t)ceil(tree->nat_w);
-            uint32_t want_h = view->def->height ? view->def->height : (uint32_t)ceil(tree->nat_h);
-            if (want_w && want_h)
-                shell_surface_set_size(surface, stretch_w(view->def) ? 0 : want_w,
-                    stretch_h(view->def) ? 0 : want_h);
-        }
+        view_layout(view, surface, cr, tree, width, height, &defaults);
         view->tree = tree;
         if (view->pointer_in) view->hovered = ui_hit(tree, view->px, view->py, false);
     }
-    double dt = step_time(view);
-    bool moving = ui_anims_step(view->anims, view->tree, view->hovered, &defaults, dt,
-        view->closing);
-    view->stepping = moving;
-    surface->animating = moving;
+    bool moving = view->stepping;
+    if (view->stepped) {
+        view->stepped = false;
+    } else {
+        ui_anims_begin_frame(view->anims);
+        double dt = step_time(view);
+        moving = ui_anims_step(view->anims, view->tree, view->hovered, &defaults, dt,
+            view->closing);
+        view->stepping = moving;
+        surface->animating = moving;
+    }
     ui_draw(cr, view->tree, view->hovered, &defaults);
     collect_effects(view, surface, view->tree, width, height);
     const struct ui_node *caret = view->def->text_input ? find_caret(view->tree) : NULL;
@@ -456,6 +595,7 @@ static void close_view(struct view *view) {
 static void set_hover(struct view *view, struct ui_node *node) {
     if (node == view->hovered) return;
     view->hovered = node;
+    view->hover_serial++;
     snprintf(view->hover_id, sizeof(view->hover_id), "%s", node && node->id ? node->id : "");
     shell_surface_redraw(view->surface);
 }
@@ -620,6 +760,8 @@ static void view_closed(void *data, struct shell_surface *surface) {
 
 static const struct shell_surface_handler view_handler = {
     .draw = view_draw,
+    .prepare = view_prepare,
+    .damage = view_damage,
     .closed = view_closed,
     .pointer_motion = view_motion,
     .pointer_leave = view_leave,
@@ -657,6 +799,7 @@ static struct view *view_create(struct shell_lua *lua, struct view_def *def,
         .keyboard = def->keyboard,
         .output = output,
         .text_input = def->text_input,
+        .lock = def->lock,
     };
     view->surface = shell_surface_create(&lua->shell->core, &config, &view_handler, view);
     if (!view->surface) {
@@ -674,6 +817,7 @@ static void view_destroy(struct view *view) {
     luaL_unref(L, LUA_REGISTRYINDEX, view->drag);
     free(view->preedit);
     shell_surface_destroy(view->surface);
+    ui_free(L, view->pending);
     ui_free(L, view->tree);
     ui_anims_destroy(view->anims);
     if (view->args != LUA_NOREF) luaL_unref(L, LUA_REGISTRYINDEX, view->args);
@@ -704,7 +848,7 @@ static bool showing_on(struct shell_lua *lua, const struct view_def *def,
 static void ensure_persistent(struct shell_lua *lua, struct shell_output *output) {
     for (size_t i = 0; i < lua->def_count; i++) {
         struct view_def *def = &lua->defs[i];
-        if (!def->popup || !def->persistent) continue;
+        if (!def->popup || !def->persistent || def->lock) continue;
         if (def->every_output ? showing_on(lua, def, output) : find_popup(lua, def->name) != NULL)
             continue;
         uint32_t width = 0, height = 0;
@@ -715,7 +859,20 @@ static void ensure_persistent(struct shell_lua *lua, struct shell_output *output
     }
 }
 
+/* While the session is locked, every output shows the lock popups. */
+static void ensure_lock(struct shell_lua *lua, struct shell_output *output) {
+    if (!lua->shell->core.lock) return;
+    for (size_t i = 0; i < lua->def_count; i++) {
+        struct view_def *def = &lua->defs[i];
+        if (!def->popup || !def->lock || showing_on(lua, def, output)) continue;
+        if (view_create(lua, def, output, LUA_NOREF, def->margin, 0, 0))
+            fprintf(stderr, "shady-shell: %s on %s\n", def->name,
+                output->name[0] ? output->name : "output");
+    }
+}
+
 static void create_bars(struct shell_lua *lua, struct shell_output *output) {
+    ensure_lock(lua, output);
     for (size_t i = 0; i < lua->def_count; i++) {
         struct view_def *def = &lua->defs[i];
         if (def->popup || !def_wants_output(def, output)) continue;
@@ -916,6 +1073,10 @@ static int l_popup(lua_State *L) {
     lua_getfield(L, 1, "text_input");
     def->text_input = lua_toboolean(L, -1);
     lua_pop(L, 1);
+    lua_getfield(L, 1, "lock");
+    def->lock = lua_toboolean(L, -1);
+    lua_pop(L, 1);
+    if (def->lock) def->persistent = def->every_output = false;
     lua_getfield(L, 1, "input");
     const char *input = luaL_optstring(L, -1, "all");
     if (!strcmp(input, "widgets")) def->input_widgets = true;
@@ -1660,8 +1821,218 @@ static const char *prelude =
     "  return { gradient = direction, ... }\n"
     "end\n";
 
+/* ---- session lock ------------------------------------------------------ */
+
+static void destroy_lock_views(struct shell_lua *lua) {
+    struct view *view, *tmp;
+    wl_list_for_each_safe(view, tmp, &lua->views, link)
+        if (view->def->lock) view_destroy(view);
+}
+
+static void lock_finished(void *data) {
+    struct shell *shell = data;
+    if (!shell->lua) return;
+    destroy_lock_views(shell->lua);
+    shell_lua_emit(shell, "unlocked");
+}
+
+/* shell.lock(): lock the session and show the `lock` popups on every
+ * output. False when the compositor has no session lock or it is held. */
+static int l_lock(lua_State *L) {
+    no_view(L, "shell.lock");
+    struct shell_lua *lua = lua_of(L);
+    struct shell_core *core = &lua->shell->core;
+    if (core->lock) {
+        lua_pushboolean(L, 1);
+        return 1;
+    }
+    if (!shell_core_lock(core, lock_finished, lua->shell)) {
+        lua_pushboolean(L, 0);
+        return 1;
+    }
+    struct shell_output *output;
+    wl_list_for_each(output, &core->outputs, link)
+        if (output->ready) ensure_lock(lua, output);
+    wl_display_flush(core->display);
+    lua_pushboolean(L, 1);
+    return 1;
+}
+
+static int l_unlock(lua_State *L) {
+    no_view(L, "shell.unlock");
+    struct shell_lua *lua = lua_of(L);
+    destroy_lock_views(lua);
+    shell_core_unlock(&lua->shell->core);
+    return 0;
+}
+
+static int l_locked(lua_State *L) {
+    lua_pushboolean(L, lua_of(L)->shell->core.lock != NULL);
+    return 1;
+}
+
+static void lua_auth_free(struct lua_auth *auth) {
+    lua_State *L = auth->lua->L;
+    luaL_unref(L, LUA_REGISTRYINDEX, auth->done);
+    luaL_unref(L, LUA_REGISTRYINDEX, auth->message);
+    wl_list_remove(&auth->link);
+    free(auth);
+}
+
+static void auth_message(void *data, bool error, const char *text) {
+    struct lua_auth *auth = data;
+    if (auth->message == LUA_NOREF) return;
+    struct shell_lua *lua = auth->lua;
+    lua_State *L = lua->L;
+    lua_rawgeti(L, LUA_REGISTRYINDEX, auth->message);
+    lua_pushstring(L, error ? "error" : "info");
+    lua_pushstring(L, text);
+    /* It may cancel this attempt, freeing auth. */
+    call(L, 2, 0, "authenticate", NULL, 0);
+    redraw_all(lua);
+}
+
+static void auth_done(void *data, bool ok, const char *reason) {
+    struct lua_auth *auth = data;
+    struct shell_lua *lua = auth->lua;
+    lua_State *L = lua->L;
+    lua_rawgeti(L, LUA_REGISTRYINDEX, auth->done);
+    lua_auth_free(auth);
+    lua_pushboolean(L, ok);
+    lua_pushstring(L, reason);
+    call(L, 2, 0, "authenticate", NULL, 0);
+    redraw_all(lua);
+}
+
+static const struct shell_auth_handler auth_handler = {
+    .message = auth_message,
+    .done = auth_done,
+};
+
+/* The first PAM service of these that is installed. */
+static const char *default_pam_service(void) {
+    static const char *const services[] = { "shady-lock", "swaylock", "login" };
+    char path[64];
+    for (size_t i = 0; i < sizeof(services) / sizeof(services[0]); i++) {
+        snprintf(path, sizeof(path), "/etc/pam.d/%s", services[i]);
+        if (access(path, R_OK) == 0) return services[i];
+    }
+    return "login";
+}
+
+static int l_can_authenticate(lua_State *L) {
+    lua_pushboolean(L, shell_auth_available());
+    return 1;
+}
+
+/* shell.authenticate(password | nil, function(ok, reason) end[,
+ *   {service = "shady-lock", on_message = function(kind, text) end}]) -> id */
+static int l_authenticate(lua_State *L) {
+    size_t length = 0;
+    const char *password = lua_isnoneornil(L, 1) ? NULL : luaL_checklstring(L, 1, &length);
+    luaL_argcheck(L, length <= SHELL_AUTH_PASSWORD_MAX && (!password || strlen(password) == length),
+        1, "password too long or not text");
+    luaL_checktype(L, 2, LUA_TFUNCTION);
+    const char *service = default_pam_service();
+    int message = LUA_NOREF;
+    if (lua_istable(L, 3)) {
+        lua_getfield(L, 3, "service");
+        if (lua_isstring(L, -1)) service = lua_tostring(L, -1);
+        lua_pop(L, 1); /* the table keeps it alive */
+        lua_getfield(L, 3, "on_message");
+        if (lua_isfunction(L, -1)) message = luaL_ref(L, LUA_REGISTRYINDEX);
+        else lua_pop(L, 1);
+    }
+    struct shell_lua *lua = lua_of(L);
+    struct lua_auth *auth = calloc(1, sizeof(*auth));
+    if (!auth) return luaL_error(L, "out of memory");
+    auth->lua = lua;
+    auth->message = message;
+    auth->id = ++lua->next_after;
+    lua_pushvalue(L, 2);
+    auth->done = luaL_ref(L, LUA_REGISTRYINDEX);
+    wl_list_insert(&lua->auths, &auth->link);
+    auth->auth = shell_auth_start(&lua->shell->core, service, password, &auth_handler, auth);
+    if (!auth->auth) {
+        lua_auth_free(auth);
+        return luaL_error(L, "could not start the authentication helper");
+    }
+    lua_pushinteger(L, auth->id);
+    return 1;
+}
+
+static int l_cancel_authentication(lua_State *L) {
+    lua_Integer id = luaL_checkinteger(L, 1);
+    struct shell_lua *lua = lua_of(L);
+    struct lua_auth *auth;
+    wl_list_for_each(auth, &lua->auths, link) {
+        if (auth->id != id) continue;
+        shell_auth_cancel(auth->auth);
+        lua_auth_free(auth);
+        return 0;
+    }
+    return 0;
+}
+
+static void after_fire(void *data) {
+    struct after *after = data;
+    struct shell_lua *lua = after->lua;
+    wl_list_remove(&after->link);
+    lua_State *L = lua->L;
+    lua_rawgeti(L, LUA_REGISTRYINDEX, after->ref);
+    luaL_unref(L, LUA_REGISTRYINDEX, after->ref);
+    free(after);
+    call(L, 0, 0, "after", NULL, 0);
+    redraw_all(lua);
+}
+
+static int l_after(lua_State *L) {
+    lua_Integer ms = luaL_checkinteger(L, 1);
+    luaL_checktype(L, 2, LUA_TFUNCTION);
+    struct shell_lua *lua = lua_of(L);
+    struct after *after = calloc(1, sizeof(*after));
+    if (!after) return luaL_error(L, "out of memory");
+    after->lua = lua;
+    after->id = ++lua->next_after;
+    after->timer = shell_timer_add(&lua->shell->core, ms < 0 ? 0 : (uint32_t)ms, after_fire, after);
+    if (!after->timer) {
+        free(after);
+        return luaL_error(L, "out of memory");
+    }
+    lua_pushvalue(L, 2);
+    after->ref = luaL_ref(L, LUA_REGISTRYINDEX);
+    wl_list_insert(&lua->afters, &after->link);
+    lua_pushinteger(L, after->id);
+    return 1;
+}
+
+static int l_cancel(lua_State *L) {
+    lua_Integer id = luaL_checkinteger(L, 1);
+    struct shell_lua *lua = lua_of(L);
+    struct after *after;
+    wl_list_for_each(after, &lua->afters, link) {
+        if (after->id != id) continue;
+        shell_timer_cancel(after->timer);
+        wl_list_remove(&after->link);
+        luaL_unref(L, LUA_REGISTRYINDEX, after->ref);
+        free(after);
+        lua_pushboolean(L, 1);
+        return 1;
+    }
+    lua_pushboolean(L, 0);
+    return 1;
+}
+
 static const luaL_Reg api[] = {
     { "log", l_log },
+    { "after", l_after },
+    { "lock", l_lock },
+    { "unlock", l_unlock },
+    { "locked", l_locked },
+    { "can_authenticate", l_can_authenticate },
+    { "authenticate", l_authenticate },
+    { "cancel_authentication", l_cancel_authentication },
+    { "cancel", l_cancel },
     { "bar", l_bar },
     { "popup", l_popup },
     { "open", l_open },
@@ -1738,6 +2109,18 @@ static void generation_free(struct shell_lua *lua) {
     }
     for (size_t i = 0; i < lua->def_count; i++) free(lua->defs[i].shader);
     shell_timer_cancel(lua->date_timer);
+    struct lua_auth *auth, *autmp;
+    wl_list_for_each_safe(auth, autmp, &lua->auths, link) {
+        shell_auth_cancel(auth->auth);
+        wl_list_remove(&auth->link);
+        free(auth);
+    }
+    struct after *after, *atmp;
+    wl_list_for_each_safe(after, atmp, &lua->afters, link) {
+        shell_timer_cancel(after->timer);
+        wl_list_remove(&after->link);
+        free(after);
+    }
     if (lua->L) lua_close(lua->L);
     free(lua);
 }
@@ -1748,6 +2131,8 @@ static struct shell_lua *generation_load(struct shell *shell, const char *path) 
     lua->shell = shell;
     wl_list_init(&lua->views);
     wl_list_init(&lua->polls);
+    wl_list_init(&lua->afters);
+    wl_list_init(&lua->auths);
     lua_State *L = lua->L = luaL_newstate();
     if (!L) {
         free(lua);
