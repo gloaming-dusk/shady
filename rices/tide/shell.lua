@@ -1147,7 +1147,8 @@ lock = function()
 end
 
 local function submit()
-    if LK.busy or LK.password == "" then return end
+    -- An empty password too: PAM decides whether the account takes one.
+    if LK.busy then return end
     LK.busy, LK.message, LK.error = true, "Checking…", false
     local password = LK.password
     local started, id = pcall(shell.authenticate, password, function(ok, reason)
