@@ -7,6 +7,10 @@ shady.bind("Super+F9", function() end, "Probe binding")
 shady.bind("Super+F10", function() end, { description = "Grouped probe", group = "Probes" })
 shady.bind("Super+F11", function() end)
 local announced = false
+-- The CLI must execute in this runtime, including functions defined at startup.
+function ipc_test_title()
+    return shady.focused_window().title
+end
 shady.on("window.mapped", function(window)
     if announced or window.app_id ~= "ipc-probe" then return end
     announced = true

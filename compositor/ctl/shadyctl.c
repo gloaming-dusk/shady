@@ -4,11 +4,13 @@
  *   shadyctl windows
  *   shadyctl window.focus window=3
  *   shadyctl key keys=Super+h
+ *   shadyctl lua 'return shady.current_workspace()'
+ *   shadyctl lua -f script.lua
  *   shadyctl subscribe events=window.focused,workspace.changed
  *   shadyctl --raw '{"cmd":"workspaces"}'
  *
- * Arguments are key=value pairs: true/false/null and numbers are sent as
- * JSON values, `events` is split on commas into an array, anything else is a
+ * Except for `lua`, arguments are key=value pairs: true/false/null and
+ * numbers are sent as JSON values, `events` is split on commas into an array, anything else is a
  * string. Prints the response's data (or the raw response with --json) and
  * exits 1 when the compositor reports an error. `subscribe` then prints one
  * event per line until the compositor goes away.
@@ -30,10 +32,62 @@
 static void usage(FILE *out) {
 	fprintf(out,
 		"usage: shadyctl [-s socket] [--json] <command> [key=value ...]\n"
+		"       shadyctl [-s socket] [--json] lua '<Lua code>'\n"
+		"       shadyctl [-s socket] [--json] lua -f <file>\n"
+		"       shadyctl [-s socket] [--json] lua -\n"
 		"       shadyctl [-s socket] --raw '<json request>'\n"
-		"commands: version windows focused workspaces outputs plugins\n"
+		"commands: version windows focused workspaces outputs plugins values value shortcuts\n"
 		"          window.focus window.close window.maximize window.fullscreen window.move\n"
-		"          workspace.switch key screenshot plugin.reload plugin.unload subscribe quit\n");
+		"          workspace.switch key screenshot plugin.reload plugin.unload subscribe lua quit\n");
+}
+
+/* Read locally, so paths are relative to the caller and stdin can be piped. */
+static bool lua_request(struct json_buf *request, int argc, char **argv) {
+	struct json_buf source = {0};
+	const char *code = NULL, *name = "=shadyctl";
+	if (argc == 1 && strcmp(argv[0], "-") && strcmp(argv[0], "-f")) {
+		code = argv[0];
+	} else if ((argc == 1 && !strcmp(argv[0], "-")) ||
+			(argc == 2 && !strcmp(argv[0], "-f"))) {
+		const char *path = argc == 1 ? "-" : argv[1];
+		FILE *file = !strcmp(path, "-") ? stdin : fopen(path, "rb");
+		if (!file) {
+			fprintf(stderr, "shadyctl: cannot read %s: %s\n", path, strerror(errno));
+			return false;
+		}
+		if (file != stdin) {
+			name = path;
+		}
+		char chunk[4096];
+		size_t n;
+		bool valid = true;
+		while ((n = fread(chunk, 1, sizeof(chunk), file))) {
+			if (memchr(chunk, '\0', n) || source.len + n > 64 * 1024) {
+				fprintf(stderr, "shadyctl: Lua source must be text and fit in a 64 KiB request\n");
+				valid = false;
+				break;
+			}
+			json_append(&source, chunk, n);
+			if (source.failed) { valid = false; break; }
+		}
+		if (ferror(file)) {
+			fprintf(stderr, "shadyctl: read failed: %s\n", strerror(errno));
+			valid = false;
+		}
+		if (file != stdin) fclose(file);
+		if (!valid) { json_buf_free(&source); return false; }
+		code = source.data ? source.data : "";
+	} else {
+		fprintf(stderr, "shadyctl: expected lua '<code>', lua -f <file>, or lua -\n");
+		return false;
+	}
+	json_puts(request, "{\"id\":1,\"cmd\":\"lua\",\"code\":");
+	json_string(request, code);
+	json_puts(request, ",\"name\":");
+	json_string(request, name);
+	json_puts(request, "}");
+	json_buf_free(&source);
+	return !request->failed;
 }
 
 static bool is_number(const char *s) {
@@ -132,6 +186,11 @@ int main(int argc, char **argv) {
 	const char *cmd = raw ? NULL : argv[i];
 	if (raw) {
 		json_puts(&request, raw);
+	} else if (!strcmp(cmd, "lua")) {
+		if (!lua_request(&request, argc - i - 1, argv + i + 1)) {
+			json_buf_free(&request);
+			return 2;
+		}
 	} else {
 		json_puts(&request, "{\"id\":1,\"cmd\":");
 		json_string(&request, cmd);
@@ -158,6 +217,11 @@ int main(int argc, char **argv) {
 	}
 	json_puts(&request, "\n");
 	if (request.failed) return 1;
+	if (request.len > 64 * 1024) {
+		fprintf(stderr, "shadyctl: request exceeds 64 KiB after JSON escaping\n");
+		json_buf_free(&request);
+		return 2;
+	}
 
 	char path_buf[sizeof(((struct sockaddr_un *)0)->sun_path)];
 	if (!socket_path) socket_path = default_socket(path_buf, sizeof(path_buf));

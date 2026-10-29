@@ -30,6 +30,9 @@
 #include "json.h"
 #include "shortcuts.h"
 #include "values.h"
+#if SHADY_HAS_LUA
+#include "../modules/lua/lua.h"
+#endif
 
 /* A request line longer than this is refused and the client dropped. */
 #define IPC_LINE_MAX (64 * 1024)
@@ -344,6 +347,7 @@ struct request {
 	const struct json_object *args;
 	struct json_buf *data; /* the response's "data" value */
 	const char *error;
+	char lua_error[4096];
 	bool replay_values; /* send current values after the response */
 };
 
@@ -640,11 +644,26 @@ static bool cmd_quit(struct request *r) {
 	return true;
 }
 
+static bool cmd_lua(struct request *r) {
+	const char *code = json_get_string(r->args, "code");
+	if (!code) return error(r, "missing string argument: code");
+#if SHADY_HAS_LUA
+	const char *name = json_get_string(r->args, "name");
+	if (!shady_lua_eval(r->ipc->server, code, name ? name : "=shadyctl",
+			r->data, r->lua_error, sizeof(r->lua_error)))
+		return error(r, r->lua_error);
+	return true;
+#else
+	return error(r, "Lua runtime was not built");
+#endif
+}
+
 static const struct {
 	const char *name;
 	bool (*run)(struct request *r);
 } commands[] = {
 	{ "version", cmd_version },
+	{ "lua", cmd_lua },
 	{ "windows", cmd_windows },
 	{ "focused", cmd_focused },
 	{ "workspaces", cmd_workspaces },

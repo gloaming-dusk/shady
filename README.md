@@ -47,6 +47,19 @@ A rice pairs the compositor with a shell and a look. Pick one with
 - Input methods, fractional scaling, session lock, screencopy and the standard toplevel and workspace protocols ([Desktop integration](docs/DESKTOP.md))
 - ASan/UBSan regression suites for the 2D and 3D paths
 
+Run Lua in the live compositor with `shadyctl lua`:
+
+```sh
+shadyctl lua 'shady.workspace("two")'
+shadyctl lua 'return shady.current_workspace(), shady.workspaces()'
+shadyctl lua -f script.lua
+printf 'return shady.focused_window().title\n' | shadyctl lua -
+```
+
+Commands share the runtime used by `init.lua`, including its globals and
+functions. Return values are printed as a JSON array; errors exit with status 1.
+See the [IPC API](docs/IPC_API.md#running-lua) for details.
+
 ## Plugins
 
 Load one with `shady.plugins.load("<name>")` in `config.lua`. The shipped

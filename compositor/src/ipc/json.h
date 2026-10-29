@@ -27,6 +27,8 @@ void json_printf(struct json_buf *buf, const char *fmt, ...)
 	__attribute__((format(printf, 2, 3)));
 /* A quoted, escaped JSON string; NULL is written as "". */
 void json_string(struct json_buf *buf, const char *text);
+/* Length-aware variant, including embedded NUL bytes. */
+void json_stringn(struct json_buf *buf, const char *text, size_t len);
 /* Remove `count` bytes from the front (consumed output). */
 void json_consume(struct json_buf *buf, size_t count);
 

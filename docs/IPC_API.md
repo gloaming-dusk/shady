@@ -88,6 +88,7 @@ answered with an error and the connection stays open.
 | `key` | `keys` | Press and release a shortcut such as `"Super+Shift+z"`; data is `{"handled": bool}` |
 | `screenshot` | `path`?, `delay`? | Save the next frame as a PNG (default `~/Pictures/shady-<time>.png`) after `delay` ms; data is `{"path": …}`, and the value `screenshot.saved` (or `screenshot.failed`) names the file once written |
 | `shortcuts.toggle` | | Ask shells to show or hide the shortcut overlay (the `shortcuts.toggle` event) |
+| `lua` | `code`, `name`? | Execute Lua in the live runtime; data is an array of return values |
 | `plugin.reload` | `name` | Hot-reload a loaded plugin |
 | `plugin.unload` | `name` | Hot-unload a loaded plugin |
 | `subscribe` | `events`? | Start receiving events; data lists the active subscriptions |
@@ -186,6 +187,47 @@ done
 
 The socket is `-s path`, else `$SHADY_SOCKET`, else
 `$XDG_RUNTIME_DIR/shady-$WAYLAND_DISPLAY.sock`.
+
+### Running Lua
+
+```sh
+shadyctl lua 'shady.set("window_opacity", 0.9)'
+shadyctl lua 'return shady.current_workspace(), shady.workspaces()'
+shadyctl lua 'local w = shady.focused_window(); return w and {id = w.id, title = w.title}'
+shadyctl lua -f ./script.lua
+printf 'return 6 * 7\n' | shadyctl lua -
+shadyctl --json lua 'return 42'  # {"id":1,"ok":true,"data":[42]}
+```
+
+The CLI reads files locally, relative to its working directory, and sends
+their contents. `lua -` (or `lua -f -`) reads standard input. Inline code
+must be a single shell argument. The whole JSON request, after escaping,
+must fit in 64 KiB. This command requires the `lua` module to be built and
+enabled; other IPC commands remain available without it.
+
+The wire request is `{"cmd":"lua","code":"return 42"}`. Optional `name`
+sets the Lua chunk name used in errors (default `=shadyctl`). Only Lua text
+chunks are accepted. Execution uses the same Lua state as `init.lua`, so
+globals, helper functions, bindings, timers and event handlers persist
+between commands. The full runtime [Lua API](LUA_API.md) is available.
+
+Return values become a JSON array: `return 42, true, nil` produces
+`[42,true,null]`; no return values produce `[]`. Strings, finite numbers,
+booleans, nil and plain tables are supported. Consecutive integer keys
+starting at 1 become arrays; string keys become objects, including `{}`
+for an empty table. Table metamethods are ignored. Return selected fields
+from window/output userdata, rather than the userdata itself. Functions,
+threads, userdata, sparse or mixed-key tables, non-finite numbers and
+cyclic or excessively deep/large tables produce an error. Serialization
+is bounded to depth 16, 16,384 values and 1 MiB of JSON, with a conservative
+size check for strings.
+
+Syntax, runtime and serialization errors return `ok:false` and make
+`shadyctl` exit 1. Source/read/usage errors exit 2. Failed commands do not
+roll back changes already made. `print` and `shady.log` write to the
+compositor's output; use `return` to send values back to the CLI. Execution
+is synchronous on the compositor thread, with the same privileges as
+`init.lua`; use it for trusted scripts and schedule long work asynchronously.
 
 ## Stability
 

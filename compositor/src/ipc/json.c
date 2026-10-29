@@ -61,8 +61,13 @@ void json_printf(struct json_buf *buf, const char *fmt, ...) {
 }
 
 void json_string(struct json_buf *buf, const char *text) {
+	json_stringn(buf, text ? text : "", text ? strlen(text) : 0);
+}
+
+void json_stringn(struct json_buf *buf, const char *text, size_t len) {
 	json_append(buf, "\"", 1);
-	for (const unsigned char *p = (const unsigned char *)(text ? text : ""); *p; p++) {
+	for (const unsigned char *p = (const unsigned char *)text;
+			p < (const unsigned char *)text + len; p++) {
 		switch (*p) {
 		case '"': json_append(buf, "\\\"", 2); break;
 		case '\\': json_append(buf, "\\\\", 2); break;

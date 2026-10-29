@@ -63,6 +63,9 @@ int main(void) {
 	json_consume(&b, 2);
 	assert(!strncmp(b.data, "title", 5));
 	json_buf_free(&b);
+	json_stringn(&b, "a\0b", 3);
+	assert(!strcmp(b.data, "\"a\\u0000b\""));
+	json_buf_free(&b);
 
 	parse_fails("");
 	parse_fails("[1,2]");

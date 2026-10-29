@@ -19,6 +19,8 @@
 #include "../../ipc/ipc.h"
 #include "../../ipc/shortcuts.h"
 #include "../../ipc/values.h"
+#include "../../ipc/json.h"
+#include <math.h>
 #include "../../event/event.h"
 #include "../../plugin/plugin.h"
 #include "../../plugin/manager.h"
@@ -1011,6 +1013,112 @@ bool shady_lua_start(struct shady_server *server){
 	if(lua_pcall(L,0,0,0)!=LUA_OK){wlr_log(WLR_ERROR,"[SHADY LUA] runtime error: %s",lua_tostring(L,-1));lua_pop(L,1);return true;}
 	wlr_log(WLR_INFO,"[SHADY LUA] ✅ loaded %s (Lua %s)",path,LUA_VERSION);return true;
 }
+
+/* Only plain JSON values cross IPC. Do not invoke table metamethods while
+ * encoding; bound recursion, work and output even for cyclic/large tables. */
+static const char *encode_result(lua_State *L, int index, struct json_buf *out,
+		unsigned depth, unsigned *remaining) {
+	if (depth > 16 || !*remaining || out->len > 1024 * 1024)
+		return "Lua result exceeds serialization limits (depth 16, 16384 values, 1 MiB)";
+	(*remaining)--;
+	if (!lua_checkstack(L, 4)) return "Lua stack exhausted";
+	index = lua_absindex(L, index);
+	switch (lua_type(L, index)) {
+	case LUA_TNIL: json_puts(out, "null"); break;
+	case LUA_TBOOLEAN: json_puts(out, lua_toboolean(L, index) ? "true" : "false"); break;
+	case LUA_TNUMBER:
+		if (lua_isinteger(L, index)) {
+			json_printf(out, "%lld", (long long)lua_tointeger(L, index));
+		} else {
+			double value = lua_tonumber(L, index);
+			if (!isfinite(value)) return "Lua result contains a non-finite number";
+			json_printf(out, "%.17g", value);
+		}
+		break;
+	case LUA_TSTRING: {
+		size_t len;
+		const char *value = lua_tolstring(L, index, &len);
+		if (len > (1024 * 1024 - out->len) / 6)
+			return "Lua result string is too large";
+		json_stringn(out, value, len);
+		break;
+	}
+	case LUA_TTABLE: {
+		size_t length = lua_rawlen(L, index), count = 0;
+		bool array = length > 0;
+		lua_pushnil(L);
+		while (lua_next(L, index)) {
+			if (++count > *remaining) return "Lua result has too many table entries";
+			if (!lua_isinteger(L, -2) || lua_tointeger(L, -2) < 1 ||
+					(lua_Unsigned)lua_tointeger(L, -2) > length) array = false;
+			lua_pop(L, 1);
+		}
+		array = array && count == length;
+		json_puts(out, array ? "[" : "{");
+		if (array) {
+			for (size_t i = 1; i <= length; i++) {
+				if (i > 1) json_puts(out, ",");
+				lua_rawgeti(L, index, (lua_Integer)i);
+				const char *error = encode_result(L, -1, out, depth + 1, remaining);
+				if (error) return error;
+				lua_pop(L, 1);
+			}
+		} else {
+			bool first = true;
+			lua_pushnil(L);
+			while (lua_next(L, index)) {
+				if (lua_type(L, -2) != LUA_TSTRING)
+					return "Lua result tables need string keys or consecutive integer keys starting at 1";
+				if (!first) json_puts(out, ",");
+				first = false;
+				const char *error = encode_result(L, -2, out, depth + 1, remaining);
+				if (error) return error;
+				json_puts(out, ":");
+				error = encode_result(L, -1, out, depth + 1, remaining);
+				if (error) return error;
+				lua_pop(L, 1);
+			}
+		}
+		json_puts(out, array ? "]" : "}");
+		break;
+	}
+	default: return "Lua result contains an unsupported type; return plain values or tables";
+	}
+	if (out->failed) return "out of memory encoding Lua result";
+	if (out->len > 1024 * 1024) return "Lua result exceeds 1 MiB";
+	return NULL;
+}
+
+bool shady_lua_eval(struct shady_server *server, const char *code, const char *name,
+		struct json_buf *result, char *error, size_t error_size) {
+	struct shady_lua_state *state = shady_lua_state_for(server);
+	lua_State *L = state ? state->L : NULL;
+	if (!L) {
+		snprintf(error, error_size, "Lua runtime is disabled or unavailable");
+		return false;
+	}
+	int base = lua_gettop(L);
+	const char *message = NULL;
+	if (luaL_loadbufferx(L, code, strlen(code), name, "t") != LUA_OK ||
+			lua_pcall(L, 0, LUA_MULTRET, 0) != LUA_OK) {
+		message = lua_type(L, -1) == LUA_TSTRING ? lua_tostring(L, -1) : "Lua error (non-string value)";
+	} else {
+		int top = lua_gettop(L);
+		unsigned remaining = 16384;
+		json_puts(result, "[");
+		for (int i = base + 1; i <= top && !message; i++) {
+			if (i > base + 1) json_puts(result, ",");
+			message = encode_result(L, i, result, 0, &remaining);
+		}
+		json_puts(result, "]");
+		if (result->failed) message = "out of memory encoding Lua result";
+		else if (result->len > 1024 * 1024) message = "Lua result exceeds 1 MiB";
+	}
+	if (message) snprintf(error, error_size, "%s", message);
+	lua_settop(L, base);
+	return message == NULL;
+}
+
 bool shady_lua_handle_key(struct shady_server *server,xkb_keysym_t sym,uint32_t modifiers){
 	lua_State *L=shady_lua_state_for(server)->L;uint32_t mask=WLR_MODIFIER_ALT|WLR_MODIFIER_SHIFT|WLR_MODIFIER_CTRL|WLR_MODIFIER_LOGO;
 	xkb_keysym_t normalized=xkb_keysym_to_lower(sym);

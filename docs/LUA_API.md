@@ -2,6 +2,10 @@
 
 Shady embeds Lua 5.4. The global API table is named `shady`.
 
+Use `shadyctl lua '…'`, `shadyctl lua -f script.lua`, or `shadyctl lua -`
+to run code in the live `init.lua` state. Return values are sent back as
+JSON; globals and callbacks persist. See [Running Lua](IPC_API.md#running-lua).
+
 Lua is used for two related jobs:
 
 1. bootstrap/configuration;

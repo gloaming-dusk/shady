@@ -54,6 +54,56 @@ id="$(sed -n 's/.*"id":\([0-9]*\),"app_id":"ipc-probe".*/\1/p' <<<"$windows")"
 expect '"current":"main"' "$(ctl workspaces)"
 expect '"name":"HEADLESS-1"' "$(ctl outputs)"
 
+# Lua runs in init.lua's state and returns JSON values, including tables.
+[[ "$(ctl lua '')" == '[]' ]] || fail "empty Lua chunk failed"
+[[ "$(ctl lua 'return 42, true, nil, "hello\nworld", "a\0b"')" == '[42,true,null,"hello\nworld","a\u0000b"]' ]] || fail "Lua scalar results"
+[[ "$(ctl lua 'return {1, {answer = 42}}, {}')" == '[[1,{"answer":42}],{}]' ]] || fail "Lua table results"
+expect 'IPC \"probe\"' "$(ctl lua 'return ipc_test_title()')"
+ctl lua 'ipc_test_counter = 41' >/dev/null
+[[ "$(ctl lua 'ipc_test_counter = ipc_test_counter + 1; return ipc_test_counter')" == '[42]' ]] || fail "Lua state did not persist"
+expect '"ok":true,"data":[42]' "$(ctl --json lua 'return 42')"
+[[ "$(ctl lua 'return "false"')" == '["false"]' ]] || fail "Lua source coerced to a JSON value"
+[[ "$(printf 'return 6 * 7\n' | ctl lua -)" == '[42]' ]] || fail "Lua stdin failed"
+printf 'return ipc_test_counter, "file"\n' >"$tmp/script.lua"
+[[ "$(ctl lua -f "$tmp/script.lua")" == '[42,"file"]' ]] || fail "Lua file failed"
+ctl lua 'assert(shady.workspace("lua-test"))' >/dev/null
+expect '"current":"lua-test"' "$(ctl workspaces)"
+ctl lua 'assert(shady.workspace("main"))' >/dev/null
+ctl lua 'ipc_test_handler = shady.on("workspace.changed", function(name) shady.publish("ipc.lua.workspace", name) end)' >/dev/null
+ctl lua 'shady.workspace("lua-callback")' >/dev/null
+[[ "$(ctl value key=ipc.lua.workspace)" == '"lua-callback"' ]] || fail "Lua event handler did not persist"
+ctl lua 'shady.off(ipc_test_handler); shady.workspace("main")' >/dev/null
+
+lua_fails() {
+    local out
+    if out="$(ctl lua "$1")"; then fail "Lua unexpectedly succeeded: $1"; fi
+    expect '"ok":false' "$out"
+    expect "$2" "$out"
+}
+lua_fails 'return )' 'shadyctl:1:'
+lua_fails 'error("ipc lua failure")' 'ipc lua failure'
+lua_fails 'error({})' 'non-string value'
+lua_fails 'return function() end' 'unsupported type'
+lua_fails 'return shady.focused_window()' 'unsupported type'
+lua_fails 'return 0/0' 'non-finite'
+lua_fails 'return {[2] = "sparse"}' 'consecutive integer keys'
+lua_fails 'local t = {}; t.self = t; return t' 'serialization limits'
+lua_fails 'return string.rep("x", 1024 * 1024)' 'too large'
+[[ "$(ctl lua 'return setmetatable({x = 1}, {__pairs = function() error("metamethod") end}), "safe"')" == '[{"x":1},"safe"]' ]] || fail "Lua serialization invoked metamethods"
+expect 'missing string argument: code' "$(ctl --raw '{"cmd":"lua","code":true}' || true)"
+# Errors leave the runtime stack usable, and preserve preceding side effects.
+lua_fails 'ipc_test_counter = 43; error("after mutation")' 'after mutation'
+[[ "$(ctl lua 'return ipc_test_counter')" == '[43]' ]] || fail "Lua error corrupted runtime state"
+for _ in $(seq 1 30); do
+    [[ "$(ctl lua 'return 42')" == '[42]' ]] || fail "Lua stack leaked between calls"
+done
+if ctl lua -f "$tmp/missing.lua" >"$tmp/out" 2>"$tmp/error"; then fail "missing Lua file accepted"; fi
+expect 'cannot read' "$(cat "$tmp/error")"
+if head -c 65536 /dev/zero | tr '\0' 'x' | ctl lua - >"$tmp/out" 2>"$tmp/error"; then fail "oversized Lua source accepted"; fi
+expect '64 KiB' "$(cat "$tmp/error")"
+if printf '\0' | ctl lua - >"$tmp/out" 2>"$tmp/error"; then fail "binary Lua source accepted"; fi
+expect 'must be text' "$(cat "$tmp/error")"
+
 # Events arrive while another client acts.
 ctl subscribe events=window.focused,workspace.changed >"$tmp/events" &
 sub=$!
@@ -137,5 +187,24 @@ wait "$sub" 2>/dev/null || true
 [[ -e "$sock" ]] && fail "socket left behind"
 if grep -Eq 'AddressSanitizer|runtime error:|UndefinedBehaviorSanitizer|ipc-test: timed out' "$log"; then
     fail "sanitizer error or timeout"
+fi
+
+# Lua can be disabled at runtime without disabling the IPC server.
+printf 'shady.modules({lua = false, physics = false, fps = false})\n' >"$tmp/no-lua.lua"
+"$BUILD_DIR/shady" --safe -c "$tmp/no-lua.lua" >"$log" 2>&1 &
+comp=$!
+for _ in $(seq 1 250); do
+    [[ -S "$sock" ]] && break
+    kill -0 "$comp" 2>/dev/null || fail "compositor without Lua exited early"
+    sleep 0.02
+done
+[[ -S "$sock" ]] || fail "socket missing without Lua"
+lua_fails 'return 42' 'Lua runtime is disabled or unavailable'
+expect '"protocol":1' "$(ctl version)"
+ctl quit >/dev/null
+wait "$comp" || fail "compositor without Lua exited with an error"
+[[ -e "$sock" ]] && fail "socket left behind without Lua"
+if grep -Eq 'AddressSanitizer|runtime error:|UndefinedBehaviorSanitizer' "$log"; then
+    fail "sanitizer error without Lua"
 fi
 echo "headless-ipc: PASS"
