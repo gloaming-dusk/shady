@@ -39,5 +39,5 @@ shady.plugin(os.getenv("SHADY_FPS_REPRESENTATION_PLUGIN") or
 
 -- External native plugins are loaded before dependency resolution, by name
 -- (libshady-plugin-<name>.so on the plugin search path) or by path:
--- shady.plugins.load("water-windows")
+-- shady.plugins.load("border-accent")
 -- shady.plugins.load("/absolute/path/to/my-plugin.so")

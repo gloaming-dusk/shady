@@ -8,7 +8,7 @@ IPC.
 ```lua
 -- config.lua
 shady.plugins.path("~/.local/share/shady/plugins")  -- optional extra location
-shady.plugins.load("water-windows")                 -- by name
+shady.plugins.load("border-accent")                 -- by name
 shady.plugins.load("./build/libmy-plugin.so")       -- by path still works
 shady.plugins.disable("window-motion")              -- keep a shipped plugin off
 ```
@@ -18,7 +18,7 @@ shady.plugins.disable("window-motion")              -- keep a shipped plugin off
 for _, p in ipairs(shady.plugins.list()) do
     shady.log(p.name .. " " .. p.state)
 end
-shady.plugins.reload("water-windows")
+shady.plugins.reload("border-accent")
 ```
 
 ## Plugins from elsewhere

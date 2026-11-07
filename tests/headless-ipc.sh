@@ -133,7 +133,7 @@ grep -q '"event":"window.focused","window":{"id":'"$id" "$tmp/events" || fail "n
 shortcuts="$(ctl shortcuts)"
 expect '{"keys":"Super+Shift+slash","group":"Shady","description":"Show these shortcuts"}' "$shortcuts"
 expect '{"keys":"Alt+Left/Right/Up/Down","group":"Camera","description":"Pan the camera"}' "$shortcuts"
-expect '{"keys":"Super+Z","group":"frozen-window","description":"Freeze or thaw the focused window"}' "$shortcuts"
+expect '{"keys":"Super+B","group":"border-accent","description":"Accent the focused window'"'"'s border"}' "$shortcuts"
 expect '{"keys":"Super+F9","group":"Desktop","description":"Probe binding"}' "$shortcuts"
 expect '{"keys":"Super+F10","group":"Probes","description":"Grouped probe"}' "$shortcuts"
 [[ "$shortcuts" != *'Super+F11'* ]] || fail "undescribed binding listed: $shortcuts"
@@ -151,20 +151,20 @@ for _ in $(seq 1 100); do
 done
 [[ "$(grep -c '"event":"shortcut",' "$tmp/shortcut-events")" == "$count" ]] ||
     fail "toggle announced $count shortcuts: $(cat "$tmp/shortcut-events")"
-grep -q '"event":"shortcut","keys":"Super+Z","group":"frozen-window"' "$tmp/shortcut-events" ||
+grep -q '"event":"shortcut","keys":"Super+B","group":"border-accent"' "$tmp/shortcut-events" ||
     fail "plugin shortcut missing from the toggle: $(cat "$tmp/shortcut-events")"
 kill "$shortcut_sub" 2>/dev/null || true
 
 # Plugins and keys go through the same paths as Lua and real input.
-expect '"name":"frozen-window","spec":"frozen-window","state":"active"' "$(ctl plugins)"
-expect '"handled":true' "$(ctl key keys=Super+z)"
+expect '"name":"border-accent","spec":"border-accent","state":"active"' "$(ctl plugins)"
+expect '"handled":true' "$(ctl key keys=Super+b)"
 expect '"handled":false' "$(ctl key keys=Super+F12)"
-ctl plugin.reload name=frozen-window >/dev/null
-expect '"keys":"Super+Z","group":"frozen-window"' "$(ctl shortcuts)"
-ctl plugin.unload name=frozen-window >/dev/null
-expect '"handled":false' "$(ctl key keys=Super+z)"
-[[ "$(ctl shortcuts)" != *'"frozen-window"'* ]] || fail "unloaded plugin's shortcuts still listed"
-expect '"error":"unload failed"' "$(ctl plugin.unload name=frozen-window || true)"
+ctl plugin.reload name=border-accent >/dev/null
+expect '"keys":"Super+B","group":"border-accent"' "$(ctl shortcuts)"
+ctl plugin.unload name=border-accent >/dev/null
+expect '"handled":false' "$(ctl key keys=Super+b)"
+[[ "$(ctl shortcuts)" != *'"border-accent"'* ]] || fail "unloaded plugin's shortcuts still listed"
+expect '"error":"unload failed"' "$(ctl plugin.unload name=border-accent || true)"
 
 # Errors are reported, and a bad request does not end the connection.
 out="$(ctl window.close window=999999 || true)"

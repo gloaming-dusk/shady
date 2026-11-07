@@ -174,7 +174,7 @@ from the rice, so start with one and add the others when you need them.
 -- ~/.config/shady/config.lua
 shady.set("window_corner_radius", 14)
 shady.set("window_opacity", 0.95)
-shady.plugins.load("frozen-window")       -- Super+Z freezes a window
+shady.plugins.load("border-accent")       -- Super+B accents a window's border
 shady.bind("quit", "Super+Shift+Escape")
 ```
 

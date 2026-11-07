@@ -80,44 +80,6 @@ if not spatial_motion_plugin or explicit_depth_mode then
     end
 end
 
--- Experimental spatial docking. Nearby windows spring toward stable edge-to-edge
--- structures; Super+M toggles the behavior at runtime.
-if magnetic_enabled then
-    shady.plugin(os.getenv("SHADY_MAGNETIC_PLUGIN") or
-        (root .. "/build/libshady-plugin-magnetic-windows.so"))
-end
-
--- Orbital workspace. Super+C makes the focused window the anchor while the other
--- windows orbit through XY and depth; toggling again restores the exact old layout.
-if constellation_enabled then
-    shady.plugin(os.getenv("SHADY_CONSTELLATION_PLUGIN") or
-        (root .. "/build/libshady-plugin-window-constellation.so"))
-end
-
--- Live window portal. Super+P opens/cycles the focused window's source and
--- Super+Shift+P closes it. Portal and water both own a custom window shader,
--- so portal mode intentionally takes precedence over the default water effect.
-if portal_enabled then
-    shady.plugin(os.getenv("SHADY_PORTAL_PLUGIN") or
-        (root .. "/build/libshady-plugin-window-portal.so"))
-end
-
--- Keep application text stable by default. Opt into animated liquid
--- surfaces with SHADY_NEON_WATER=1; Super+W then toggles the effect.
-if not portal_enabled and os.getenv("SHADY_NEON_WATER") == "1" then
-    shady.plugin(os.getenv("SHADY_WATER_PLUGIN") or
-        (root .. "/build/libshady-plugin-water-windows.so"))
-elseif portal_enabled and os.getenv("SHADY_NEON_WATER") == "1" then
-    shady.log("Neon Transit: portal mode takes precedence over the water window shader")
-end
-
--- Close style stays on the built-in crumple by default. Opt into the example
--- native close-effect plugin with SHADY_NEON_CLOSE_STYLE=slide.
-if os.getenv("SHADY_NEON_CLOSE_STYLE") == "burn" then
-    shady.plugin(os.getenv("SHADY_CLOSE_PLUGIN") or
-        (root .. "/build/libshady-plugin-close-burn.so"))
-end
-
 shady.bind("quit", "Super+Shift+Escape")
 shady.bind("cycle_windows", "Super+Tab")
 shady.bind("close_window", "Super+q")

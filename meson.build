@@ -553,42 +553,10 @@ shared_module('shady-plugin-fps-origami',
   install: true,
   install_dir: plugin_install_dir)
 
-shared_module('shady-plugin-magnetic-windows',
-  'plugins/magnetic_windows.c',
-  include_directories: include_directories('include'),
-  dependencies: [dependency('xkbcommon')],
-  build_by_default: true,
-  install: true,
-  install_dir: plugin_install_dir)
-
-shared_module('shady-plugin-astral-loom',
-  'plugins/astral_loom.c',
-  include_directories: include_directories('include'),
-  dependencies: [dependency('xkbcommon'), cc.find_library('m')],
-  build_by_default: true,
-  install: true,
-  install_dir: plugin_install_dir)
-
 shared_module('shady-plugin-afterglow',
   'plugins/afterglow.c',
   include_directories: include_directories('include'),
   dependencies: [dependency('xkbcommon'), cc.find_library('m')],
-  build_by_default: true,
-  install: true,
-  install_dir: plugin_install_dir)
-
-shared_module('shady-plugin-window-constellation',
-  'plugins/window_constellation.c',
-  include_directories: include_directories('include'),
-  dependencies: [dependency('xkbcommon')],
-  build_by_default: true,
-  install: true,
-  install_dir: plugin_install_dir)
-
-shared_module('shady-plugin-window-portal',
-  'plugins/window_portal.c',
-  include_directories: include_directories('include'),
-  dependencies: [dependency('xkbcommon')],
   build_by_default: true,
   install: true,
   install_dir: plugin_install_dir)
@@ -616,14 +584,6 @@ shared_module('shady-plugin-rewind',
   install: true,
   install_dir: plugin_install_dir)
 
-shared_module('shady-plugin-water-windows',
-  'plugins/water_windows.c',
-  include_directories: include_directories('include'),
-  dependencies: [dependency('xkbcommon')],
-  build_by_default: true,
-  install: true,
-  install_dir: plugin_install_dir)
-
 shared_module('shady-plugin-border-accent',
   'plugins/border_accent.c',
   include_directories: include_directories('include'),
@@ -635,29 +595,6 @@ shared_module('shady-plugin-border-accent',
 shared_module('shady-plugin-close-slide-fade',
   'plugins/close_slide_fade.c',
   include_directories: include_directories('include'),
-  build_by_default: true,
-  install: true,
-  install_dir: plugin_install_dir)
-
-shared_module('shady-plugin-close-burn',
-  'plugins/close_burn.c',
-  include_directories: include_directories('include'),
-  build_by_default: true,
-  install: true,
-  install_dir: plugin_install_dir)
-
-shared_module('shady-plugin-bad-apple',
-  'plugins/bad_apple.c',
-  include_directories: include_directories('include'),
-  dependencies: [glesv2, dependency('xkbcommon'), cc.find_library('m')],
-  build_by_default: true,
-  install: true,
-  install_dir: plugin_install_dir)
-
-shared_module('shady-plugin-frozen-window',
-  'plugins/frozen_window.c',
-  include_directories: include_directories('include'),
-  dependencies: [dependency('xkbcommon')],
   build_by_default: true,
   install: true,
   install_dir: plugin_install_dir)
@@ -793,22 +730,6 @@ if obj_loader_enabled
       meson.current_build_dir()],
     depends: [obj_loader_plugin])
 endif
-
-bad_apple_plugin_test = executable('bad-apple-plugin-test',
-  'tests/bad-apple-plugin.c',
-  include_directories: include_directories('include'),
-  dependencies: [dl, dependency('xkbcommon')],
-  install: false)
-test('bad-apple-plugin', bad_apple_plugin_test,
-  args: [join_paths(meson.current_build_dir(), 'libshady-plugin-bad-apple.so')])
-
-frozen_window_plugin_test = executable('frozen-window-plugin-test',
-  'tests/frozen-window-plugin.c',
-  include_directories: include_directories('include'),
-  dependencies: [dl, dependency('xkbcommon'), cc.find_library('m', required: true)],
-  install: false)
-test('frozen-window-plugin', frozen_window_plugin_test,
-  args: [join_paths(meson.current_build_dir(), 'libshady-plugin-frozen-window.so')])
 
 # ---- installed data and session ------------------------------------------
 
