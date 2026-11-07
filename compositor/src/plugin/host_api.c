@@ -569,6 +569,13 @@ static bool host_declare_shortcut(shady_host host, const char *keys, const char 
 	return owner && shady_shortcuts_declare(owner, NULL, keys, description);
 }
 
+static const char *host_plugin_path(shady_host host, const char *module_name) {
+	if (!host || !module_name) return NULL;
+	struct shady_server *server = (struct shady_server *)host;
+	ssize_t index = shady_module_index_by_name(server, module_name);
+	return index < 0 ? NULL : server->modules.plugin_path[index];
+}
+
 static const char *host_published_value(shady_host host, const char *key) {
 	(void)host;
 	return shady_values_get(key);
@@ -774,5 +781,6 @@ const struct shady_plugin_api_v1 shady_plugin_api = {
 	.publish_value = host_publish_value,
 	.published_value = host_published_value,
 	.declare_shortcut = host_declare_shortcut,
+	.plugin_path = host_plugin_path,
 };
 

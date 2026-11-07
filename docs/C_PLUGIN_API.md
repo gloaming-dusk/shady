@@ -224,10 +224,15 @@ Stages:
 
 Remove with `render_hook_remove`.
 
+Shader paths are the plugin's to choose. A plugin installed on its own keeps its
+files next to its shared object: `plugin_path(host, module_name)` says where that
+is, from the module's `init` on (`SHADY_API_HAS(api, plugin_path)`). `dladdr()`
+does not: the host runs a private copy of the file.
+
 To post-process what has been drawn, call `shader_draw_fullscreen_scene` instead
 of `shader_draw_fullscreen`. The host copies the current output and binds it as
 `u_scene`, so the shader can warp, recolour or distort the scene. For example,
-`black_hole.c` uses it to lens the background and the windows around the hole.
+[`black_hole.c`](https://github.com/gloaming-dusk/shady-plugins/blob/main/plugins/black-hole/black_hole.c) uses it to lens the background and the windows around the hole.
 It is append-only (`SHADY_API_HAS(api, shader_draw_fullscreen_scene)`), works only
 inside a render hook, and costs one full-output copy per call. See
 [SHADER_API.md](SHADER_API.md#post-processing-the-scene).
@@ -625,7 +630,7 @@ The 16 floats are exposed to the window's plugin shader as
 set them, and non-finite values are rejected. They return to zero when the
 shader is reset or when another plugin sets a shader on the window. Close
 animations keep the values the window had when it closed.
-`plugins/black_hole.c` drives a whole orbit animation this way
+[`black_hole.c`](https://github.com/gloaming-dusk/shady-plugins/blob/main/plugins/black-hole/black_hole.c) drives a whole orbit animation this way
 without ever moving the window.
 
 Resources are associated with the plugin that created them. On plugin unload/hot reload, Shady removes its hooks, window shader associations, and shader programs.

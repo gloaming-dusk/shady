@@ -35,7 +35,6 @@ nix develop -c ninja -C "$BUILD_DIR" \
   libshady-plugin-afterglow.so \
   libshady-plugin-obj-loader.so \
   libshady-plugin-counter.so \
-  libshady-plugin-black-hole.so \
   libshady-plugin-frozen-window.so \
   shadyctl \
   ipc-json-test \
@@ -69,9 +68,6 @@ SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
 
 SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
   nix develop -c bash ./tests/headless-plugin-manager.sh
-
-SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
-  nix develop -c bash ./tests/headless-black-hole.sh
 
 SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
   nix develop -c bash ./tests/headless-frozen-window.sh

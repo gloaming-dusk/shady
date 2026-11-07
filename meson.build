@@ -646,14 +646,6 @@ shared_module('shady-plugin-close-burn',
   install: true,
   install_dir: plugin_install_dir)
 
-shared_module('shady-plugin-black-hole',
-  'plugins/black_hole.c',
-  include_directories: include_directories('include'),
-  dependencies: [dependency('xkbcommon'), cc.find_library('m')],
-  build_by_default: true,
-  install: true,
-  install_dir: plugin_install_dir)
-
 shared_module('shady-plugin-bad-apple',
   'plugins/bad_apple.c',
   include_directories: include_directories('include'),
@@ -810,14 +802,6 @@ bad_apple_plugin_test = executable('bad-apple-plugin-test',
 test('bad-apple-plugin', bad_apple_plugin_test,
   args: [join_paths(meson.current_build_dir(), 'libshady-plugin-bad-apple.so')])
 
-black_hole_plugin_test = executable('black-hole-plugin-test',
-  'tests/black-hole-plugin.c',
-  include_directories: include_directories('include'),
-  dependencies: [dl, dependency('xkbcommon'), cc.find_library('m', required: true)],
-  install: false)
-test('black-hole-plugin', black_hole_plugin_test,
-  args: [join_paths(meson.current_build_dir(), 'libshady-plugin-black-hole.so')])
-
 frozen_window_plugin_test = executable('frozen-window-plugin-test',
   'tests/frozen-window-plugin.c',
   include_directories: include_directories('include'),
@@ -835,7 +819,7 @@ install_subdir('shell', install_dir: shady_data_install_dir,
 install_subdir('greeter', install_dir: shady_data_install_dir,
   exclude_directories: ['src'])
 install_subdir('plugins/shaders', install_dir: join_paths(shady_data_install_dir, 'plugins'))
-foreach rice : ['horizon', 'afterglow', 'objects', 'neon-transit', 'tide']
+foreach rice : ['horizon', 'afterglow', 'tide']
   rice_files = []
   foreach file : ['config.lua', 'init.lua', 'shell.lua', 'theme.sh', 'README.md']
     if import('fs').is_file(join_paths('rices', rice, file))

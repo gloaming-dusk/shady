@@ -25,7 +25,7 @@ or press `Super+Shift+Escape` to leave.
 Another rice:
 
 ```sh
-SHADY_RICE=objects nix run github:gloaming-dusk/shady
+SHADY_RICE=tide nix run github:gloaming-dusk/shady
 ```
 
 The same command run from a text console (Ctrl+Alt+F3, logged in) starts
@@ -41,8 +41,9 @@ nix develop          # wlroots 0.20.2, Lua 5.4, Meson, ...
 ./rices/horizon/run.sh
 ```
 
-Each rice has a `run.sh` (`rices/objects/run.sh`, `rices/afterglow/run.sh`,
-`rices/neon-transit/run.sh`) and a README with its keys and options. Other
+Each rice has a `run.sh` (`rices/tide/run.sh`, `rices/afterglow/run.sh`) and a
+README with its keys and options; those in repositories of their own (see the
+[README](../README.md#rices)) are run with `SHADY_ROOT` set to your checkout. Other
 ways to start the compositor from `build/`:
 
 | Command | |
@@ -77,7 +78,7 @@ manager:
         shady.nixosModules.default
         {
           programs.shady.enable = true;
-          programs.shady.rice = "horizon";       # or "objects", "afterglow", "neon-transit"
+          programs.shady.rice = "horizon";       # or "tide", "afterglow"
           programs.shady.greeter.enable = true;  # optional: log in through the Shady greeter
         }
       ];

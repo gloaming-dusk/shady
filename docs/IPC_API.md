@@ -96,8 +96,8 @@ answered with an error and the connection stays open.
 
 `window` is a window `id`. `key` uses the `shady.bind` shortcut syntax and
 goes through module hooks, native plugins, Lua bindings and compositor
-bindings exactly like a real key press, so any plugin shortcut (`Super+h`
-for black-hole, `Super+z` for frozen-window) can be triggered from a
+bindings exactly like a real key press, so any plugin shortcut (`Super+w`
+for water-windows, `Super+z` for frozen-window) can be triggered from a
 script. Plugins can only be loaded while `config.lua` runs, so IPC offers
 the same runtime operations as Lua: list, reload and unload (see
 [PLUGIN_MANAGER.md](PLUGIN_MANAGER.md)).

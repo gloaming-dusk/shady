@@ -21,6 +21,21 @@ end
 shady.plugins.reload("water-windows")
 ```
 
+## Plugins from elsewhere
+
+The manager only loads files; it never downloads anything. Plugins that do not
+ship with Shady live in
+[shady-plugins](https://github.com/gloaming-dusk/shady-plugins). Install one with
+the NixOS module, which adds it to `$SHADY_PLUGIN_PATH`, or into
+`~/.local/share/shady/plugins`, then load it by name:
+
+```nix
+programs.shady.plugins = [ shady-plugins.packages.${pkgs.stdenv.hostPlatform.system}.black-hole ];
+```
+
+A plugin is native code running inside the compositor, with access to the screen
+and the keyboard: install only what you trust.
+
 ## Two phases
 
 Shady runs two Lua states, and the API is split to match:
