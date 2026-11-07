@@ -117,6 +117,7 @@ With a description, the binding is listed in the shortcut overlay under
 shady.bind("Super+Return", function() shady.spawn("foot") end, "Open a terminal")
 shady.bind("Super+n", toggle_notes, { description = "Show notes", group = "Notes" })
 shady.bind("F6", debug_dump) -- not listed
+shady.bind("Super", function() shady.layout.overview() end) -- a tap of Super
 ```
 
 ### `shady.rule(table)`
@@ -373,8 +374,8 @@ nothing to do:
 | `center()` | centre the focused column |
 | `toggle_floating()` | lift the focused window out of the strip, or put it back |
 | `workspace(delta[, take])` | the workspace above or below; numbered workspaces (`"1"`, `"2"`) are made as needed, but not past an empty one; with `take` the focused window goes along |
-| `overview([on])` | GL renderer: pull the camera back over the whole strip, tilted; a click picks a window and flies back to it |
-| `state()` | `{scrolling, columns, active, view, visible}` |
+| `overview([on])` | GL renderer: pull the camera back over the strip, tilted; a click picks a window and flies back to it |
+| `state()` | `{scrolling, columns, active, view, visible, overview}` |
 
 Dragging a tiled window lifts it out of the strip; dragging a tiled
 window's edge resizes its column. A fullscreen window takes the whole
@@ -386,6 +387,17 @@ The layout publishes `layout.strip` for bars: `"<screen width> <view>
 <active column>"` followed by `"|<x> <width> <windows>"` for each column,
 in logical pixels of the strip; Tide's bar draws its minimap from it.
 `layout.overview` is `"1"` while the overview shows.
+
+The overview pulls back at most three screens' width. A longer strip scrolls
+under it (a sideways scroll, Shift and the wheel, or a swipe) without moving
+the focus, and the wheel changes workspace; none of it needs Super. While it
+shows it has the keyboard, unless a layer surface such as a launcher has
+taken it: the arrows choose a window, Home and End the first and last column,
+Page Up and Down the workspace, Return and Escape leave. A character opens the
+launcher (`shady.toggle_launcher()`) and goes into it with whatever is typed
+next, through the input method if there is one. Lua's bindings still run
+first. A click only chooses: the window does not receive it. A new window
+closes the overview.
 
 ## Idle
 

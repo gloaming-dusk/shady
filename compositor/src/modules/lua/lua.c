@@ -81,7 +81,8 @@ static void push_module(lua_State *L,const struct shady_module *module);
 #define SHADY_LUA_MAX_BINDS 256
 #define SHADY_LUA_MAX_RULES 64
 #define SHADY_LUA_RULE_TEXT_MAX 128
-struct lua_bind { xkb_keysym_t sym; uint32_t modifiers; int ref; };
+/* tap: shady.bind("Super", fn), run by a tap of Super, not by a key press. */
+struct lua_bind { xkb_keysym_t sym; uint32_t modifiers; int ref; bool tap; };
 static struct lua_bind lua_binds[SHADY_LUA_MAX_BINDS]; static size_t lua_bind_count;
 
 struct lua_window_rule {
@@ -112,6 +113,12 @@ static uint32_t parse_mod(const char *s) {
 static bool parse_lua_bind(const char *spec,xkb_keysym_t *sym,uint32_t *mods){
 	char buf[128];if(strlen(spec)>=sizeof(buf))return false;strcpy(buf,spec);*mods=0;char *save=NULL,*tok=strtok_r(buf,"+",&save),*key=NULL;
 	while(tok){uint32_t m=parse_mod(tok);if(m)*mods|=m;else{if(key)return false;key=tok;}tok=strtok_r(NULL,"+",&save);}
+	/* Super on its own: the key itself. */
+	if (!key && *mods == WLR_MODIFIER_LOGO) {
+		*mods = 0;
+		*sym = XKB_KEY_Super_L;
+		return true;
+	}
 	if (!key) return false;
 	*sym = xkb_keysym_from_name(key, XKB_KEYSYM_CASE_INSENSITIVE);
 	return *sym != XKB_KEY_NoSymbol;
@@ -132,6 +139,7 @@ static int l_shady_bind(lua_State *L){
 	}else if(!lua_isnoneornil(L,3))return luaL_argerror(L,3,"expected a description or a table");
 	if(lua_bind_count>=SHADY_LUA_MAX_BINDS)return luaL_error(L,"too many Lua key bindings");
 	struct lua_bind *b=&lua_binds[lua_bind_count];if(!parse_lua_bind(spec,&b->sym,&b->modifiers))return luaL_error(L,"invalid key binding: %s",spec);
+	b->tap=parse_mod(spec)==WLR_MODIFIER_LOGO;
 	if(description&&!shady_shortcuts_declare(LUA_SHORTCUT_OWNER,group,spec,description))
 		return luaL_error(L,"invalid shortcut description for %s",spec);
 	lua_pushvalue(L,2);b->ref=luaL_ref(L,LUA_REGISTRYINDEX);lua_bind_count++;return 0;
@@ -859,6 +867,7 @@ static int l_layout_state(lua_State *L) {
 	lua_pushinteger(L, (lua_Integer)active + 1); lua_setfield(L, -2, "active");
 	lua_pushnumber(L, view); lua_setfield(L, -2, "view");
 	lua_pushnumber(L, visible); lua_setfield(L, -2, "visible");
+	lua_pushboolean(L, shady_layout_overview_active(lua_server)); lua_setfield(L, -2, "overview");
 	return 1;
 }
 /* shady.idle(seconds, on_idle[, on_resume]): run on_idle after that long
@@ -1122,8 +1131,16 @@ bool shady_lua_eval(struct shady_server *server, const char *code, const char *n
 bool shady_lua_handle_key(struct shady_server *server,xkb_keysym_t sym,uint32_t modifiers){
 	lua_State *L=shady_lua_state_for(server)->L;uint32_t mask=WLR_MODIFIER_ALT|WLR_MODIFIER_SHIFT|WLR_MODIFIER_CTRL|WLR_MODIFIER_LOGO;
 	xkb_keysym_t normalized=xkb_keysym_to_lower(sym);
-	for(size_t i=0;L&&i<lua_bind_count;i++)if(xkb_keysym_to_lower(lua_binds[i].sym)==normalized&&lua_binds[i].modifiers==(modifiers&mask)){
+	for(size_t i=0;L&&i<lua_bind_count;i++)if(!lua_binds[i].tap&&xkb_keysym_to_lower(lua_binds[i].sym)==normalized&&lua_binds[i].modifiers==(modifiers&mask)){
 		lua_rawgeti(L,LUA_REGISTRYINDEX,lua_binds[i].ref);if(lua_pcall(L,0,0,0)!=LUA_OK){wlr_log(WLR_ERROR,"[SHADY LUA] keybind: %s",lua_tostring(L,-1));lua_pop(L,1);}return true;}return false;
+}
+void shady_lua_handle_super_tap(struct shady_server *server){
+	lua_State *L=shady_lua_state_for(server)->L;
+	for(size_t i=0;L&&i<lua_bind_count;i++){
+		if(!lua_binds[i].tap)continue;
+		lua_rawgeti(L,LUA_REGISTRYINDEX,lua_binds[i].ref);
+		if(lua_pcall(L,0,0,0)!=LUA_OK){wlr_log(WLR_ERROR,"[SHADY LUA] keybind: %s",lua_tostring(L,-1));lua_pop(L,1);}
+	}
 }
 void shady_lua_fini(struct shady_server *server){
 	lua_State *L=shady_lua_state_for(server)->L;

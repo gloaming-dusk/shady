@@ -384,11 +384,26 @@ if shell_enabled
     output: 'input-method-unstable-v2-protocol.c',
     command: [wayland_scanner, 'private-code', '@INPUT@', '@OUTPUT@'],
   )
+  virtual_keyboard_xml = files('tests/protocols/virtual-keyboard-unstable-v1.xml')
+  virtual_keyboard_client_header = custom_target(
+    'virtual-keyboard-unstable-v1-client-protocol.h',
+    input: virtual_keyboard_xml,
+    output: 'virtual-keyboard-unstable-v1-client-protocol.h',
+    command: [wayland_scanner, 'client-header', '@INPUT@', '@OUTPUT@'],
+  )
+  virtual_keyboard_protocol_code = custom_target(
+    'virtual-keyboard-unstable-v1-protocol.c',
+    input: virtual_keyboard_xml,
+    output: 'virtual-keyboard-unstable-v1-protocol.c',
+    command: [wayland_scanner, 'private-code', '@INPUT@', '@OUTPUT@'],
+  )
   # A scripted input method for tests/headless-shell-ime.sh.
   executable('ime-probe',
     [
       input_method_client_header,
       input_method_protocol_code,
+      virtual_keyboard_client_header,
+      virtual_keyboard_protocol_code,
       text_input_client_header,
       'tests/ime-probe.c',
     ],

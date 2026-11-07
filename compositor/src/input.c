@@ -289,6 +289,13 @@ static struct shady_toplevel *toplevel_at_cursor(struct shady_server *server,
 	return desktop_toplevel_at(server, lx, ly, surface, sx, sy);
 }
 
+struct shady_toplevel *shady_input_toplevel_under_cursor(struct shady_server *server) {
+	struct wlr_surface *surface = NULL;
+	double sx, sy;
+	return toplevel_at_cursor(server, server->cursor->x, server->cursor->y,
+		&surface, &sx, &sy);
+}
+
 /* Nothing, or the desktop: a background or bottom layer surface (a shell's
  * wallpaper or desktop), which lies behind the windows and their edges. */
 static bool on_desktop(struct wlr_surface *surface) {
@@ -343,7 +350,7 @@ static void keyboard_handle_modifiers(
 			0, 0, 0, 0, 0, keyboard->wlr_keyboard->modifiers.group);
 	}
 	wlr_seat_set_keyboard(keyboard->server->seat, keyboard->wlr_keyboard);
-	if (!shady_ime_handle_modifiers(keyboard->server,
+	if (!shady_ime_handle_modifiers(keyboard->server, keyboard->wlr_keyboard,
 			&keyboard->wlr_keyboard->modifiers)) {
 		wlr_seat_keyboard_notify_modifiers(keyboard->server->seat,
 			&keyboard->wlr_keyboard->modifiers);
@@ -400,6 +407,104 @@ static bool handle_vt_switch(struct shady_server *server,
 	return false;
 }
 
+/* How long held keys wait for a surface to take the keyboard, and then for an
+ * input method to grab it (a surface without a text field never makes it). */
+#define KEY_HOLD_MS 1000
+#define KEY_HOLD_IME_MS 150
+
+static bool keyboard_on_layer_surface(struct shady_server *server) {
+	struct wlr_surface *focus = server->seat->keyboard_state.focused_surface;
+	return focus && !shady_desktop_state(server)->session_locked &&
+		wlr_layer_surface_v1_try_from_wlr_surface(wlr_surface_get_root_surface(focus));
+}
+
+static void release_held_keys(struct shady_server *server) {
+	if (!server->key_hold.active) return;
+	server->key_hold.active = false;
+	wl_event_source_remove(server->key_hold.timer);
+	server->key_hold.timer = NULL;
+	/* Never into whatever else has the keyboard by now: the session lock's
+	 * password field, or a window that is not looking for them. */
+	if (!keyboard_on_layer_surface(server)) return;
+	for (size_t i = 0; i < server->key_hold.count; i++) {
+		struct shady_keyboard *keyboard;
+		wl_list_for_each(keyboard, &server->keyboards, link) {
+			if (keyboard->wlr_keyboard != server->key_hold.events[i].keyboard) continue;
+			wlr_seat_set_keyboard(server->seat, keyboard->wlr_keyboard);
+			if (!shady_ime_handle_key(server, keyboard->wlr_keyboard, server->key_hold.events[i].time_msec,
+					server->key_hold.events[i].keycode, server->key_hold.events[i].state)) {
+				wlr_seat_keyboard_notify_key(server->seat, server->key_hold.events[i].time_msec,
+					server->key_hold.events[i].keycode, server->key_hold.events[i].state);
+			}
+			break;
+		}
+	}
+}
+
+static int key_hold_timeout(void *data) {
+	release_held_keys(data);
+	return 0;
+}
+
+void shady_input_hold_keys(struct shady_server *server) {
+	if (server->key_hold.active) return;
+	server->key_hold.timer = wl_event_loop_add_timer(
+		wl_display_get_event_loop(server->wl_display), key_hold_timeout, server);
+	if (!server->key_hold.timer) return;
+	server->key_hold.active = true;
+	server->key_hold.count = 0;
+	wl_event_source_timer_update(server->key_hold.timer, KEY_HOLD_MS);
+}
+
+void shady_input_held_keys_focused(struct shady_server *server) {
+	if (!server->key_hold.active) return;
+	if (shady_ime_has_input_method(server))
+		wl_event_source_timer_update(server->key_hold.timer, KEY_HOLD_IME_MS);
+	else
+		release_held_keys(server);
+}
+
+void shady_input_held_keys_grabbed(struct shady_server *server) {
+	/* The grab of the window losing the keyboard is not the one to wait for. */
+	if (keyboard_on_layer_surface(server)) release_held_keys(server);
+}
+
+static void hold_key(struct shady_keyboard *keyboard, struct wlr_keyboard_key_event *event) {
+	struct shady_server *server = keyboard->server;
+	if (server->key_hold.count >= sizeof(server->key_hold.events) / sizeof(server->key_hold.events[0]))
+		return;
+	server->key_hold.events[server->key_hold.count].keyboard = keyboard->wlr_keyboard;
+	server->key_hold.events[server->key_hold.count].time_msec = event->time_msec;
+	server->key_hold.events[server->key_hold.count].keycode = event->keycode;
+	server->key_hold.events[server->key_hold.count].state = event->state;
+	server->key_hold.count++;
+}
+
+/* A tap of Super, as in GNOME: pressed with no other modifier and released
+ * before SUPER_TAP_MS, with no other key, button, scroll or swipe in between.
+ * Key releases of other keys do not count: a tap may follow a shortcut whose
+ * letter is still on its way up. */
+#define SUPER_TAP_MS 500
+
+static void super_tap_track(struct shady_server *server, const xkb_keysym_t *syms,
+		int nsyms, uint32_t modifiers, bool pressed, uint32_t time_msec) {
+	const uint32_t mask = WLR_MODIFIER_ALT | WLR_MODIFIER_SHIFT |
+		WLR_MODIFIER_CTRL | WLR_MODIFIER_LOGO;
+	bool super = false;
+	for (int i = 0; i < nsyms; i++)
+		super |= syms[i] == XKB_KEY_Super_L || syms[i] == XKB_KEY_Super_R;
+	if (pressed) {
+		server->super_tap_armed = super && !(modifiers & mask);
+		server->super_tap_pressed_ms = time_msec;
+		return;
+	}
+	if (!super || !server->super_tap_armed) return;
+	server->super_tap_armed = false;
+	if (time_msec - server->super_tap_pressed_ms <= SUPER_TAP_MS &&
+			!shady_desktop_state(server)->session_locked)
+		shady_modules_super_tap(server);
+}
+
 static void keyboard_handle_key(
 		struct wl_listener *listener, void *data) {
 	struct shady_keyboard *keyboard =
@@ -421,6 +526,12 @@ static void keyboard_handle_key(
 	bool handled = false;
 	uint32_t modifiers = wlr_keyboard_get_modifiers(keyboard->wlr_keyboard);
 
+	super_tap_track(server, syms, nsyms, modifiers,
+		event->state == WL_KEYBOARD_KEY_STATE_PRESSED, event->time_msec);
+	if (server->key_hold.active && !shady_desktop_state(server)->session_locked) {
+		hold_key(keyboard, event);
+		return;
+	}
 	if (!shady_desktop_state(server)->session_locked) {
 		handled = shady_modules_key(server, syms, nsyms,
 			event->state, modifiers);
@@ -429,10 +540,15 @@ static void keyboard_handle_key(
 				handled = handle_keybinding(server, syms[j], modifiers);
 			}
 		}
+		/* This key began the hold: it is the first to be replayed. */
+		if (handled && server->key_hold.active) {
+			hold_key(keyboard, event);
+			return;
+		}
 	}
 	if (!handled) {
 		wlr_seat_set_keyboard(seat, keyboard->wlr_keyboard);
-		if (!shady_ime_handle_key(server, event->time_msec,
+		if (!shady_ime_handle_key(server, keyboard->wlr_keyboard, event->time_msec,
 				event->keycode, event->state)) {
 			wlr_seat_keyboard_notify_key(seat, event->time_msec,
 				event->keycode, event->state);
@@ -742,6 +858,7 @@ static bool begin_pointer_grab(struct shady_server *server, uint32_t button,
 static void handle_pointer_button(struct shady_server *server,
 		struct wlr_pointer_button_event *event) {
 	uint32_t mods = seat_modifiers(server);
+	server->super_tap_armed = false;
 
 	/* A move or resize ends with the button. One the client started (its
 	 * title bar or border, xdg_toplevel.move/resize) began with a press the
@@ -809,6 +926,7 @@ void server_cursor_axis(struct wl_listener *listener, void *data) {
 		wl_container_of(listener, server, cursor_axis);
 	struct wlr_pointer_axis_event *event = data;
 	shady_idle_activity(server);
+	server->super_tap_armed = false;
 
 	uint32_t mods = seat_modifiers(server);
 	if (shady_modules_pointer_axis(server, event, mods))
@@ -837,6 +955,7 @@ bool shady_input_automation_key(struct shady_server *server, xkb_keysym_t sym,
 	uint32_t state = pressed ? WL_KEYBOARD_KEY_STATE_PRESSED :
 		WL_KEYBOARD_KEY_STATE_RELEASED;
 	bool handled = false;
+	super_tap_track(server, &sym, 1, modifiers, pressed, automation_time_msec());
 	if (!shady_desktop_state(server)->session_locked) {
 		handled = shady_modules_key(server, &sym, 1, state, modifiers);
 		if (!handled && pressed) handled = handle_keybinding(server, sym, modifiers);
@@ -873,6 +992,7 @@ void shady_input_automation_pointer_axis(struct shady_server *server,
 	event.delta_discrete = discrete;
 	event.source = WL_POINTER_AXIS_SOURCE_WHEEL;
 	event.relative_direction = WL_POINTER_AXIS_RELATIVE_DIRECTION_IDENTICAL;
+	server->super_tap_armed = false;
 
 	uint32_t mods = seat_modifiers(server);
 	if (!shady_modules_pointer_axis(server, &event, mods)) {

@@ -7,6 +7,7 @@ struct shady_server;
 
 bool shady_shell_protocol_init(struct shady_server *server);
 void shady_shell_protocol_finish(struct shady_server *server);
-void shady_shell_protocol_toggle_launcher(struct shady_server *server);
+/* False when no shell is there to hear it. */
+bool shady_shell_protocol_toggle_launcher(struct shady_server *server);
 
 #endif

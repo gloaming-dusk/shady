@@ -54,6 +54,7 @@ void shady_modules_toplevel_commit(struct shady_toplevel *toplevel);
 void shady_modules_toplevel_destroy(struct shady_toplevel *toplevel);
 bool shady_modules_key(struct shady_server *server, const xkb_keysym_t *syms,
 	int nsyms, uint32_t state, uint32_t modifiers);
+void shady_modules_super_tap(struct shady_server *server);
 bool shady_modules_pointer_motion(struct shady_server *server,
 	struct wlr_pointer_motion_event *event);
 bool shady_modules_pointer_motion_absolute(struct shady_server *server,

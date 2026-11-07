@@ -187,6 +187,20 @@ struct shady_server {
 	struct wl_listener hold_begin, hold_end;
 	/* The swipe in progress belongs to the layout, not a client. */
 	bool swipe_ours;
+	/* Super is down and nothing has been done with it yet: released soon,
+	 * it was a tap. */
+	bool super_tap_armed;
+	uint32_t super_tap_pressed_ms;
+	/* Keys typed before the surface they are for has the keyboard. */
+	struct {
+		bool active;
+		size_t count;
+		struct wl_event_source *timer;
+		struct {
+			struct wlr_keyboard *keyboard;
+			uint32_t time_msec, keycode, state;
+		} events[32];
+	} key_hold;
 
 	struct wlr_seat *seat;
 	struct wl_listener new_input;
@@ -414,6 +428,15 @@ void server_cursor_motion(struct wl_listener *listener, void *data);
 void server_cursor_motion_absolute(struct wl_listener *listener, void *data);
 void server_cursor_button(struct wl_listener *listener, void *data);
 bool shady_input_pointer_on_overlay(struct shady_server *server);
+/* Hold the keyboard's events from now until a layer surface has the keyboard
+ * and, when there is an input method, the input method has grabbed it; then
+ * replay them there. If that never happens they are dropped. */
+void shady_input_hold_keys(struct shady_server *server);
+/* A layer surface took the keyboard / the input method grabbed it. */
+void shady_input_held_keys_focused(struct shady_server *server);
+void shady_input_held_keys_grabbed(struct shady_server *server);
+/* The window under the pointer, as a click would find it. */
+struct shady_toplevel *shady_input_toplevel_under_cursor(struct shady_server *server);
 void server_cursor_axis(struct wl_listener *listener, void *data);
 void server_cursor_frame(struct wl_listener *listener, void *data);
 bool shady_input_automation_key(struct shady_server *server, xkb_keysym_t sym,

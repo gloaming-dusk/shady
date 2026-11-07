@@ -3,6 +3,10 @@
  * tests/headless-shell-ime.sh. When a text field activates it, it composes
  * "한" as preedit, then commits "한글", as a Hangul input method would, and
  * reports each step on stdout.
+ *
+ * With IME_PROBE_GRAB=1 it instead grabs the keyboard while active, as fcitx5
+ * does, reports the keys it is given and gives them back through a virtual
+ * keyboard of its own, as fcitx5 does with the ones it does not use.
  */
 #define _POSIX_C_SOURCE 200809L
 
@@ -10,15 +14,20 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
 #include <string.h>
 #include <time.h>
 #include <wayland-client.h>
 
 #include "input-method-unstable-v2-client-protocol.h"
+#include "virtual-keyboard-unstable-v1-client-protocol.h"
 
 static struct wl_seat *seat;
 static struct zwp_input_method_manager_v2 *manager;
 static struct zwp_input_method_v2 *input_method;
+static struct zwp_virtual_keyboard_manager_v1 *virtual_keyboard_manager;
+static struct zwp_virtual_keyboard_v1 *virtual_keyboard;
 static uint32_t serial; /* done events received: what commit() refers to */
 static bool active, pending_active, unavailable;
 static int step; /* 0 waiting, 1 preedit sent, 2 committed */
@@ -60,6 +69,39 @@ static void im_unavailable(void *data, struct zwp_input_method_v2 *im) {
     unavailable = true;
 }
 
+static void grab_keymap(void *data, struct zwp_input_method_keyboard_grab_v2 *grab,
+        uint32_t format, int32_t fd, uint32_t size) {
+    (void)data; (void)grab;
+    zwp_virtual_keyboard_v1_keymap(virtual_keyboard, format, fd, size);
+    close(fd);
+}
+
+static void grab_key(void *data, struct zwp_input_method_keyboard_grab_v2 *grab,
+        uint32_t key_serial, uint32_t time, uint32_t key, uint32_t state) {
+    (void)data; (void)grab; (void)key_serial;
+    printf("ime: key %u %s\n", key, state ? "down" : "up");
+    fflush(stdout);
+    zwp_virtual_keyboard_v1_key(virtual_keyboard, time, key, state);
+}
+
+static void grab_modifiers(void *data, struct zwp_input_method_keyboard_grab_v2 *grab,
+        uint32_t mods_serial, uint32_t depressed, uint32_t latched, uint32_t locked, uint32_t group) {
+    (void)data; (void)grab; (void)mods_serial;
+    zwp_virtual_keyboard_v1_modifiers(virtual_keyboard, depressed, latched, locked, group);
+}
+
+static void grab_repeat_info(void *data, struct zwp_input_method_keyboard_grab_v2 *grab,
+        int32_t rate, int32_t delay) {
+    (void)data; (void)grab; (void)rate; (void)delay;
+}
+
+static const struct zwp_input_method_keyboard_grab_v2_listener grab_listener = {
+    .keymap = grab_keymap,
+    .key = grab_key,
+    .modifiers = grab_modifiers,
+    .repeat_info = grab_repeat_info,
+};
+
 static const struct zwp_input_method_v2_listener input_method_listener = {
     .activate = activate,
     .deactivate = deactivate,
@@ -77,6 +119,9 @@ static void global(void *data, struct wl_registry *registry, uint32_t name,
         seat = wl_registry_bind(registry, name, &wl_seat_interface, 1);
     else if (!strcmp(interface, zwp_input_method_manager_v2_interface.name))
         manager = wl_registry_bind(registry, name, &zwp_input_method_manager_v2_interface, 1);
+    else if (!strcmp(interface, zwp_virtual_keyboard_manager_v1_interface.name))
+        virtual_keyboard_manager = wl_registry_bind(registry, name,
+            &zwp_virtual_keyboard_manager_v1_interface, 1);
 }
 
 static void global_remove(void *data, struct wl_registry *registry, uint32_t name) {
@@ -109,6 +154,31 @@ int main(void) {
     wl_display_roundtrip(display);
     printf("ime: ready\n");
     fflush(stdout);
+
+    if (getenv("IME_PROBE_GRAB")) {
+        struct zwp_input_method_keyboard_grab_v2 *grab = NULL;
+        if (!virtual_keyboard_manager) {
+            fprintf(stderr, "ime-probe: no virtual keyboard manager\n");
+            return 1;
+        }
+        virtual_keyboard = zwp_virtual_keyboard_manager_v1_create_virtual_keyboard(
+            virtual_keyboard_manager, seat);
+        while (!unavailable && wl_display_dispatch(display) >= 0) {
+            if (active && !grab) {
+                grab = zwp_input_method_v2_grab_keyboard(input_method);
+                zwp_input_method_keyboard_grab_v2_add_listener(grab, &grab_listener, NULL);
+                printf("ime: grabbed\n");
+            } else if (!active && grab) {
+                zwp_input_method_keyboard_grab_v2_release(grab);
+                grab = NULL;
+                printf("ime: released\n");
+            }
+            fflush(stdout);
+            wl_display_flush(display);
+        }
+        wl_display_disconnect(display);
+        return 0;
+    }
 
     double started = now(), stepped = 0;
     while (!unavailable && now() - started < 20) {

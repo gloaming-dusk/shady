@@ -18,6 +18,7 @@ nix develop -c ninja -C "$BUILD_DIR" \
   shady \
   headless-automation-probe \
   headless-session-lock-probe \
+  ime-probe \
   math3d-test \
   physics-collision-test \
   libshady-plugin-fps-cube.so \
@@ -104,6 +105,12 @@ SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
 
 SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
   nix develop -c bash ./tests/headless-spatial-overview.sh
+
+SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
+  nix develop -c bash ./tests/headless-overview.sh
+
+SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
+  nix develop -c bash ./tests/headless-overview-search.sh
 
 SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
   nix develop -c bash ./tests/headless-water-windows.sh
