@@ -72,6 +72,8 @@ struct shady_module {
 		double x, double y);
 	void (*tick)(struct shady_server *server, float dt,
 		float logical_w, float logical_h);
+	/* Super was pressed and released on its own. */
+	void (*super_tap)(struct shady_server *server);
 };
 
 #endif

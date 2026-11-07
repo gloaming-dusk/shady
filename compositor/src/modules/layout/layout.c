@@ -27,6 +27,7 @@
 #include "../../shady.h"
 #include "../../ipc/values.h"
 #include "../../render/render.h"
+#include "../../shell_protocol.h"
 #include "../desktop/state.h"
 #include "../workspace/workspace.h"
 #include "state.h"
@@ -38,6 +39,10 @@
 #define MIN_COLUMN_WIDTH 120
 #define MIN_ROW_HEIGHT 80
 #define ANIMATION_INTERVAL_MS 7
+/* How far the overview pulls back. A longer strip than this shows is
+ * scrolled, as on the desktop, rather than shrunk until it cannot be read. */
+#define OVERVIEW_MIN_ZOOM 1.35
+#define OVERVIEW_MAX_ZOOM 3.0
 
 static uint64_t now_ns(void) {
 	struct timespec ts;
@@ -215,6 +220,47 @@ static void clamp_view(struct shady_server *server, struct shady_layout_workspac
 	if (ws->view_target > max) ws->view_target = max;
 }
 
+/* How far the overview pulls back for this strip, and when the strip is too
+ * long to show whole, the views at which its ends reach the edges of what the
+ * camera sees. False when it all fits and there is nothing to scroll. */
+static bool overview_range(struct shady_server *server, const struct strip_metrics *m,
+		const struct wlr_box *area, double *zoom, double *min, double *max) {
+	int gap = layout_gap(server);
+	double total = m->total > area->width ? m->total : area->width;
+	double z = (total + 2 * gap) / area->width * 1.08;
+	if (z < OVERVIEW_MIN_ZOOM) z = OVERVIEW_MIN_ZOOM;
+	bool capped = z >= OVERVIEW_MAX_ZOOM;
+	if (capped) z = OVERVIEW_MAX_ZOOM;
+	double margin = area->width * (z - 1.0) / 2.0;
+	double lo = margin - gap, hi = m->total + gap - area->width - margin;
+	if (zoom) *zoom = z;
+	if (min) *min = lo;
+	if (max) *max = hi;
+	return capped && hi > lo;
+}
+
+static void overview_clamp_view(struct shady_server *server, struct shady_layout_workspace *ws,
+		const struct strip_metrics *m, const struct wlr_box *area) {
+	double min, max;
+	if (!overview_range(server, m, area, NULL, &min, &max)) return;
+	if (ws->view_target < min) ws->view_target = min;
+	if (ws->view_target > max) ws->view_target = max;
+}
+
+/* Scroll no further than it takes to bring column c into the overview. */
+static void overview_ensure_visible(struct shady_server *server, struct shady_layout_workspace *ws,
+		size_t c, const struct strip_metrics *m, const struct wlr_box *area) {
+	double zoom;
+	if (c >= ws->count || !overview_range(server, m, area, &zoom, NULL, NULL)) return;
+	int gap = layout_gap(server);
+	double margin = area->width * (zoom - 1.0) / 2.0;
+	double lo = m->x[c] + m->width[c] + gap - area->width - margin;
+	double hi = m->x[c] - gap + margin;
+	if (ws->view_target < lo) ws->view_target = lo;
+	if (ws->view_target > hi) ws->view_target = hi;
+	overview_clamp_view(server, ws, m, area);
+}
+
 static void apply_positions(struct shady_server *server, size_t index) {
 	struct shady_layout_state *state = shady_layout_state_for(server);
 	struct shady_layout_workspace *ws = &state->workspaces[index];
@@ -347,6 +393,9 @@ static void arrange_workspace(struct shady_server *server, size_t index, bool an
 		ensure_visible(server, ws, ws->active, ws->active, &m, &area, &full);
 		clamp_view(server, ws, &m, &area);
 		ws->view = ws->view_target;
+	} else if (state->overview && index == current_workspace(server)) {
+		/* The strip stays where it was scrolled to. */
+		overview_clamp_view(server, ws, &m, &area);
 	} else {
 		ensure_visible(server, ws, ws->active, ws->active, &m, &area, &full);
 		clamp_view(server, ws, &m, &area);
@@ -490,11 +539,11 @@ static bool camera_step(struct shady_server *server, double a) {
 		struct strip_metrics m;
 		strip_measure(server, ws, &area, &full, &m);
 		double total = m.total > area.width ? m.total : area.width;
-		double zoom = (total + 2 * layout_gap(server)) / area.width * 1.08;
-		if (zoom < 1.35) zoom = 1.35;
-		if (zoom > 6.0) zoom = 6.0;
+		double zoom;
+		bool scrolls = overview_range(server, &m, &area, &zoom, NULL, NULL);
 		double cx = area.x - full.x + total / 2.0 - ws->view_target;
-		if (m.total < area.width) cx = area.x - full.x + area.width / 2.0;
+		/* A strip that is scrolled moves under a camera that stays. */
+		if (scrolls || m.total < area.width) cx = area.x - full.x + area.width / 2.0;
 		double cy = area.y - full.y + area.height / 2.0;
 		distance = (float)(SHADY_CAMERA_DEFAULT_DIST * zoom);
 		tx = (float)((cx - full.width / 2.0) / full.height);
@@ -531,6 +580,18 @@ bool shady_layout_overview(struct shady_server *server, int enable) {
 	state->overview = on;
 	state->camera_owned = true;
 	shady_values_set(server, state, "layout.overview", on ? "1" : "0");
+	struct wlr_box area, full;
+	struct shady_layout_workspace *ws = &state->workspaces[current_workspace(server)];
+	if (on && ws->count && layout_area(server, &area, &full)) {
+		/* Pulled back around the focused column. */
+		struct strip_metrics m;
+		strip_measure(server, ws, &area, &full, &m);
+		if (overview_range(server, &m, &area, NULL, NULL, NULL) && ws->active < ws->count)
+			ws->view_target = m.x[ws->active] + m.width[ws->active] / 2.0 - area.width / 2.0;
+	}
+	/* Going in, the view is kept in the overview's range; coming out, it
+	 * returns to the focused column, wherever it was scrolled to. */
+	shady_layout_arrange(server);
 	schedule_animation(state);
 	return true;
 #else
@@ -538,6 +599,11 @@ bool shady_layout_overview(struct shady_server *server, int enable) {
 	(void)enable;
 	return false;
 #endif
+}
+
+bool shady_layout_overview_active(struct shady_server *server) {
+	struct shady_layout_state *state = shady_layout_state_for(server);
+	return state && shady_layout_active(server) && state->overview;
 }
 
 static int animation_tick(void *data) {
@@ -722,9 +788,19 @@ void shady_layout_rule(struct shady_toplevel *toplevel, int floating, float widt
 	if (width > 0.f && width <= 1.f) lt->rule_width = width;
 }
 
+/* Leaving from an idle callback: the core is still in the middle of what
+ * brought this on, a click or a window appearing. */
+static void overview_leave_idle(void *data) {
+	shady_layout_overview(data, 0);
+}
+
 static void layout_toplevel_map(struct shady_toplevel *toplevel) {
 	struct shady_server *server = toplevel->server;
 	if (!shady_layout_active(server)) return;
+	/* What was launched from the overview's search is what comes next. */
+	if (shady_layout_state_for(server)->overview)
+		wl_event_loop_add_idle(wl_display_get_event_loop(server->wl_display),
+			overview_leave_idle, server);
 	struct shady_layout_toplevel *lt = shady_layout_toplevel_for(toplevel);
 	if (!lt) return;
 	lt->workspace = toplevel_workspace(toplevel);
@@ -1278,8 +1354,14 @@ bool shady_layout_swipe_update(struct shady_server *server, double dx, double dy
 	double max = m.total + gap - area.width;
 	if (max < -gap) max = -gap;
 	max += area.width * 0.15;
+	double follow = 1.5;
+	if (state->overview) {
+		double zoom;
+		if (!overview_range(server, &m, &area, &zoom, &min, &max)) return true;
+		follow *= zoom;
+	}
 	/* The strip follows the fingers, a little faster than 1:1. */
-	double view = state->swipe_view_start - state->swipe_dx * 1.5;
+	double view = state->swipe_view_start - state->swipe_dx * follow;
 	if (view < min) view = min;
 	if (view > max) view = max;
 	ws->view = ws->view_target = view;
@@ -1307,6 +1389,8 @@ bool shady_layout_swipe_end(struct shady_server *server, bool cancelled) {
 		schedule_animation(state);
 		return true;
 	}
+	/* The overview scrolls without choosing: that takes a click or a key. */
+	if (state->overview) return true;
 	/* Settle on the column nearest the middle of the screen. */
 	struct strip_metrics m;
 	strip_measure(server, ws, &area, &full, &m);
@@ -1329,8 +1413,27 @@ bool shady_layout_swipe_end(struct shady_server *server, bool cancelled) {
 	return true;
 }
 
+/* Scroll the strip under the overview's camera; the focus stays. */
+static void overview_scroll(struct shady_server *server, struct wlr_pointer_axis_event *event) {
+	struct shady_layout_state *state = shady_layout_state_for(server);
+	struct shady_layout_workspace *ws = &state->workspaces[current_workspace(server)];
+	struct wlr_box area, full;
+	if (ws->count == 0 || !layout_area(server, &area, &full)) return;
+	struct strip_metrics m;
+	strip_measure(server, ws, &area, &full, &m);
+	double zoom;
+	if (!overview_range(server, &m, &area, &zoom, NULL, NULL)) return;
+	/* A wheel's notch is 15; fingers follow as they do in a swipe. */
+	ws->view_target += event->source == WL_POINTER_AXIS_SOURCE_WHEEL
+		? event->delta / 15.0 * area.width * 0.25 : event->delta * zoom * 1.5;
+	overview_clamp_view(server, ws, &m, &area);
+	publish_strip(server, ws, &m, &area);
+	schedule_animation(state);
+}
+
 /* Super+wheel: workspaces up and down; Super+Shift+wheel or a sideways
- * wheel: columns. */
+ * wheel: columns. In the overview the wheel needs no Super, and a sideways
+ * scroll moves the strip instead of the focus. */
 static bool layout_pointer_axis(struct shady_server *server,
 		struct wlr_pointer_axis_event *event, uint32_t modifiers) {
 	static double accumulated;
@@ -1341,10 +1444,22 @@ static bool layout_pointer_axis(struct shady_server *server,
 	const uint32_t mask = WLR_MODIFIER_ALT | WLR_MODIFIER_SHIFT |
 		WLR_MODIFIER_CTRL | WLR_MODIFIER_LOGO;
 	uint32_t mods = modifiers & mask;
-	if (mods != WLR_MODIFIER_LOGO && mods != (WLR_MODIFIER_LOGO | WLR_MODIFIER_SHIFT))
+	bool overview = shady_layout_state_for(server)->overview;
+	/* A launcher or a bar over the overview scrolls itself. */
+	if (overview && shady_input_pointer_on_overlay(server)) return false;
+	if (overview && (mods & (WLR_MODIFIER_CTRL | WLR_MODIFIER_ALT))) return true;
+	if (!overview && mods != WLR_MODIFIER_LOGO &&
+			mods != (WLR_MODIFIER_LOGO | WLR_MODIFIER_SHIFT))
 		return false;
 	bool columns = event->orientation == WL_POINTER_AXIS_HORIZONTAL_SCROLL ||
 		(mods & WLR_MODIFIER_SHIFT);
+	if (overview && columns) {
+		/* Fingers are never quite straight: a sideways scroll is not the
+		 * start of a workspace change. */
+		if (fabs(event->delta) > 2.0) accumulated = 0.0;
+		overview_scroll(server, event);
+		return true;
+	}
 	accumulated += event->delta;
 	double threshold = event->source == WL_POINTER_AXIS_SOURCE_FINGER ? 60.0 : 1.0;
 	if (fabs(accumulated) < threshold) return true;
@@ -1353,7 +1468,7 @@ static bool layout_pointer_axis(struct shady_server *server,
 	if (columns) {
 		shady_layout_focus(server, step > 0 ? SHADY_LAYOUT_RIGHT : SHADY_LAYOUT_LEFT);
 	} else {
-		if (event->time_msec - last_step_ms < 150) return true;
+		if (event->time_msec - last_step_ms < (overview ? 300u : 150u)) return true;
 		last_step_ms = event->time_msec;
 		shady_layout_workspace_step(server, step, false);
 	}
@@ -1373,7 +1488,10 @@ static void on_focus(struct shady_toplevel *toplevel) {
 		if (layout_area(server, &area, &full)) {
 			struct strip_metrics m;
 			strip_measure(server, ws, &area, &full, &m);
-			ensure_visible(server, ws, c, prev, &m, &area, &full);
+			if (shady_layout_state_for(server)->overview)
+				overview_ensure_visible(server, ws, c, &m, &area);
+			else
+				ensure_visible(server, ws, c, prev, &m, &area, &full);
 		}
 		shady_layout_arrange(server);
 	}
@@ -1382,19 +1500,89 @@ static void on_focus(struct shady_toplevel *toplevel) {
 
 /* A click in the overview picks a window: the core gives it the focus,
  * then the camera flies back into it. */
-static void overview_leave_idle(void *data) {
-	shady_layout_overview(data, 0);
-}
-
 static bool layout_pointer_button(struct shady_server *server,
 		struct wlr_pointer_button_event *event, uint32_t modifiers) {
-	(void)modifiers;
 	struct shady_layout_state *state = shady_layout_state_for(server);
-	if (state && state->overview && event->state == WL_POINTER_BUTTON_STATE_PRESSED &&
-			!shady_desktop_state(server)->session_locked)
-		wl_event_loop_add_idle(wl_display_get_event_loop(server->wl_display),
-			overview_leave_idle, server);
-	return false;
+	if (!state || !state->overview || event->state != WL_POINTER_BUTTON_STATE_PRESSED ||
+			shady_desktop_state(server)->session_locked)
+		return false;
+	wl_event_loop_add_idle(wl_display_get_event_loop(server->wl_display),
+		overview_leave_idle, server);
+	/* The shell's surfaces work as ever, and Super still drags. */
+	if ((modifiers & WLR_MODIFIER_LOGO) || shady_input_pointer_on_overlay(server))
+		return false;
+	/* The click only chooses the window: it would press whatever happens to
+	 * be under it, unseen. The seat ignores the release of an unseen press. */
+	struct shady_toplevel *toplevel = shady_input_toplevel_under_cursor(server);
+	if (toplevel) focus_toplevel(toplevel);
+	return true;
+}
+
+static bool is_modifier(xkb_keysym_t sym) {
+	return (sym >= XKB_KEY_Shift_L && sym <= XKB_KEY_Hyper_R) ||
+		(sym >= XKB_KEY_ISO_Lock && sym <= XKB_KEY_ISO_Last_Group_Lock) ||
+		sym == XKB_KEY_Mode_switch || sym == XKB_KEY_Num_Lock;
+}
+
+/* The overview takes the keyboard: typing must not land unseen in the focused
+ * window. It searches instead: a character opens the launcher, which is given
+ * that key and the ones after it as soon as it can take them. Lua's bindings,
+ * which run first, still work, and so does whatever else has the keyboard,
+ * such as the launcher once it is open. */
+static bool layout_key(struct shady_server *server, const xkb_keysym_t *syms,
+		int nsyms, uint32_t key_state, uint32_t modifiers) {
+	struct shady_layout_state *state = shady_layout_state_for(server);
+	if (!state || !state->overview || key_state != WL_KEYBOARD_KEY_STATE_PRESSED ||
+			(modifiers & (WLR_MODIFIER_CTRL | WLR_MODIFIER_ALT | WLR_MODIFIER_LOGO)))
+		return false;
+	struct wlr_surface *focus = server->seat->keyboard_state.focused_surface;
+	if (focus && wlr_layer_surface_v1_try_from_wlr_surface(wlr_surface_get_root_surface(focus)))
+		return false;
+	bool swallow = false;
+	for (int i = 0; i < nsyms; i++) {
+		if (is_modifier(syms[i])) continue;
+		swallow = true;
+		switch (xkb_keysym_to_lower(syms[i])) {
+		case XKB_KEY_Escape:
+		case XKB_KEY_Return:
+		case XKB_KEY_KP_Enter:
+			shady_layout_overview(server, 0);
+			break;
+		case XKB_KEY_Left:
+			shady_layout_focus(server, SHADY_LAYOUT_LEFT);
+			break;
+		case XKB_KEY_Right:
+			shady_layout_focus(server, SHADY_LAYOUT_RIGHT);
+			break;
+		case XKB_KEY_Up:
+			shady_layout_focus(server, SHADY_LAYOUT_UP);
+			break;
+		case XKB_KEY_Down:
+			shady_layout_focus(server, SHADY_LAYOUT_DOWN);
+			break;
+		case XKB_KEY_Home:
+			shady_layout_focus(server, SHADY_LAYOUT_FIRST);
+			break;
+		case XKB_KEY_End:
+			shady_layout_focus(server, SHADY_LAYOUT_LAST);
+			break;
+		case XKB_KEY_Page_Up:
+			shady_layout_workspace_step(server, -1, false);
+			break;
+		case XKB_KEY_Page_Down:
+			shady_layout_workspace_step(server, 1, false);
+			break;
+		default: {
+			uint32_t c = xkb_keysym_to_utf32(syms[i]);
+			if (c > 0x20 && c != 0x7f && shady_shell_protocol_toggle_launcher(server)) {
+				shady_input_hold_keys(server);
+				return true;
+			}
+			break;
+		}
+		}
+	}
+	return swallow;
 }
 
 static void on_state_changed(struct shady_toplevel *toplevel) {
@@ -1514,6 +1702,7 @@ static const struct shady_module layout_module = {
 	.toplevel_map = layout_toplevel_map,
 	.toplevel_unmap = layout_toplevel_unmap,
 	.toplevel_destroy = layout_toplevel_destroy,
+	.key = layout_key,
 	.pointer_axis = layout_pointer_axis,
 	.pointer_button = layout_pointer_button,
 };

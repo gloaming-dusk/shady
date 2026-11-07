@@ -58,6 +58,7 @@ static const struct shady_module lua_module = {
 	.destroy = lua_destroy_module,
 	.toplevel_map = lua_toplevel_map,
 	.key = lua_key,
+	.super_tap = shady_lua_handle_super_tap,
 };
 
 const struct shady_module *shady_lua_module(void) {

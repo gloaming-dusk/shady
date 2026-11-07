@@ -19,6 +19,7 @@ static void notify_activity(struct shady_server *server) {
 static void swipe_begin(struct wl_listener *listener, void *data) {
 	struct shady_server *server = wl_container_of(listener, server, swipe_begin);
 	struct wlr_pointer_swipe_begin_event *event = data;
+	server->super_tap_armed = false;
 	notify_activity(server);
 	server->swipe_ours = !shady_desktop_state(server)->session_locked &&
 		shady_layout_swipe_begin(server, event->fingers);

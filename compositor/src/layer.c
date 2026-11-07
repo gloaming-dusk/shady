@@ -109,6 +109,7 @@ static void focus_layer_surface(struct shady_layer_surface *layer) {
 	wlr_seat_keyboard_notify_enter(server->seat, surface->surface,
 		keyboard ? keyboard->keycodes : NULL, keyboard ? keyboard->num_keycodes : 0,
 		keyboard ? &keyboard->modifiers : NULL);
+	shady_input_held_keys_focused(server);
 }
 
 static void restore_layer_keyboard_focus(struct shady_layer_surface *layer) {

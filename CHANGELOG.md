@@ -20,6 +20,21 @@ New:
   `shady.layout.overview()` pulls the camera back over the whole strip.
   The bars step aside for a focused fullscreen window. The strip's shape
   is published as `layout.strip` for bars.
+- Keys an input method gives back through its own virtual keyboard reach the
+  application: they went back into its keyboard grab instead, so with fcitx5
+  Return did nothing in the launcher.
+- A tap of Super: `shady.bind("Super", fn)` runs when Super is pressed and
+  released on its own within half a second, with no other key, button, scroll
+  or swipe in between. Tide opens the overview with it, as GNOME does.
+- The overview scrolls: it pulls back at most three screens' width, and a
+  longer strip scrolls under it without moving the focus, which used to
+  shrink until it could not be read. The wheel changes workspace there, the
+  keyboard chooses a window, and a click no longer reaches the window it
+  picks. Leaving returns to the focused column.
+- Typing in the overview searches: a character opens the launcher and the
+  keys typed until it has the keyboard and the input method's grab are
+  replayed into it, so nothing is lost, in Hangul either. A new window closes
+  the overview.
 - Tide, an everyday rice: the scrolling layout with niri's keys, a glass
   bar with a minimap of the strip, control center, launcher with a
   calculator, power menu, OSD, notifications, and its own lock screen and

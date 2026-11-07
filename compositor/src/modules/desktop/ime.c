@@ -3,6 +3,8 @@
 #include <stdlib.h>
 #include <wayland-server-core.h>
 #include <wlr/types/wlr_input_method_v2.h>
+#include <wlr/types/wlr_keyboard.h>
+#include <wlr/types/wlr_virtual_keyboard_v1.h>
 #include <wlr/types/wlr_seat.h>
 #include <wlr/types/wlr_text_input_v3.h>
 #include <wlr/types/wlr_compositor.h>
@@ -180,6 +182,7 @@ static void keyboard_grab(struct wl_listener *listener, void *data) {
 	wl_signal_add(&grab->events.destroy, &ime->keyboard_grab_destroy);
 	struct wlr_keyboard *keyboard = wlr_seat_get_keyboard(ime->server->seat);
 	if (keyboard) wlr_input_method_keyboard_grab_v2_set_keyboard(grab, keyboard);
+	shady_input_held_keys_grabbed(ime->server);
 }
 
 static void input_method_destroy(struct wl_listener *listener, void *data) {
@@ -254,11 +257,27 @@ bool shady_ime_init(struct shady_server *server) {
 	return true;
 }
 
-bool shady_ime_handle_key(struct shady_server *server,
+bool shady_ime_has_input_method(struct shady_server *server) {
+	struct shady_desktop_state *desktop = shady_desktop_state(server);
+	return desktop && desktop->ime && desktop->ime->input_method;
+}
+
+/* An input method gives back the keys it does not use through a virtual
+ * keyboard of its own, for the application. Grabbing those too would hand them
+ * straight back to it, and they would never arrive. */
+static bool keyboard_grabbed(struct shady_ime_state *ime, struct wlr_keyboard *source) {
+	if (!ime || !ime->active_keyboard_grab) return false;
+	struct wlr_virtual_keyboard_v1 *virtual_keyboard =
+		source ? wlr_input_device_get_virtual_keyboard(&source->base) : NULL;
+	return !virtual_keyboard || wl_resource_get_client(virtual_keyboard->resource) !=
+		wl_resource_get_client(ime->active_keyboard_grab->resource);
+}
+
+bool shady_ime_handle_key(struct shady_server *server, struct wlr_keyboard *source,
 		uint32_t time_msec, uint32_t keycode, uint32_t state) {
 	struct shady_desktop_state *desktop = shady_desktop_state(server);
 	struct shady_ime_state *ime = desktop ? desktop->ime : NULL;
-	if (!ime || !ime->active_keyboard_grab) return false;
+	if (!keyboard_grabbed(ime, source)) return false;
 	struct wlr_keyboard *keyboard = wlr_seat_get_keyboard(server->seat);
 	if (keyboard)
 		wlr_input_method_keyboard_grab_v2_set_keyboard(ime->active_keyboard_grab, keyboard);
@@ -267,11 +286,11 @@ bool shady_ime_handle_key(struct shady_server *server,
 	return true;
 }
 
-bool shady_ime_handle_modifiers(struct shady_server *server,
+bool shady_ime_handle_modifiers(struct shady_server *server, struct wlr_keyboard *source,
 		struct wlr_keyboard_modifiers *modifiers) {
 	struct shady_desktop_state *desktop = shady_desktop_state(server);
 	struct shady_ime_state *ime = desktop ? desktop->ime : NULL;
-	if (!ime || !ime->active_keyboard_grab) return false;
+	if (!keyboard_grabbed(ime, source)) return false;
 	struct wlr_keyboard *keyboard = wlr_seat_get_keyboard(server->seat);
 	if (keyboard)
 		wlr_input_method_keyboard_grab_v2_set_keyboard(ime->active_keyboard_grab, keyboard);

@@ -79,6 +79,7 @@ key("Super+Shift+f", function()
 end, "Fullscreen")
 key("Super+c", function() L.center() end, "Centre the column")
 key("Super+v", function() L.toggle_floating() end, "Float or tile the window")
+key("Super", function() L.overview() end, "Overview of the strip (tap)")
 key("Super+o", function() L.overview() end, "Overview of the strip")
 
 -- ---- workspaces: numbered, made as they are needed ------------------------

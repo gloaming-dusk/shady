@@ -388,6 +388,13 @@ bool shady_modules_key(struct shady_server *server, const xkb_keysym_t *syms,
 	return false;
 }
 
+void shady_modules_super_tap(struct shady_server *server) {
+	for (size_t i = 0; i < server->modules.count; i++) {
+		const struct shady_module *module = server->modules.modules[i];
+		if (server->modules.active[i] && module->super_tap) module->super_tap(server);
+	}
+}
+
 #define DISPATCH_INPUT(hook, event, modifiers) \
 	do { \
 		for (size_t i = 0; i < server->modules.count; i++) { \
