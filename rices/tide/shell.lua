@@ -62,7 +62,7 @@ local function has(command)
     return false
 end
 local HAVE = {
-    playerctl = has("playerctl"), nmcli = has("nmcli"), bluetoothctl = has("bluetoothctl"),
+    grim = has("grim"), playerctl = has("playerctl"), nmcli = has("nmcli"), bluetoothctl = has("bluetoothctl"),
     powerprofiles = has("powerprofilesctl"), wlcopy = has("wl-copy"), swaylock = has("swaylock"),
 }
 
@@ -690,7 +690,7 @@ local function control_view(ctx)
         tiles[#tiles + 1] = tile(ctx, "t:profile", "sliders", "Power", PROFILE_NAMES[profile] or profile,
             profile ~= "balanced", act.profile)
     end
-    tiles[#tiles + 1] = tile(ctx, "t:shot", "capture", "Screenshot", "Region", false, function()
+    tiles[#tiles + 1] = tile(ctx, "t:shot", "capture", "Screenshot", "Choose", false, function()
         shell.close("tide-control")
         shell.after(350, function() shell.key("Print") end)
     end)
@@ -1006,6 +1006,249 @@ shell.popup {
     end,
 }
 
+-- ---- screenshots ---------------------------------------------------------------
+-- Print opens this over the live screen: drag a region, point at a window, or
+-- take the whole screen. It closes before the picture is taken, so it is not
+-- in it. init.lua publishes the output and windows as `tide.shot`.
+
+local Shot = { mode = "region", windows = {} }
+local SHOT_MODES = { "region", "window", "screen" }
+local SHOT_LABELS = { region = "Region", window = "Window", screen = "Screen" }
+local SHOT_HINTS = {
+    region = "Drag to select  ·  drag inside to move  ·  Enter to capture",
+    window = "Click a window  ·  Enter takes the focused one",
+    screen = "Click or press Enter",
+}
+
+-- "<output> <x> <y> <w> <h>|<x> <y> <w> <h> <focused> <app>|..."
+local function shot_read()
+    local raw = shell.compositor_value("tide.shot", "")
+    local head, rest = raw:match("^([^|]*)|?(.*)$")
+    local name, ox, oy, ow, oh = (head or ""):match("^(%S+) (-?%d+) (-?%d+) (%d+) (%d+)$")
+    if not name then return false end
+    ox, oy, ow, oh = tonumber(ox), tonumber(oy), tonumber(ow), tonumber(oh)
+    if Shot.output ~= name then Shot.rect = nil end
+    Shot.output, Shot.ox, Shot.oy, Shot.ow, Shot.oh = name, ox, oy, ow, oh
+    Shot.windows = {}
+    for x, y, w, h, focused, app in rest:gmatch("(-?%d+) (-?%d+) (%d+) (%d+) ([01]) ([^|]*)") do
+        -- On this output, without the part scrolled past its edges.
+        local x1, y1 = math.max(tonumber(x) - ox, 0), math.max(tonumber(y) - oy, 0)
+        local x2 = math.min(tonumber(x) - ox + tonumber(w), ow)
+        local y2 = math.min(tonumber(y) - oy + tonumber(h), oh)
+        if x2 - x1 >= 8 and y2 - y1 >= 8 then
+            Shot.windows[#Shot.windows + 1] = { x = x1, y = y1, w = x2 - x1, h = y2 - y1,
+                focused = focused == "1", app = app }
+        end
+    end
+    return true
+end
+
+-- What Enter would take in this mode, in the popup's coordinates.
+local function shot_target()
+    if Shot.mode == "region" then return Shot.rect end
+    if Shot.mode == "screen" then return { screen = true } end
+    if Shot.hovered then return Shot.hovered end
+    for _, w in ipairs(Shot.windows) do if w.focused then return w end end
+    return nil
+end
+
+-- Wait for the picture and say what became of it. It appears under its name
+-- only when it is complete, and nothing else here reports back: without this a
+-- screenshot looks like the picker just closing.
+local function shot_report(path, tries)
+    if exists(path) then
+        shell.log("screenshot saved: " .. path)
+        shell.notify("Screenshot saved",
+            (path:gsub("^" .. home, "~")) .. (HAVE.wlcopy and "\nCopied to the clipboard"
+                or "\nNot copied: wl-copy is not installed"), "Screenshot")
+    elseif tries <= 0 then
+        shell.log("screenshot failed: " .. path)
+        shell.notify("Screenshot failed", "grim could not save " .. path, "Screenshot")
+    else
+        shell.after(100, function() shot_report(path, tries - 1) end)
+    end
+end
+
+-- target: { x, y, w, h } in the output's coordinates, or { screen = true }.
+local function shot_capture(target)
+    if not target then return end
+    local dir = (os.getenv("XDG_PICTURES_DIR") or (home .. "/Pictures")) .. "/Screenshots"
+    local path = string.format("%s/Screenshot from %s.png", dir, os.date("%Y-%m-%d %H-%M-%S"))
+    local part = dir .. "/.screenshot.part"
+    local what = target.screen and string.format("-o %q", Shot.output)
+        or string.format("-g '%d,%d %dx%d'", Shot.ox + target.x, Shot.oy + target.y, target.w, target.h)
+    shell.log("screenshot: " .. what)
+    shell.close("tide-shot")
+    -- Once this surface is off the screen.
+    shell.after(150, function()
+        shell.spawn(string.format("mkdir -p %q && grim %s %q && mv -f %q %q%s",
+            dir, what, part, part, path,
+            HAVE.wlcopy and string.format(" && wl-copy < %q", path) or ""))
+        shot_report(path, 50)
+    end)
+end
+
+local function shot_veil(ctx, hole)
+    local veil = a("#05050A", 0.58)
+    local function piece(x, y, w, h)
+        if w <= 0 or h <= 0 then return false end
+        return shell.box { left = x, top = y, width = w, height = h, background = veil }
+    end
+    if not hole then return { piece(0, 0, ctx.width, ctx.height) } end
+    local x2, y2 = hole.x + hole.w, hole.y + hole.h
+    return {
+        piece(0, 0, ctx.width, hole.y),
+        piece(0, y2, ctx.width, ctx.height - y2),
+        piece(0, hole.y, hole.x, hole.h),
+        piece(x2, hole.y, ctx.width - x2, hole.h),
+    }
+end
+
+local function shot_frame(ctx, hole, label)
+    local tag = label or string.format("%d × %d", hole.w, hole.h)
+    -- Not over the bar.
+    local above = hole.y >= BAR + 34
+    return {
+        shell.box { left = hole.x, top = hole.y, width = hole.w, height = hole.h,
+            border = P.accent, border_width = 2 },
+        shell.row { left = math.max(hole.x, 0), top = above and hole.y - 30 or hole.y + 8,
+            height = 24, radius = 8, padding = { 0, 9 }, background = a(P.base, 0.9),
+            text(tag, { font = font("Bold", 8.5), color = P.text }) },
+    }
+end
+
+local function shot_drag(ctx, info)
+    local px = clamp(math.floor(info.px + 0.5), 0, ctx.width)
+    local py = clamp(math.floor(info.py + 0.5), 0, ctx.height)
+    if info.done then
+        Shot.drag = nil
+        if Shot.rect and (Shot.rect.w < 4 or Shot.rect.h < 4) then Shot.rect = nil end
+    elseif not Shot.drag then
+        local r = Shot.rect
+        if r and px >= r.x and px < r.x + r.w and py >= r.y and py < r.y + r.h then
+            Shot.drag = { move = true, dx = px - r.x, dy = py - r.y }
+        else
+            Shot.drag = { x = px, y = py }
+            Shot.rect = { x = px, y = py, w = 0, h = 0 }
+        end
+    elseif Shot.drag.move then
+        local r = Shot.rect
+        r.x = clamp(px - Shot.drag.dx, 0, ctx.width - r.w)
+        r.y = clamp(py - Shot.drag.dy, 0, ctx.height - r.h)
+    else
+        local d = Shot.drag
+        Shot.rect = { x = math.min(d.x, px), y = math.min(d.y, py),
+            w = math.abs(px - d.x), h = math.abs(py - d.y) }
+    end
+    shell.redraw()
+end
+
+local function shot_set_mode(mode)
+    Shot.mode, Shot.hovered = mode, nil
+    shell.redraw()
+end
+
+local function shot_toolbar(ctx)
+    local segments = {}
+    for _, mode in ipairs(SHOT_MODES) do
+        local on = mode == Shot.mode
+        local id = "shot:mode:" .. mode
+        segments[#segments + 1] = shell.row {
+            id = id, height = 36, radius = 11, padding = { 0, 14 }, animate = "snappy",
+            background = on and shell.gradient("horizontal", a(P.accent, 0.34), a(P.accent_2, 0.2))
+                or (ctx.hovered == id and a(P.text, 0.08) or nil),
+            border = on and a(P.accent, 0.45) or nil,
+            on_click = function() shot_set_mode(mode) end,
+            text(SHOT_LABELS[mode], { font = font(on and "Bold" or "SemiBold", 9.5),
+                color = on and P.text or P.dim }),
+        }
+    end
+    local ready = shot_target() ~= nil
+    return shell.column {
+        bottom = 36, gap = 8, align = "center",
+        shell.row {
+            gap = 10, padding = 7, radius = 18, align = "center", background = glass(0.94),
+            border = a(P.text, 0.1), enter = POP,
+            shell.row { gap = 3, segments },
+            shell.row {
+                id = "shot:take", width = 40, height = 40, radius = 20, justify = "center",
+                opacity = ready and 1 or 0.4, animate = "snappy",
+                background = ready and shell.gradient("diagonal", P.accent, P.accent_2) or a(P.text, 0.1),
+                on_click = function() shot_capture(shot_target()) end,
+                shell.icon("capture", { size = 18, color = ready and P.base or P.text }),
+            },
+            shell.row {
+                id = "shot:close", width = 32, height = 32, radius = 16, justify = "center",
+                background = ctx.hovered == "shot:close" and a(P.text, 0.1) or nil,
+                on_click = function() shell.close("tide-shot") end,
+                shell.icon("close", { size = 14, color = P.dim }),
+            },
+        },
+        shell.row { height = 24, radius = 8, padding = { 0, 10 }, background = a(P.base, 0.78),
+            text(SHOT_HINTS[Shot.mode], { font = font("Medium", 8.5), color = P.dim }) },
+    }
+end
+
+shell.popup {
+    name = "tide-shot",
+    fill = true,
+    keyboard = "exclusive",
+    view = function(ctx)
+        local layers = {}
+        local function add(w) layers[#layers + 1] = w end
+        if Shot.mode == "region" then
+            add(shell.box { left = 0, top = 0, right = 0, bottom = 0, id = "shot:area",
+                on_drag = function(info) shot_drag(ctx, info) end })
+            -- Nothing is selected yet by a press that has not moved.
+            local hole = Shot.rect and Shot.rect.w > 0 and Shot.rect.h > 0 and Shot.rect or nil
+            add(shot_veil(ctx, hole))
+            if hole then add(shot_frame(ctx, hole)) end
+        elseif Shot.mode == "window" then
+            add(shell.box { left = 0, top = 0, right = 0, bottom = 0, id = "shot:none" })
+            -- The hit test takes the widget drawn last: the topmost window.
+            for i = #Shot.windows, 1, -1 do
+                local w = Shot.windows[i]
+                local id = "shot:win:" .. i
+                add(shell.box { left = w.x, top = w.y, width = w.w, height = w.h, id = id,
+                    on_click = function() shot_capture(w) end })
+            end
+            Shot.hovered = nil
+            for i, w in ipairs(Shot.windows) do
+                if ctx.hovered == "shot:win:" .. i then Shot.hovered = w end
+            end
+            local target = shot_target()
+            add(shot_veil(ctx, target))
+            if target then add(shot_frame(ctx, target, target.app)) end
+        else
+            add(shell.box { left = 0, top = 0, right = 0, bottom = 0, id = "shot:whole",
+                on_click = function() shot_capture({ screen = true }) end })
+            add(shell.box { left = 0, top = 0, width = ctx.width, height = ctx.height,
+                border = P.accent, border_width = 3 })
+        end
+        add(shot_toolbar(ctx))
+        return shell.stack { width = ctx.width, height = ctx.height, justify = "center", layers }
+    end,
+    on_key = function(key, typed)
+        local k = key:lower()
+        if k == "escape" then
+            shell.close("tide-shot")
+        elseif k == "return" or k == "kp_enter" or k == "space" then
+            shot_capture(shot_target())
+        elseif k == "tab" or k == "iso_left_tab" then
+            local step = k == "tab" and 1 or -1
+            for i, mode in ipairs(SHOT_MODES) do
+                if mode == Shot.mode then
+                    shot_set_mode(SHOT_MODES[(i - 1 + step) % #SHOT_MODES + 1])
+                    break
+                end
+            end
+        elseif k == "r" or k == "1" then shot_set_mode("region")
+        elseif k == "w" or k == "2" then shot_set_mode("window")
+        elseif k == "s" or k == "3" then shot_set_mode("screen")
+        end
+    end,
+}
+
 -- ---- power menu ----------------------------------------------------------------
 
 local power = { selected = 1 }
@@ -1282,6 +1525,28 @@ local function handle(action)
         shell.toggle("tide-power")
     elseif verb == "lock" then
         lock()
+    elseif verb == "shot" and arg ~= "" and HAVE.grim and shot_read() then
+        -- Ctrl+Print and Alt+Print: no picker.
+        if arg == "screen" then
+            shot_capture({ screen = true })
+        else
+            for _, w in ipairs(Shot.windows) do
+                if w.focused then
+                    shot_capture(w)
+                    break
+                end
+            end
+        end
+    elseif verb == "shot" then
+        if shell.is_open("tide-shot") then
+            shell.close("tide-shot")
+        elseif HAVE.grim and shot_read() then
+            shell.close("tide-launcher")
+            shell.close("tide-control")
+            shell.open("tide-shot", { output = Shot.output })
+        else
+            shell.notify("Cannot take a screenshot", "grim is not installed", "Screenshot")
+        end
     end
 end
 

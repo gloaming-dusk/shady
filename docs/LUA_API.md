@@ -275,7 +275,8 @@ A `Window` exposes:
 - `mapped`
 - `visible`
 - `x`, `y`
-- `width`, `height`
+- `width`, `height`: the surface, with any client-drawn shadow
+- `geometry_width`, `geometry_height`: the window itself, from `x`, `y`
 - `z` when the spatial module is available
 - `workspace`
 - `maximized`
@@ -305,10 +306,16 @@ Each Output exposes:
 
 - `name`
 - `scale`
+- `x`, `y`
 - `width`
 - `height`
 
-Width and height are effective/logical output resolution.
+Position, width and height are logical: the output's place in the layout and
+its effective resolution.
+
+### `shady.pointer() -> x, y`
+
+The pointer's position in layout coordinates.
 
 ## Seat
 

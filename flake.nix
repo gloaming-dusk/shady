@@ -49,7 +49,7 @@
             mesa libglvnd libffi libxau libxdmcp lua5_4
             cairo cairo.dev pango pango.dev linux-pam
           ]);
-          packages = with pkgs; [ stdenv.cc gdb foot seatd wlr-randr grim wtype ];
+          packages = with pkgs; [ stdenv.cc gdb foot seatd wlr-randr grim wl-clipboard wtype ];
           # tools/build.sh builds with this cursor theme (meson -Dcursor_path).
           SHADY_CURSOR_PATH = "${pkgs.adwaita-icon-theme}/share/icons";
           shellHook = ''

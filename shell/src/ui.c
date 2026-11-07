@@ -1423,6 +1423,8 @@ struct ui_node *ui_hit_handler(struct ui_node *node, double x, double y, enum ui
         struct ui_node *hit = ui_hit_handler(node->children[i - 1], x, y, which);
         if (hit) return hit;
     }
+    if (which == UI_ON_PRESS)
+        return node->on_click != LUA_NOREF || node->on_drag != LUA_NOREF ? node : NULL;
     int ref = which == UI_ON_CLICK ? node->on_click
         : which == UI_ON_SCROLL ? node->on_scroll : node->on_drag;
     return ref != LUA_NOREF ? node : NULL;
