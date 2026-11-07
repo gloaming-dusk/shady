@@ -76,8 +76,11 @@ plugin("SHADY_FPS_REPRESENTATION_PLUGIN", "fps-folded-paper")
 plugin("SHADY_OVERVIEW_PLUGIN", "spatial-overview")
 -- Super+BackSpace: scrub back through earlier layouts of the desktop.
 plugin("SHADY_REWIND_PLUGIN", "rewind")
--- Super+A: Bad Apple on the desktop, once tools/bad-apple.sh made frames.
-plugin("SHADY_BAD_APPLE_PLUGIN", "bad-apple")
+-- Super+A: Bad Apple on the desktop, if the plugin is installed
+-- (github.com/gloaming-dusk/shady-plugins).
+if not pcall(shady.plugins.load, "bad-apple") then
+    shady.log("Afterglow: running without the bad-apple plugin")
+end
 
 shady.bind("quit", "Super+Shift+Escape")
 shady.bind("cycle_windows", "Super+Tab")

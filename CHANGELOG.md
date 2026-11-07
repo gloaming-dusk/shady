@@ -12,9 +12,13 @@ Breaking:
   `shady-rice-archive`. `SHADY_RICE=objects` and `SHADY_RICE=neon-transit` no
   longer work: run them from those repositories, or link them into
   `~/.config/shady` with their `install.sh`.
-- The `black-hole` plugin moved to
-  [shady-plugins](https://github.com/gloaming-dusk/shady-plugins). Install it to
-  keep loading it, with `programs.shady.plugins` on NixOS.
+- The `black-hole`, `bad-apple`, `water-windows`, `frozen-window`,
+  `magnetic-windows`, `window-constellation`, `window-portal`, `close-burn` and
+  `astral-loom` plugins moved to
+  [shady-plugins](https://github.com/gloaming-dusk/shady-plugins). Install them to
+  keep loading them, with `programs.shady.plugins` on NixOS. Afterglow and Horizon
+  still load `bad-apple` when it is installed, and run without it otherwise.
+  `tools/bad-apple.sh` moved along with it.
 
 New:
 

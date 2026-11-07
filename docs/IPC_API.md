@@ -96,8 +96,8 @@ answered with an error and the connection stays open.
 
 `window` is a window `id`. `key` uses the `shady.bind` shortcut syntax and
 goes through module hooks, native plugins, Lua bindings and compositor
-bindings exactly like a real key press, so any plugin shortcut (`Super+w`
-for water-windows, `Super+z` for frozen-window) can be triggered from a
+bindings exactly like a real key press, so any plugin shortcut (`Super+b`
+for border-accent, `Super+BackSpace` for rewind) can be triggered from a
 script. Plugins can only be loaded while `config.lua` runs, so IPC offers
 the same runtime operations as Lua: list, reload and unload (see
 [PLUGIN_MANAGER.md](PLUGIN_MANAGER.md)).
@@ -113,7 +113,7 @@ lines with an `event` field, interleaved with responses:
 {"event": "window.destroyed", "window": {"id": 3}}
 {"event": "workspace.changed", "workspace": "two"}
 {"event": "output.added", "output": {"name": "DP-1", ...}}
-{"event": "module.started", "module": "frozen-window"}
+{"event": "module.started", "module": "border-accent"}
 ```
 
 Event names are the ones `shady.on` uses: `window.created`,
@@ -150,7 +150,7 @@ flat objects can collect it:
 ```json
 {"event": "shortcuts.toggle", "count": 2}
 {"event": "shortcut", "keys": "Super+Shift+slash", "group": "Shady", "description": "Show these shortcuts"}
-{"event": "shortcut", "keys": "Super+Z", "group": "frozen-window", "description": "Freeze or thaw the focused window"}
+{"event": "shortcut", "keys": "Super+B", "group": "border-accent", "description": "Accent the focused window's border"}
 ```
 
 `keys` is the binding syntax with canonical spelling (`Super+Ctrl+Alt+Shift+Key`),

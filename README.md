@@ -75,22 +75,17 @@ rices load several.
 |---|---|---|
 | `rewind` | `Super+BackSpace` | scrub back through earlier layouts of the desktop and restore one (Afterglow, Horizon) |
 | `spatial-overview` | `Super+O` | 3D overview of the workspace's windows |
-| `water-windows` | `Super+W` | windows turn to water: waves, refraction, caustics |
-| `frozen-window` | `Super+Z`, `Super+Shift+Z` | frost grows over a window, or the whole workspace, and melts away |
-| `bad-apple` | `Super+A` | the screen becomes flip-dot tiles that play Bad Apple!! over the desktop, from your own copy of the video (`tools/bad-apple.sh`; Afterglow, Horizon) |
-| `magnetic-windows` | `Super+M` | nearby windows dock together on springs |
-| `window-constellation` | `Super+C` | the other windows orbit the focused one |
-| `window-portal` | `Super+P`, `Super+Shift+P` | a live portal onto another window |
 | `border-accent` | `Super+B` | accent the focused window's border |
 | `afterglow` | `Super+T`, `Super+Shift+T` | procedural sky and sea through four hours (Afterglow, Horizon) |
 | `focus-depth` | | the focused window comes forward in depth |
 | `fps-cube`, `fps-jelly`, `fps-squash`, `fps-folded-paper`, `fps-origami` | | window bodies in first-person mode |
-| `close-slide-fade`, `close-burn` | | other close animations |
+| `close-slide-fade` | | another close animation |
 | `window-motion` | | wobble and tilt (loaded by default) |
 | `obj-loader` | | loads `.obj` environments when one is configured |
 
-More, such as `black-hole`, are in
-[shady-plugins](https://github.com/gloaming-dusk/shady-plugins).
+More are in [shady-plugins](https://github.com/gloaming-dusk/shady-plugins):
+`water-windows`, `frozen-window`, `black-hole`, `window-portal`,
+`magnetic-windows`, `window-constellation`, `bad-apple` and others.
 
 Writing one: [C plugin API](docs/C_PLUGIN_API.md), starting from
 `examples/plugins/hello.c`.

@@ -276,11 +276,7 @@ custom shader that looks further away should set `blur` to its reach.
 - `plugins/shader_overlay.c` — fullscreen overlay shader and render hook.
 - `plugins/shaders/overlay.vert`
 - `plugins/shaders/overlay.frag`
-- `plugins/water_windows.c` — per-window shader association.
-- `plugins/shaders/water_window.vert`
-- `plugins/shaders/water_window.frag`
-- `plugins/frozen_window.c` — per-window animation through `u_params` (`window_set_shader_params`).
-- `plugins/shaders/frozen_window.vert`
-- `plugins/shaders/frozen_window.frag`
+- [`water_windows.c`](https://github.com/gloaming-dusk/shady-plugins/blob/main/plugins/water-windows/water_windows.c), in shady-plugins: per-window shader association, with its shaders next to it.
+- [`frozen_window.c`](https://github.com/gloaming-dusk/shady-plugins/blob/main/plugins/frozen-window/frozen_window.c), in shady-plugins: per-window animation through `u_params` (`window_set_shader_params`), with its shaders next to it.
 
 The water-window example is the best starting point for a plugin that deforms both geometry and application pixels.

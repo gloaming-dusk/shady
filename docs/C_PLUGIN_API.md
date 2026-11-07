@@ -288,7 +288,7 @@ The renderer binds the source's current client surface as `u_portal_tex` on text
 
 Reset the auxiliary source with `window_reset_shader_source`; `window_reset_shader` also clears a source owned by the same plugin. Plugin unload and shader-owner cleanup remove these bindings automatically, and destroying a source window clears every target that referenced it before the source object is freed.
 
-`plugins/window_portal.c` demonstrates the full path: `Super+P` attaches/cycles a live source window behind a circular refractive portal lens, while `Super+Shift+P` detaches it. The plugin never receives a GLuint or wlroots texture pointer.
+[`window_portal.c`](https://github.com/gloaming-dusk/shady-plugins/blob/main/plugins/window-portal/window_portal.c) demonstrates the full path: `Super+P` attaches/cycles a live source window behind a circular refractive portal lens, while `Super+Shift+P` detaches it. The plugin never receives a GLuint or wlroots texture pointer.
 
 ## Spatial window representations
 

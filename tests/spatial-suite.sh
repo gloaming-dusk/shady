@@ -28,14 +28,13 @@ nix develop -c ninja -C "$BUILD_DIR" \
   libshady-plugin-counter-bad.so \
   libshady-plugin-motion-contract.so \
   libshady-plugin-focus-depth.so \
+  libshady-plugin-border-accent.so \
   libshady-plugin-spatial-overview.so \
   libshady-plugin-rewind.so \
-  libshady-plugin-water-windows.so \
   libshady-plugin-close-slide-fade.so \
   libshady-plugin-afterglow.so \
   libshady-plugin-obj-loader.so \
   libshady-plugin-counter.so \
-  libshady-plugin-frozen-window.so \
   shadyctl \
   ipc-json-test \
   shady-shell \
@@ -68,9 +67,6 @@ SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
 
 SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
   nix develop -c bash ./tests/headless-plugin-manager.sh
-
-SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
-  nix develop -c bash ./tests/headless-frozen-window.sh
 
 SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
   nix develop -c bash ./tests/headless-ipc.sh
@@ -111,14 +107,8 @@ SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
 SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
   nix develop -c bash ./tests/headless-tide-screenshot.sh
 
-SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
-  nix develop -c bash ./tests/headless-water-windows.sh
-
 SHADY_CLOSE_TEST_BUILD_DIR="$BUILD_DIR" \
   nix develop -c bash ./tests/headless-close-effect-plugin.sh
-
-SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
-  nix develop -c bash ./tests/headless-neon-water.sh
 
 SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
   nix develop -c bash ./tests/headless-neon-overview.sh
