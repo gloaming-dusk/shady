@@ -24,14 +24,20 @@ configuration.
 ## Rices
 
 A rice pairs the compositor with a shell and a look. Pick one with
-`SHADY_RICE` (`SHADY_RICE=objects nix run github:gloaming-dusk/shady`) or
+`SHADY_RICE` (`SHADY_RICE=tide nix run github:gloaming-dusk/shady`) or
 `programs.shady.rice` in the NixOS module.
 
 | | |
 |---|---|
-| [![Horizon](rices/horizon/preview.jpg)](rices/horizon/README.md) **[Horizon](rices/horizon/README.md)**, the default: the shell lives in the sky, with a 3D-turned glass control center and a constellation launcher. | [![Objects](rices/objects/preview.jpg)](rices/objects/README.md) **[Objects](rices/objects/README.md)**: chunky ink-outlined cards on a paper sunset, a desk clock, a dock and a launcher that fans the apps out like a hand of cards. |
-| [![Afterglow](rices/afterglow/preview.jpg)](rices/afterglow/README.md) **[Afterglow](rices/afterglow/README.md)**: the desktop above an open sea at sunset, cycling through four hours with `Super+T`, its frosted shell following the sky. | [![Neon Transit](rices/neon-transit/preview.jpg)](rices/neon-transit/README.md) **[Neon Transit](rices/neon-transit/README.md)**: a near-black world with a violet horizon and an electric-cyan grid, with the 3D overview and opt-in water, depth, magnetic and portal modes. |
-| [![Tide](rices/tide/preview.jpg)](rices/tide/README.md) **[Tide](rices/tide/README.md)**: for every day. niri's scrolling columns and keys under a glass bar with a minimap of the strip, a control center, launcher, lock screen and greeter of its own. | |
+| [![Horizon](rices/horizon/preview.jpg)](rices/horizon/README.md) **[Horizon](rices/horizon/README.md)**, the default: the shell lives in the sky, with a 3D-turned glass control center and a constellation launcher. | [![Tide](rices/tide/preview.jpg)](rices/tide/README.md) **[Tide](rices/tide/README.md)**: for every day. niri's scrolling columns and keys under a glass bar with a minimap of the strip, a control center, launcher, lock screen and greeter of its own. |
+| [![Afterglow](rices/afterglow/preview.jpg)](rices/afterglow/README.md) **[Afterglow](rices/afterglow/README.md)**: the desktop above an open sea at sunset, cycling through four hours with `Super+T`, its frosted shell following the sky. | |
+
+More live in their own repositories:
+[Objects](https://github.com/gloaming-dusk/shady-rice-objects),
+[Neon Transit](https://github.com/gloaming-dusk/shady-rice-neon-transit),
+[Gensokyo](https://github.com/gloaming-dusk/shady-rice-touhou),
+[Stage](https://github.com/gloaming-dusk/shady-rice-miku) and
+[retired ones](https://github.com/gloaming-dusk/shady-rice-archive).
 
 ## Highlights
 
@@ -71,7 +77,6 @@ rices load several.
 | `spatial-overview` | `Super+O` | 3D overview of the workspace's windows |
 | `water-windows` | `Super+W` | windows turn to water: waves, refraction, caustics |
 | `frozen-window` | `Super+Z`, `Super+Shift+Z` | frost grows over a window, or the whole workspace, and melts away |
-| `black-hole` | `Super+H` | the workspace's windows fall into a black hole and a white hole returns them |
 | `bad-apple` | `Super+A` | the screen becomes flip-dot tiles that play Bad Apple!! over the desktop, from your own copy of the video (`tools/bad-apple.sh`; Afterglow, Horizon) |
 | `magnetic-windows` | `Super+M` | nearby windows dock together on springs |
 | `window-constellation` | `Super+C` | the other windows orbit the focused one |
@@ -83,6 +88,9 @@ rices load several.
 | `close-slide-fade`, `close-burn` | | other close animations |
 | `window-motion` | | wobble and tilt (loaded by default) |
 | `obj-loader` | | loads `.obj` environments when one is configured |
+
+More, such as `black-hole`, are in
+[shady-plugins](https://github.com/gloaming-dusk/shady-plugins).
 
 Writing one: [C plugin API](docs/C_PLUGIN_API.md), starting from
 `examples/plugins/hello.c`.

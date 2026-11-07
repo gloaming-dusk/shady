@@ -5,8 +5,21 @@ between releases. Breaking changes are called out here.
 
 ## Unreleased
 
+Breaking:
+
+- The Objects and Neon Transit rices moved to repositories of their own
+  (`shady-rice-objects`, `shady-rice-neon-transit`), and the retired rices to
+  `shady-rice-archive`. `SHADY_RICE=objects` and `SHADY_RICE=neon-transit` no
+  longer work: run them from those repositories, or link them into
+  `~/.config/shady` with their `install.sh`.
+- The `black-hole` plugin moved to
+  [shady-plugins](https://github.com/gloaming-dusk/shady-plugins). Install it to
+  keep loading it, with `programs.shady.plugins` on NixOS.
+
 New:
 
+- `programs.shady.plugins` in the NixOS module, and `plugin_path` in the C plugin
+  API: where a plugin's own files are, since the host runs a private copy of it.
 - The scrolling layout: `shady.set("layout", "scrolling")` tiles each
   workspace as a strip of columns that scrolls sideways, as niri does. New
   windows open beside the focused one, the strip glides to keep the focus

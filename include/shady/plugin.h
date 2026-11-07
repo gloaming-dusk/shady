@@ -259,6 +259,12 @@ struct shady_plugin_api_v1 {
 	 * unloads, so declare them from the entry function. Check with
 	 * SHADY_API_HAS. */
 	bool (*declare_shortcut)(shady_host host, const char *keys, const char *description);
+
+	/* The shared object a module was loaded from, by module name, or NULL. The
+	 * host runs a private copy, so dladdr() does not say where a plugin's files
+	 * are; look for them next to this. Valid until the plugin is unloaded; call
+	 * it from the module's init or later. */
+	const char *(*plugin_path)(shady_host host, const char *module_name);
 };
 
 typedef const struct shady_module *(*shady_plugin_entry_v1_fn)(

@@ -45,7 +45,7 @@ stdenv.mkDerivation {
         ../tests
       ])
       # Media and retired rices the build never reads.
-      (lib.fileset.unions [ ../assets/screenshots ../assets/test-videos ../rices/archive ]);
+      (lib.fileset.unions [ ../assets/screenshots ../assets/test-videos ]);
   };
 
   strictDeps = true;

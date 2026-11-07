@@ -1,5 +1,5 @@
--- Neon Transit
--- A crisp, high-contrast Shady rice inspired by night trains, terminals and neon signage.
+-- Test fixture: the configuration of the Neon Transit rice
+-- (gloaming-dusk/shady-rice-neon-transit), for the spatial suite.
 
 local root = os.getenv("SHADY_ROOT") or "."
 

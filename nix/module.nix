@@ -19,10 +19,23 @@ in
     rice = lib.mkOption {
       type = lib.types.str;
       default = "horizon";
-      example = "objects";
+      example = "tide";
       description = ''
         Rice from `share/shady/rices` used for whatever a user has not
         configured in `~/.config/shady/{config,init,shell}.lua`.
+      '';
+    };
+
+    plugins = lib.mkOption {
+      type = lib.types.listOf lib.types.package;
+      default = [ ];
+      example = lib.literalExpression "[ shady-plugins.packages.\${pkgs.stdenv.hostPlatform.system}.black-hole ]";
+      description = ''
+        Plugins to make available, from
+        <https://github.com/gloaming-dusk/shady-plugins>. They are added to
+        `SHADY_PLUGIN_PATH`; load one with `shady.plugins.load("name")` in
+        `config.lua`. A plugin runs inside the compositor, with access to the
+        screen and the keyboard.
       '';
     };
 
@@ -71,6 +84,8 @@ in
   config = lib.mkMerge [ (lib.mkIf cfg.enable {
     environment.systemPackages = [ cfg.package pkgs.adwaita-icon-theme ] ++ cfg.extraPackages;
     environment.sessionVariables.SHADY_RICE = cfg.rice;
+    environment.sessionVariables.SHADY_PLUGIN_PATH =
+      lib.mkIf (cfg.plugins != [ ]) (lib.makeSearchPath "lib/shady/plugins" cfg.plugins);
     environment.sessionVariables = {
       SHADY_SOFTWARE_CURSORS = if cfg.softwareCursor then "1" else "0";
       XCURSOR_THEME = lib.mkDefault "Adwaita";

@@ -112,8 +112,8 @@ if (SHADY_API_HAS(api, shader_draw_fullscreen_scene))
   `shader_draw_fullscreen`.
 - The texture is RGB only.
 - Each call copies the whole output once, so draw only while the effect is
-  visible. `plugins/black_hole.c` stops calling it once its
-  aftershock has decayed.
+  visible. The `black-hole` plugin stops calling it once its aftershock has
+  decayed.
 
 ## Per-window shaders
 
