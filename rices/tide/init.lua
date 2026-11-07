@@ -139,38 +139,51 @@ end
 
 -- ---- screenshots -----------------------------------------------------------
 
-local shots = (os.getenv("XDG_PICTURES_DIR") or ((os.getenv("HOME") or "") .. "/Pictures")) .. "/Screenshots"
-local function shot_path()
-    return string.format("%s/Screenshot from %s.png", shots, os.date("%Y-%m-%d %H-%M-%S"))
-end
-local function grim(geometry)
-    local path = shot_path()
-    local cmd = string.format("mkdir -p %q && grim %s %q && (wl-copy < %q || true) && " ..
-        "notify-send -a Screenshot 'Screenshot saved' %q 2>/dev/null",
-        shots, geometry and ("-g " .. geometry) or "", path, path, path)
-    shady.spawn(cmd)
-end
-key("Print", function()
-    if has("grim") and has("slurp") then
-        local path = shot_path()
-        shady.spawn(string.format("mkdir -p %q && g=$(slurp) && grim -g \"$g\" %q && " ..
-            "(wl-copy < %q || true) && notify-send -a Screenshot 'Screenshot saved' %q 2>/dev/null",
-            shots, path, path, path))
-    else
-        shady.screenshot()
+-- The shell takes them: it is told the output under the pointer and the
+-- windows on the current workspace, topmost first.
+local function publish_screen()
+    local px, py = shady.pointer()
+    local output = shady.outputs()[1]
+    for _, o in ipairs(shady.outputs()) do
+        if px >= o.x and px < o.x + o.width and py >= o.y and py < o.y + o.height then output = o end
     end
-end, "Screenshot of a region", "Shell")
-key("Ctrl+Print", function()
-    if has("grim") then grim(nil) else shady.screenshot() end
-end, "Screenshot of the screen", "Shell")
-key("Alt+Print", function()
-    local w = focused()
-    if w and has("grim") then
-        grim(string.format("'%d,%d %dx%d'", w.x, w.y, w.width, w.height))
-    else
-        shady.screenshot()
+    if not output then return false end
+    local focus, workspace = focused(), shady.current_workspace()
+    local function same(a, b)
+        return a and a.app_id == b.app_id and a.x == b.x and a.y == b.y
     end
-end, "Screenshot of the window", "Shell")
+    local parts = { string.format("%s %d %d %d %d", output.name, output.x, output.y, output.width, output.height) }
+    for _, floating in ipairs({ true, false }) do
+        for _, w in ipairs(shady.windows()) do
+            if w.mapped and w.workspace == workspace and (not w.tiled) == floating then
+                local app = (w.app_id or ""):gsub("[|%c]", " ")
+                parts[#parts + 1] = string.format("%d %d %d %d %d %s", w.x, w.y,
+                    w.geometry_width, w.geometry_height, same(focus, w) and 1 or 0, app)
+            end
+        end
+    end
+    shady.publish("tide.shot", table.concat(parts, "|"))
+    return true
+end
+local function screenshot(action)
+    return function()
+        local function take()
+            if publish_screen() then shell_do(action) end
+        end
+        if not has("grim") then
+            shady.screenshot()
+        elseif L.state().overview then
+            -- Windows are where they are drawn again once the camera is back.
+            L.overview(false)
+            shady.automation.after(450, take)
+        else
+            take()
+        end
+    end
+end
+key("Print", screenshot("shot"), "Screenshot: region, window or screen", "Shell")
+key("Ctrl+Print", screenshot("shot screen"), "Screenshot of the screen", "Shell")
+key("Alt+Print", screenshot("shot window"), "Screenshot of the window", "Shell")
 
 -- ---- rules -----------------------------------------------------------------
 

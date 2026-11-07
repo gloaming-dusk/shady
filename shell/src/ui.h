@@ -201,8 +201,9 @@ void ui_draw(cairo_t *cr, const struct ui_node *node, const struct ui_node *hove
 /* Deepest visible node under (x, y) that is clickable or has an id or a
  * hover style (or, with `clickable`, that has on_click); NULL if none. */
 struct ui_node *ui_hit(struct ui_node *node, double x, double y, bool clickable);
-enum ui_handler { UI_ON_CLICK, UI_ON_SCROLL, UI_ON_DRAG };
-/* Deepest visible node under (x, y) with that handler; NULL if none. */
+/* UI_ON_PRESS: either on_click or on_drag, for what a left press lands on. */
+enum ui_handler { UI_ON_CLICK, UI_ON_SCROLL, UI_ON_DRAG, UI_ON_PRESS };
+/* Deepest and topmost visible node under (x, y) with that handler; NULL if none. */
 struct ui_node *ui_hit_handler(struct ui_node *node, double x, double y, enum ui_handler which);
 /* The names shell.icon{} knows, NULL-terminated. */
 extern const char *const ui_icon_names[];

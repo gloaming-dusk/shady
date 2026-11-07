@@ -239,7 +239,8 @@ on changes.
 `info` holds the widget's box (`x`, `y`, `width`, `height`), the pointer
 inside it (`px`, `py`), the same as 0..1 fractions of its size (`fx`, `fy`,
 clamped) and the `output`. The deepest widget with the handler under the
-pointer gets the event; a left press goes to `on_drag` before `on_click`.
+pointer gets the event, the one drawn last if they overlap; on a widget with
+both, a left press goes to `on_drag` before `on_click`.
 
 ```lua
 shell.stack {

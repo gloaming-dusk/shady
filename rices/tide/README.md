@@ -38,6 +38,12 @@ system's state (click: the control center, `Super+S`).
 - **Launcher** (`Super+Space`): applications ordered by how often you
   launch them; `= 12*7` calculates (Enter copies the result), `> cmd` runs
   a command, and "lock", "suspend", "restart" match the session's commands.
+- **Screenshots** (`Print`, or the control center's tile): a picker over the
+  live screen. Drag a region and press `Enter`, click a window, or take the
+  whole screen; `Tab` or `R`, `W`, `S` change mode and `Esc` cancels. The
+  picture goes to `~/Pictures/Screenshots` and, with `wl-copy`, the clipboard,
+  and a notification says so. `Ctrl+Print`
+  takes the screen and `Alt+Print` the focused window straight away.
 - **Power menu** (`Super+Shift+E`): lock, log out, suspend, restart, shut
   down.
 - **OSD**: volume and brightness keys show a bar at the bottom.

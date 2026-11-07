@@ -20,6 +20,11 @@ New:
   `shady.layout.overview()` pulls the camera back over the whole strip.
   The bars step aside for a focused fullscreen window. The strip's shape
   is published as `layout.strip` for bars.
+- Tide: Print opens a screenshot picker: a region, a window or the screen,
+  over the live desktop. `shady.outputs()` gives each output's `x` and `y`,
+  and `shady.pointer()` the pointer's position.
+- shady-shell: a left press goes to the topmost widget that reacts to one. A
+  button over a widget with `on_drag` could not be clicked.
 - Keys an input method gives back through its own virtual keyboard reach the
   application: they went back into its keyboard grab instead, so with fcitx5
   Return did nothing in the launcher.

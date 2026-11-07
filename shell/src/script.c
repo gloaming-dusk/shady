@@ -679,8 +679,11 @@ static void view_button(void *data, struct shell_surface *surface, uint32_t butt
         return;
     }
     lua_State *L = view->lua->L;
-    struct ui_node *drag = button == 0x110 /* BTN_LEFT */
-        ? ui_hit_handler(view->tree, view->px, view->py, UI_ON_DRAG) : NULL;
+    /* A left press belongs to the topmost widget that reacts to one: a button
+     * over a draggable area is pressed, not the area beneath it. */
+    struct ui_node *pressed_on = button == 0x110 /* BTN_LEFT */
+        ? ui_hit_handler(view->tree, view->px, view->py, UI_ON_PRESS) : NULL;
+    struct ui_node *drag = pressed_on && pressed_on->on_drag != LUA_NOREF ? pressed_on : NULL;
     if (drag) {
         if (view->drag != LUA_NOREF) luaL_unref(L, LUA_REGISTRYINDEX, view->drag);
         lua_rawgeti(L, LUA_REGISTRYINDEX, drag->on_drag);
