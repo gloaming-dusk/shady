@@ -37,6 +37,10 @@ Breaking:
 
 Fixes:
 
+- A three-finger swipe sideways always moves to the next column in its
+  direction. It used to settle on the column nearest the middle of the screen,
+  so short swipes, and any swipe between columns that all fit on screen, did
+  nothing.
 - `TIDE_LIGHT=1` starts again; it asked for a module that needs the 3D path.
 - Tide's `Super+Return` opens the first terminal that is installed when
   `TERMINAL` is unset, instead of always trying ghostty.

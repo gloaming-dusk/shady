@@ -15,7 +15,8 @@ from niri needs no relearning:
   `Super+V` floats a window and back,
 - workspaces are numbered and made as needed: `Super+1…9`,
   `Super+Page Up/Down` or `U`/`I`, `Super`+wheel, or a three-finger swipe up
-  and down; a sideways swipe scrolls the strip,
+  and down; a three-finger swipe sideways moves to the next window over, the
+  strip following the fingers,
 - tapping `Super` on its own, or `Super+O`, pulls the camera back over the
   strip, tilted a little. Start typing to search the launcher, in Hangul too.
   Click a window to fly back into it, or choose with the arrows and press

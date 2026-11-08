@@ -34,6 +34,20 @@ local function run()
         check(b.x - a.x == half + G, "columns are not a half plus a gap apart")
         check(c.x + half == W - G, "focused last column is not at the right edge")
 
+        -- Three fingers turn the strip a column at a time: fingers to the
+        -- right bring the column on the left. A touch is not a swipe.
+        local swipe = shady.automation.swipe
+        check(not swipe(4, 200, 0), "another number of fingers was taken")
+        check(swipe(3, 20, 0) and focused() == "lay-c", "a touch changed the focus")
+        check(swipe(3, 120, 0) and focused() == "lay-b", "a short swipe right")
+        check(swipe(3, -120, 0) and focused() == "lay-c", "a short swipe left")
+        check(c.x + half == W - G, "a swipe left the strip out of line")
+        check(swipe(3, -300, 0) and focused() == "lay-c", "a swipe past the last column")
+        check(swipe(3, 2 * W, 0) and focused() == "lay-a", "a long swipe goes further")
+        check(swipe(3, 300, 0) and focused() == "lay-a", "a swipe past the first column")
+        check(swipe(3, -120, 0) and focused() == "lay-b", "from the first column")
+        check(swipe(3, -120, 0) and focused() == "lay-c", "back to the last column")
+
         assert(shady.layout.focus("left"))
         check(focused() == "lay-b", "focus left")
         assert(shady.layout.focus("first"))
@@ -48,6 +62,10 @@ local function run()
         a, c = win("lay-a"), win("lay-c")
         check(a.x == c.x and a.y > c.y, "consume into the left column")
         check(shady.layout.state().columns == 2, "two columns after consume")
+        -- Two columns fit on the screen, so the strip cannot move; the swipe
+        -- still goes to the other one.
+        check(swipe(3, 120, 0) and focused() == "lay-b", "swipe between columns that fit")
+        check(swipe(3, -120, 0) and focused() == "lay-a", "and back")
         -- And out again: b | c | a.
         assert(shady.layout.consume_or_expel("right"))
         check(shady.layout.state().columns == 3, "three columns after expel")

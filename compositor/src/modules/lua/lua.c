@@ -629,6 +629,24 @@ static int l_automation_move_pointer(lua_State *L) {
 	return 0;
 }
 
+/* shady.automation.swipe(fingers, dx, dy[, steps]): a whole touchpad swipe,
+ * as the layout sees one. False when the layout does not take it. */
+static int l_automation_swipe(lua_State *L) {
+	lua_Integer fingers = luaL_checkinteger(L, 1);
+	double dx = luaL_checknumber(L, 2), dy = luaL_checknumber(L, 3);
+	lua_Integer steps = luaL_optinteger(L, 4, 8);
+	luaL_argcheck(L, fingers >= 1 && fingers <= 16, 1, "expected 1..16");
+	luaL_argcheck(L, steps >= 1 && steps <= 256, 4, "expected 1..256");
+	bool taken = shady_layout_swipe_begin(lua_server, (uint32_t)fingers);
+	if (taken) {
+		for (lua_Integer i = 0; i < steps; i++)
+			shady_layout_swipe_update(lua_server, dx / (double)steps, dy / (double)steps);
+		shady_layout_swipe_end(lua_server, false);
+	}
+	lua_pushboolean(L, taken);
+	return 1;
+}
+
 static uint32_t automation_button(lua_State *L, int index) {
 	if (lua_isinteger(L, index)) return (uint32_t)lua_tointeger(L, index);
 	const char *name = luaL_checkstring(L, index);
@@ -1000,6 +1018,7 @@ static void install_api(lua_State *L){
 	lua_pushcfunction(L,l_automation_key_up);lua_setfield(L,-2,"key_up");
 	lua_pushcfunction(L,l_automation_type_text);lua_setfield(L,-2,"type_text");
 	lua_pushcfunction(L,l_automation_move_pointer);lua_setfield(L,-2,"move_pointer");
+	lua_pushcfunction(L,l_automation_swipe);lua_setfield(L,-2,"swipe");
 	lua_pushcfunction(L,l_automation_click);lua_setfield(L,-2,"click");
 	lua_pushcfunction(L,l_automation_drag);lua_setfield(L,-2,"drag");
 	lua_pushcfunction(L,l_automation_button_down);lua_setfield(L,-2,"button_down");

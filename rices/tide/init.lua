@@ -120,7 +120,7 @@ key("Super+Ctrl+Page_Up", function() L.workspace(-1, true) end, "Take the window
 key("Super+Ctrl+u", function() L.workspace(1, true) end)
 key("Super+Ctrl+i", function() L.workspace(-1, true) end)
 shady.describe("Super+wheel", "Workspaces (Shift: columns)", "Workspaces")
-shady.describe("Three-finger swipe", "Scroll the strip, or change workspace", "Workspaces")
+shady.describe("Three-finger swipe", "Next window sideways, or change workspace", "Workspaces")
 
 -- ---- shell ---------------------------------------------------------------
 

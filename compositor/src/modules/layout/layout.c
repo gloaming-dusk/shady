@@ -1319,7 +1319,10 @@ bool shady_layout_interactive_resize(struct shady_toplevel *toplevel,
 	return true;
 }
 
-/* Touchpad swipes: sideways scrolls the strip, up and down changes the
+/* How far the fingers go, in touchpad units, before a swipe turns a column. */
+#define SWIPE_TURN_DISTANCE 40.0
+
+/* Touchpad swipes: sideways turns the strip, up and down changes the
  * workspace. */
 bool shady_layout_swipe_begin(struct shady_server *server, uint32_t fingers) {
 	struct shady_layout_state *state = shady_layout_state_for(server);
@@ -1391,21 +1394,36 @@ bool shady_layout_swipe_end(struct shady_server *server, bool cancelled) {
 	}
 	/* The overview scrolls without choosing: that takes a click or a key. */
 	if (state->overview) return true;
-	/* Settle on the column nearest the middle of the screen. */
 	struct strip_metrics m;
 	strip_measure(server, ws, &area, &full, &m);
-	double middle = ws->view + area.width / 2.0;
-	size_t best = ws->active;
-	double best_distance = INFINITY;
-	for (size_t c = 0; c < ws->count; c++) {
-		double distance = fabs(m.x[c] + m.width[c] / 2.0 - middle);
-		if (distance < best_distance) {
-			best_distance = distance;
-			best = c;
+	/* A swipe turns at least one column in its direction, however little the
+	 * strip could move (all of it may be on screen), and further when the
+	 * strip was carried past that. A touch turns nothing. */
+	size_t from = ws->active < ws->count ? ws->active : ws->count - 1;
+	size_t best = from;
+	if (fabs(state->swipe_dx) >= SWIPE_TURN_DISTANCE) {
+		double middle = ws->view + area.width / 2.0;
+		size_t nearest = from;
+		double nearest_distance = INFINITY;
+		for (size_t c = 0; c < ws->count; c++) {
+			double distance = fabs(m.x[c] + m.width[c] / 2.0 - middle);
+			if (distance < nearest_distance) {
+				nearest_distance = distance;
+				nearest = c;
+			}
+		}
+		if (state->swipe_dx < 0) {
+			size_t next = from + 1 < ws->count ? from + 1 : from;
+			best = nearest > next ? nearest : next;
+		} else {
+			size_t previous = from > 0 ? from - 1 : 0;
+			best = nearest < previous ? nearest : previous;
 		}
 	}
 	ws->active = best;
-	ensure_visible(server, ws, best, best, &m, &area, &full);
+	/* From where the strip was, so it lands where the keys would put it. */
+	ws->view_target = state->swipe_view_start;
+	ensure_visible(server, ws, best, from, &m, &area, &full);
 	clamp_view(server, ws, &m, &area);
 	struct shady_layout_column *col = &ws->columns[best];
 	if (col->count) focus_toplevel(col->rows[col->active]);

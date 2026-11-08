@@ -87,6 +87,11 @@ shady.automation.drag(100, 100, 260, 180, "left", 12)
 
 Default button: left. Default steps: 8. Valid step count: 1..256.
 
+### `shady.automation.swipe(fingers, dx, dy [, steps]) -> boolean`
+
+A whole touchpad swipe as the scrolling layout sees it. False when the layout
+does not take swipes with that many fingers. Default steps: 8.
+
 ### `shady.automation.scroll([vertical [, horizontal]])`
 
 Send pointer-axis scroll events.

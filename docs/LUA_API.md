@@ -67,7 +67,7 @@ workspace that scrolls sideways, as in niri (see [`shady.layout`](#scrolling-lay
 `layout_default_width` (0.5) a new column's share of the screen,
 `layout_center_single` centres a workspace's only column, and
 `layout_animation` (14) the spring rate of the strip's motion, 0 for none.
-`gesture_fingers` (3) is the touchpad swipe that scrolls the strip
+`gesture_fingers` (3) is the touchpad swipe that moves to the next column
 sideways and changes workspace up and down; 0 leaves all swipes to clients.
 
 The spatial environment is configured the same way. `environment_path` is
@@ -407,7 +407,7 @@ Dragging a tiled window lifts it out of the strip; dragging a tiled
 window's edge resizes its column. A fullscreen window takes the whole
 output, and the bars (top layer) step aside while it has the focus. Super
 and the mouse wheel change workspace, Super+Shift+wheel the column, and a
-three-finger swipe scrolls the strip (sideways) or changes workspace.
+three-finger swipe moves to the next column (sideways) or changes workspace.
 
 The layout publishes `layout.strip` for bars: `"<screen width> <view>
 <active column>"` followed by `"|<x> <width> <windows>"` for each column,
