@@ -39,7 +39,6 @@ run() {
     export SHADY_AUTOMATION_PROBE="$ROOT/$BUILD_DIR/headless-automation-probe"
     export SHOT_TEST_MODE="$mode" SHOT_TEST_SCREEN="${SHADY_TEST_KEEP_SHOTS:+$SHADY_TEST_KEEP_SHOTS/screen-$mode.png}"
     export TIDE_IDLE_LOCK=0 TIDE_IDLE_SCREEN_OFF=0
-    source "$ROOT/rices/tide/theme.sh"
     export SHADY_SHELL_CONFIG="$ROOT/rices/tide/shell.lua"
     export ASAN_OPTIONS="${ASAN_OPTIONS:-abort_on_error=1:halt_on_error=1:detect_leaks=0}"
     export UBSAN_OPTIONS="${UBSAN_OPTIONS:-halt_on_error=1:print_stacktrace=1}"

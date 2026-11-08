@@ -3,7 +3,6 @@
 -- system state: volume, brightness, the lock screen and so on; keys reach it
 -- as published values.
 
-local terminal = os.getenv("TERMINAL") or "ghostty"
 local L = shady.layout
 
 -- Whether a program is on PATH. (Not os.execute: the process reaps its
@@ -14,6 +13,16 @@ local function has(command)
         if f then f:close() return true end
     end
     return false
+end
+
+-- $TERMINAL, or the first terminal that is installed.
+local terminal = os.getenv("TERMINAL")
+if not terminal or terminal == "" then
+    terminal = "foot"
+    for _, candidate in ipairs({ "ghostty", "foot", "kitty", "alacritty", "wezterm",
+            "konsole", "gnome-terminal", "xterm" }) do
+        if has(candidate) then terminal = candidate break end
+    end
 end
 
 -- ---- talking to the shell ----------------------------------------------

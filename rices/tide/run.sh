@@ -8,11 +8,10 @@ cd "$ROOT"
 export SHADY_ROOT="$ROOT"
 export SHADY_LUA_INIT="$ROOT/rices/tide/init.lua"
 export WLR_BACKENDS="${WLR_BACKENDS:-wayland}"
-source "$ROOT/rices/tide/theme.sh"
 export SHADY_SHELL_CONFIG="${SHADY_SHELL_CONFIG:-$ROOT/rices/tide/shell.lua}"
 
 if [[ $# -eq 0 ]]; then
-  default_startup="'$ROOT/build/shady-shell' & exec ${TERMINAL:-ghostty}"
+  default_startup="'$ROOT/build/shady-shell' & exec ${TERMINAL:-foot}"
   set -- -s "${SHADY_STARTUP:-$default_startup}"
 fi
 

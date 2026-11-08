@@ -18,8 +18,8 @@ in
 
     rice = lib.mkOption {
       type = lib.types.str;
-      default = "horizon";
-      example = "tide";
+      default = "tide";
+      example = "horizon";
       description = ''
         Rice from `share/shady/rices` used for whatever a user has not
         configured in `~/.config/shady/{config,init,shell}.lua`.
@@ -62,15 +62,15 @@ in
       '';
     };
 
-    greeter.enable = lib.mkEnableOption "the Shady greeter, a login card over the Afterglow sky";
+    greeter.enable = lib.mkEnableOption "the Shady greeter, Tide's login screen over its night sea";
 
     softwareCursor = lib.mkEnableOption "software cursors for virtual GPUs with unreliable cursor planes";
 
     greeter.theme = lib.mkOption {
       type = lib.types.enum [ "afterglow" "tide" ];
-      default = "afterglow";
-      example = "tide";
-      description = "The greeter's look: Afterglow's sunset sky, or Tide's night sea.";
+      default = "tide";
+      example = "afterglow";
+      description = "The greeter's look: Tide's night sea, or Afterglow's sunset sky.";
     };
 
     greeter.hint = lib.mkOption {

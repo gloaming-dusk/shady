@@ -2,7 +2,9 @@
 
 #include <errno.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include <lua.h>
 #include <lauxlib.h>
@@ -15,6 +17,30 @@
 #include "shady.h"
 
 static struct shady_server *config_server;
+
+bool shady_rice_file(const char *rice, const char *file, char *out, size_t size) {
+	if (!rice[0] || rice[0] == '.' || strchr(rice, '/')) return false;
+	const char *root = getenv("SHADY_ROOT");
+	if (!root || !*root) root = SHADY_DATA_ROOT;
+	int written = snprintf(out, size, "%s/rices/%s/%s", root, rice, file);
+	return written > 0 && (size_t)written < size && access(out, R_OK) == 0;
+}
+
+int shady_rice_lua_base(lua_State *L, const char *file) {
+	const char *rice = luaL_checkstring(L, 1);
+	char path[4096];
+	if (!shady_rice_file(rice, "", path, sizeof(path)))
+		return luaL_error(L, "no such rice: %s", rice);
+	/* A rice without this stage (no init.lua, say) has nothing to add. */
+	if (!shady_rice_file(rice, file, path, sizeof(path))) return 0;
+	if (luaL_loadfile(L, path) != LUA_OK) return lua_error(L);
+	lua_call(L, 0, 0);
+	return 0;
+}
+
+static int l_base(lua_State *L) {
+	return shady_rice_lua_base(L, "config.lua");
+}
 
 static const char *lua_value_string(lua_State *L, int index,
 		char *buffer, size_t size) {
@@ -106,6 +132,7 @@ static int l_log(lua_State *L) {
 
 static void install_config_api(lua_State *L) {
 	lua_newtable(L);
+	lua_pushcfunction(L, l_base); lua_setfield(L, -2, "base");
 	lua_pushcfunction(L, l_set); lua_setfield(L, -2, "set");
 	lua_pushcfunction(L, l_set); lua_setfield(L, -2, "config");
 	lua_pushcfunction(L, l_bind); lua_setfield(L, -2, "bind");

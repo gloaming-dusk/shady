@@ -16,7 +16,7 @@
         default = shady;
       });
 
-      # `nix run github:gloaming-dusk/shady`: try the default rice in a window
+      # `nix run github:gloaming-dusk/shady`: try the default desktop in a window
       # of the current Wayland session (or on a VT), with a terminal open.
       apps = forAllSystems (pkgs: let
         shady = shadyFor pkgs;

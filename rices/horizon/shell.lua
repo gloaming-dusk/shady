@@ -7,7 +7,7 @@
 -- stars: type a name and the matching stars light up and join into a
 -- constellation. Colours follow the sky through its four hours (Super+T).
 
-shell.fonts("fonts")
+shell.fonts(shell.data_dir .. "/../rices/tide/fonts")
 
 -- The sky's horizon, as a fraction of the screen height from the top, for
 -- Afterglow's camera (rices/afterglow/init.lua).

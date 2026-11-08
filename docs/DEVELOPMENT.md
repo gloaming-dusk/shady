@@ -33,7 +33,7 @@ shell/                shady-shell: default Lua UI, the shortcut overlay, example
   plugins/            shell plugins (sysinfo)
 greeter/              the greetd login screen (see GREETER.md)
   src/                the greetd shell plugin
-rices/                complete looks: Horizon, Objects, Afterglow, Neon Transit; archive/
+rices/                complete looks: Tide (the default desktop), Horizon, Afterglow
 examples/             small plugins and configs to start from
 data/                 session and greeter launchers, wayland-sessions entries
 nix/                  Nix package and NixOS module

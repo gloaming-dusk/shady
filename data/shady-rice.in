@@ -1,0 +1,59 @@
+#!/bin/sh
+# Shady's rices. Tide is the default desktop; you can change it three ways,
+# from least to most (docs/CUSTOMIZING.md):
+#
+#   a config that starts from it        shady.base("tide"), shell.base("tide", {...})
+#   your own copy of it                 shady-rice eject
+#   nothing but the bare compositor     SHADY_RICE=none
+
+: "${SHADY_ROOT:=@datadir@}"
+config_dir="${XDG_CONFIG_HOME:-$HOME/.config}/shady"
+
+usage() {
+    echo "usage: shady-rice list" >&2
+    echo "       shady-rice eject [rice]    copy a rice (default: tide) into $config_dir" >&2
+    exit 2
+}
+
+case "${1:-}" in
+    list)
+        for dir in "$SHADY_ROOT"/rices/*/; do
+            basename "$dir"
+        done
+        ;;
+    eject)
+        [ $# -le 2 ] || usage
+        rice="${2:-tide}"
+        case "$rice" in
+            */*|.*|'') echo "shady-rice: no such rice: $rice" >&2; exit 1 ;;
+        esac
+        source_dir="$SHADY_ROOT/rices/$rice"
+        if [ ! -f "$source_dir/config.lua" ]; then
+            echo "shady-rice: no such rice: $rice" >&2
+            exit 1
+        fi
+        conflict=0
+        for item in config.lua init.lua shell.lua style.lua theme.sh fonts shaders; do
+            if [ -e "$source_dir/$item" ] && [ -e "$config_dir/$item" ]; then
+                echo "shady-rice: $config_dir/$item already exists" >&2
+                conflict=1
+            fi
+        done
+        if [ "$conflict" -ne 0 ]; then
+            echo "shady-rice: move those aside first; nothing was changed" >&2
+            exit 1
+        fi
+        mkdir -p "$config_dir"
+        for item in config.lua init.lua shell.lua style.lua theme.sh fonts shaders; do
+            if [ -e "$source_dir/$item" ]; then
+                cp -R "$source_dir/$item" "$config_dir/$item"
+                chmod -R u+w "$config_dir/$item"
+                echo "copied $config_dir/$item"
+            fi
+        done
+        echo "$rice is yours now; shady-shell reloads shell.lua as you edit it."
+        ;;
+    *)
+        usage
+        ;;
+esac

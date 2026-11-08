@@ -60,9 +60,9 @@ lines.
 ## shady-shell
 
 `shady-shell` is a separate Wayland client, not compositor UI. Everything it
-shows comes from a Lua config: the default bar, Quick Settings, task menu,
-launcher, notifications and shortcut overlay are `shell/default.lua`, and
-each rice brings its own. Bars follow outputs as they come and go and draw
+shows comes from a Lua config: the default desktop is Tide's
+(`rices/tide/shell.lua`), each rice brings its own, and `shell/default.lua`
+is a plain bar, Quick Settings, task menu, launcher and notifications. Bars follow outputs as they come and go and draw
 at the output's scale.
 
 It talks to the compositor two ways:

@@ -1,8 +1,9 @@
 # Shell Lua API
 
-`shady-shell` draws whatever its Lua config describes. The default UI (bar,
-Quick Settings, task menu, launcher) is itself a config:
-[`shell/default.lua`](../shell/default.lua). Read it alongside this page.
+`shady-shell` draws whatever its Lua config describes. The default desktop is
+itself a config, [`rices/tide/shell.lua`](../rices/tide/shell.lua), and so is
+the plainer [`shell/default.lua`](../shell/default.lua). Read either alongside
+this page.
 
 ## Config file
 
@@ -10,21 +11,27 @@ The shell loads the first of:
 
 1. `$SHADY_SHELL_CONFIG`
 2. `$XDG_CONFIG_HOME/shady/shell.lua` (or `~/.config/shady/shell.lua`)
-3. `shell/default.lua` from the data directory (`$SHADY_SHELL_DATA_DIR`
-   overrides it)
+3. the `shell.lua` of the rice in `$SHADY_RICE`, Tide when it is unset
+4. `shell/default.lua` from the data directory (`$SHADY_SHELL_DATA_DIR`
+   overrides it), also for `SHADY_RICE=none`
 
 If your config fails to load at startup, the shell logs the error and
-falls back to the default, unless `SHADY_SHELL_NO_FALLBACK=1` makes it exit
+falls back to `shell/default.lua`, unless `SHADY_SHELL_NO_FALLBACK=1` makes it exit
 instead (the greeter does). Edits are picked up live: saving any `.lua` file
 in the config's directory reloads the config in a fresh Lua state. If the
 new version fails, the error is logged and the running UI stays as it was.
 `require` finds modules next to the config and in the data directory.
 
-To keep the default UI and change a few things, start your config with:
+To keep Tide and change a few things, start your config from it;
+[Customizing](CUSTOMIZING.md#build-on-it) lists the options and what it returns:
 
 ```lua
-dofile(shell.data_dir .. "/default.lua")
+local tide = shell.base("tide", { palette = { accent = "#FF9E64" } })
 ```
+
+`shell.base(rice[, options])` runs that rice's `shell.lua` in your config, with
+`options` as its argument, and returns what the rice returns. To build on the
+plain UI instead, `dofile(shell.data_dir .. "/default.lua")`.
 
 ## Views
 

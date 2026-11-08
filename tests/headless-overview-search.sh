@@ -31,7 +31,6 @@ set +e
   export SHADY_SHELL_BIN="$ROOT/$BUILD_DIR/shady-shell"
   export OVERVIEW_IME_PROBE="$ROOT/$BUILD_DIR/ime-probe" OVERVIEW_IME_LOG="$tmp/ime"
   export TIDE_IDLE_LOCK=0 TIDE_IDLE_SCREEN_OFF=0
-  source "$ROOT/rices/tide/theme.sh"
   export SHADY_SHELL_CONFIG="$ROOT/rices/tide/shell.lua"
   export ASAN_OPTIONS="${ASAN_OPTIONS:-abort_on_error=1:halt_on_error=1:detect_leaks=0}"
   export UBSAN_OPTIONS="${UBSAN_OPTIONS:-halt_on_error=1:print_stacktrace=1}"

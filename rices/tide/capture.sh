@@ -30,7 +30,6 @@ mkdir -m 700 "$work/runtime" "$work/home"
     export CAPTURE_FOOT_INI="$ROOT/rices/afterglow/capture/foot.ini"
     export PATH="$ROOT/rices/horizon/capture/bin:$PATH"
     export XDG_DATA_HOME="$work/data" XDG_DATA_DIRS="$ROOT/rices/horizon/capture"
-    source "$RICE/theme.sh"
     export SHADY_SHELL_CONFIG="$RICE/shell.lua"
     tools build/shady -c "$RICE/config.lua"
 ) >"$work/capture.log" 2>&1 || { tail -n 40 "$work/capture.log" >&2; exit 1; }

@@ -35,6 +35,7 @@
 #include "../workspace/state.h"
 #include "../layout/layout.h"
 #include "../../idle.h"
+#include "../../config_lua.h"
 #include <string.h>
 #include <wlr/types/wlr_keyboard.h>
 #include <wlr/types/wlr_xdg_shell.h>
@@ -128,6 +129,11 @@ static bool parse_lua_bind(const char *spec,xkb_keysym_t *sym,uint32_t *mods){
 #define LUA_SHORTCUT_OWNER ((void *)lua_binds)
 #define LUA_SHORTCUT_GROUP "Desktop"
 
+static ssize_t find_lua_bind(xkb_keysym_t sym,uint32_t modifiers,bool tap){
+	for(size_t i=0;i<lua_bind_count;i++)if(lua_binds[i].sym==sym&&lua_binds[i].modifiers==modifiers&&lua_binds[i].tap==tap)return (ssize_t)i;
+	return -1;
+}
+
 /* shady.bind(keys, fn[, description | {description=, group=}]) */
 static int l_shady_bind(lua_State *L){
 	const char *spec=luaL_checkstring(L,1);luaL_checktype(L,2,LUA_TFUNCTION);
@@ -138,13 +144,31 @@ static int l_shady_bind(lua_State *L){
 		lua_getfield(L,3,"group");if(lua_type(L,-1)==LUA_TSTRING)group=lua_tostring(L,-1);
 		lua_pop(L,2); /* both strings stay referenced by the table */
 	}else if(!lua_isnoneornil(L,3))return luaL_argerror(L,3,"expected a description or a table");
-	if(lua_bind_count>=SHADY_LUA_MAX_BINDS)return luaL_error(L,"too many Lua key bindings");
-	struct lua_bind *b=&lua_binds[lua_bind_count];if(!parse_lua_bind(spec,&b->sym,&b->modifiers))return luaL_error(L,"invalid key binding: %s",spec);
-	b->tap=parse_mod(spec)==WLR_MODIFIER_LOGO;
-	if(description&&!shady_shortcuts_declare(LUA_SHORTCUT_OWNER,group,spec,description))
+	xkb_keysym_t sym;uint32_t mods;if(!parse_lua_bind(spec,&sym,&mods))return luaL_error(L,"invalid key binding: %s",spec);
+	bool tap=parse_mod(spec)==WLR_MODIFIER_LOGO;
+	/* The last binding of a key wins, so a config built on a rice can take
+	 * one of its keys over. A new one without a description drops the old
+	 * description from the shortcut list too. */
+	ssize_t existing=find_lua_bind(sym,mods,tap);
+	if(existing<0&&lua_bind_count>=SHADY_LUA_MAX_BINDS)return luaL_error(L,"too many Lua key bindings");
+	if((description||existing>=0)&&!shady_shortcuts_declare(LUA_SHORTCUT_OWNER,group,spec,description))
 		return luaL_error(L,"invalid shortcut description for %s",spec);
-	lua_pushvalue(L,2);b->ref=luaL_ref(L,LUA_REGISTRYINDEX);lua_bind_count++;return 0;
+	lua_pushvalue(L,2);int ref=luaL_ref(L,LUA_REGISTRYINDEX);
+	if(existing>=0){luaL_unref(L,LUA_REGISTRYINDEX,lua_binds[existing].ref);lua_binds[existing].ref=ref;return 0;}
+	lua_binds[lua_bind_count++]=(struct lua_bind){.sym=sym,.modifiers=mods,.ref=ref,.tap=tap};return 0;
 }
+/* shady.unbind(keys): the key does nothing any more. True if it was bound. */
+static int l_shady_unbind(lua_State *L){
+	const char *spec=luaL_checkstring(L,1);xkb_keysym_t sym;uint32_t mods;
+	if(!parse_lua_bind(spec,&sym,&mods))return luaL_error(L,"invalid key binding: %s",spec);
+	ssize_t i=find_lua_bind(sym,mods,parse_mod(spec)==WLR_MODIFIER_LOGO);
+	if(i<0){lua_pushboolean(L,0);return 1;}
+	luaL_unref(L,LUA_REGISTRYINDEX,lua_binds[i].ref);
+	memmove(&lua_binds[i],&lua_binds[i+1],(lua_bind_count-(size_t)i-1)*sizeof(lua_binds[0]));lua_bind_count--;
+	shady_shortcuts_declare(LUA_SHORTCUT_OWNER,NULL,spec,NULL);
+	lua_pushboolean(L,1);return 1;
+}
+static int l_shady_base(lua_State *L){return shady_rice_lua_base(L,"init.lua");}
 
 static bool rule_string_field(lua_State *L, int table_index, const char *key,
 		char *dst, size_t dst_size, bool *present) {
@@ -939,6 +963,8 @@ static void install_api(lua_State *L){
 	lua_pushcfunction(L,l_shady_config);lua_setfield(L,-2,"config");
 	lua_pushcfunction(L,l_shady_config);lua_setfield(L,-2,"set");
 	lua_pushcfunction(L,l_shady_bind);lua_setfield(L,-2,"bind");
+	lua_pushcfunction(L,l_shady_unbind);lua_setfield(L,-2,"unbind");
+	lua_pushcfunction(L,l_shady_base);lua_setfield(L,-2,"base");
 	lua_pushcfunction(L,l_shady_rule);lua_setfield(L,-2,"rule");
 	lua_pushcfunction(L,l_shady_quit);lua_setfield(L,-2,"quit");
 	lua_pushcfunction(L,l_shady_spawn);lua_setfield(L,-2,"spawn");

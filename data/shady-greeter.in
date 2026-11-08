@@ -1,6 +1,6 @@
 #!/bin/sh
 # Start the Shady greeter. greetd runs this as its default_session; the
-# login card (greeter/shell.lua) authenticates through greetd and quits the
+# login screen (greeter/shell.lua) authenticates through greetd and quits the
 # compositor once the chosen session is accepted.
 #
 # SHADY_GREETER_DEMO=1 fakes greetd so the greeter can be tried nested.
@@ -9,15 +9,14 @@
 export SHADY_ROOT
 export XDG_SESSION_TYPE=wayland
 export XDG_CURRENT_DESKTOP=shady-greeter
-# SHADY_GREETER_THEME picks the look: afterglow (the default) or tide.
-case "${SHADY_GREETER_THEME:-afterglow}" in
-    tide)
-        greeter="$SHADY_ROOT/greeter/tide"
-        . "$SHADY_ROOT/rices/tide/theme.sh"
+# SHADY_GREETER_THEME picks the look: tide (the default) or afterglow.
+case "${SHADY_GREETER_THEME:-tide}" in
+    afterglow)
+        greeter="$SHADY_ROOT/greeter/afterglow"
+        . "$SHADY_ROOT/rices/afterglow/theme.sh"
         ;;
     *)
         greeter="$SHADY_ROOT/greeter"
-        . "$SHADY_ROOT/rices/afterglow/theme.sh"
         ;;
 esac
 export SHADY_LUA_INIT="$greeter/init.lua"

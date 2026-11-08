@@ -31,7 +31,7 @@ nix develop -c ./rices/horizon/run.sh          # nested in a Wayland session
 nix develop -c ./rices/horizon/run-native.sh   # directly on a VT (DRM + libinput)
 ```
 
-Horizon is the default rice. Its `config.lua` and `init.lua` load
+Its `config.lua` and `init.lua` load
 Afterglow's (sky plugin, sea, camera, window style and key bindings);
 `init.lua` adds the glass and the 3D turn of the control center. The control center's tools are the
 same optional ones as in the Objects rice: `wpctl`, `brightnessctl`,

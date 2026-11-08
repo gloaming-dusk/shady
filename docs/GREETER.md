@@ -1,9 +1,10 @@
 # Greeter
 
 The Shady greeter is the login screen [greetd](https://sr.ht/~kennylevinsen/greetd/)
-shows before anyone logs in: Shady itself, running the Afterglow sky and sea,
-with a login card from `shady-shell` in front of it. Logging in carries on
-into a Shady session under the same sky.
+shows before anyone logs in: Tide before there are windows. The night sea and
+the glass islands along the top edge are the desktop's, and the clock, avatar
+and password field are where Tide's lock screen has them, so logging in only
+fills in the rest.
 
 ## Using it
 
@@ -14,14 +15,14 @@ programs.shady.enable = true;
 programs.shady.greeter.enable = true;
 ```
 
-`programs.shady.greeter.theme = "tide";` gives it Tide's night sea and a
-card that matches Tide's lock screen (`greeter/tide/`), instead of
-Afterglow's sky; elsewhere, set `SHADY_GREETER_THEME=tide`.
+`programs.shady.greeter.theme = "afterglow";` gives it Afterglow's sky and
+sea and a login card (`greeter/afterglow/`) instead; elsewhere, set
+`SHADY_GREETER_THEME=afterglow`.
 
 This enables greetd with `shady-greeter` as its default session, run as the
 `greeter` user, and keeps the last user and session in
-`/var/lib/shady-greeter/last`. `programs.shady.greeter.hint` adds a line under
-the card, for example how to log in to a live system.
+`/var/lib/shady-greeter/last`. `programs.shady.greeter.hint` adds a line at
+the bottom of the screen, for example how to log in to a live system.
 
 Elsewhere, point greetd at the installed script:
 
@@ -40,16 +41,17 @@ session, Escape clears the field. Restart and Shut down run
 | | |
 |---|---|
 | `shady-greeter` (`data/shady-greeter.in`) | starts Shady with the greeter's config, `shady-shell` as its only client, and logs to the journal (`journalctl -t shady-greeter`) |
-| `greeter/config.lua` | the compositor: Afterglow's sky plugin and no shortcuts at all, so nothing on the login screen can start programs (even the default Escape-to-quit is unbound) |
-| `greeter/init.lua` | frosted glass behind the card and Afterglow's camera |
-| `greeter/shell.lua` | the login card: a `persistent` popup with exclusive keyboard focus |
+| `greeter/config.lua` | the compositor, with no shortcuts at all, so nothing on the login screen can start programs (even the default Escape-to-quit is unbound) |
+| `greeter/init.lua` | empty; set so that no user's `init.lua` runs here |
+| `greeter/shell.lua` | the login screen: a `persistent` popup with exclusive keyboard focus, drawn with Tide's `style.lua` |
+| `greeter/afterglow/` | the same three files for the Afterglow look |
 | `greeter/src/greetd.c` | the `greetd` shell plugin: speaks greetd's IPC and lists accounts and sessions |
 
-The card asks the plugin to authenticate; when greetd accepts the chosen
+The login screen asks the plugin to authenticate; when greetd accepts the chosen
 session the plugin asks the compositor to quit over its IPC socket, and
 greetd starts the session once the greeter has exited.
 
-The greeter fails closed. If the card cannot load, `shady-shell` exits rather
+The greeter fails closed. If the login screen cannot load, `shady-shell` exits rather
 than showing the default shell and its launcher, and when `shady-shell` ends
 for any reason the compositor ends with it. The `greetd` plugin, which sees
 every password, is looked for in the install directory first.

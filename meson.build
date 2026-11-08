@@ -469,6 +469,7 @@ executable('shady',
     '-D_POSIX_C_SOURCE=200809L',
     '-DSHADY_PLUGIN_DIR="@0@"'.format(join_paths(get_option('prefix'), get_option('libdir'), 'shady', 'plugins')),
     '-DSHADY_SHADER_DIR="@0@"'.format(shader_dir),
+    '-DSHADY_DATA_ROOT="@0@"'.format(shady_data_root),
     '-DSHADY_CURSOR_PATH="@0@"'.format(get_option('cursor_path')),
     '-DSHADY_HAS_SPATIAL=@0@'.format(spatial_enabled ? 1 : 0),
     '-DSHADY_HAS_LUA=@0@'.format(lua_enabled ? 1 : 0),
@@ -756,7 +757,7 @@ install_subdir('greeter', install_dir: shady_data_install_dir,
 install_subdir('plugins/shaders', install_dir: join_paths(shady_data_install_dir, 'plugins'))
 foreach rice : ['horizon', 'afterglow', 'tide']
   rice_files = []
-  foreach file : ['config.lua', 'init.lua', 'shell.lua', 'theme.sh', 'README.md']
+  foreach file : ['config.lua', 'init.lua', 'shell.lua', 'style.lua', 'theme.sh', 'README.md']
     if import('fs').is_file(join_paths('rices', rice, file))
       rice_files += join_paths('rices', rice, file)
     endif
@@ -785,6 +786,9 @@ configure_file(input: 'data/shady-session.in', output: 'shady-session',
   configuration: session_conf,
   install: true, install_dir: get_option('bindir'), install_mode: 'rwxr-xr-x')
 configure_file(input: 'data/shady-greeter.in', output: 'shady-greeter',
+  configuration: session_conf,
+  install: true, install_dir: get_option('bindir'), install_mode: 'rwxr-xr-x')
+configure_file(input: 'data/shady-rice.in', output: 'shady-rice',
   configuration: session_conf,
   install: true, install_dir: get_option('bindir'), install_mode: 'rwxr-xr-x')
 install_data('data/shady-session.target',

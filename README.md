@@ -1,8 +1,8 @@
 # shady
 
-![Shady Horizon rice: the time written across a procedural sunset sky, a workspace light on the horizon and a frosted control center turned in 3D](rices/horizon/preview.jpg)
+![Tide, Shady's default desktop: terminals in a strip of scrolling columns under a glass bar, and a notification](rices/tide/preview.jpg)
 
-*Horizon, the default rice: shady-shell living in Afterglow's procedural sky and sea. The time is written across the sky, workspaces are lights on the horizon with the open windows reflected below, notifications appear in the sky, the control center is a slab of frosted glass turned in 3D that also picks the hour (`Super+T`), and the launcher scatters the applications as stars.*
+*Tide, the default desktop: niri's scrolling columns and keys under a glass bar with a minimap of the strip, with a control center, launcher, lock screen and login screen of its own.*
 
 Shady is an experimental **3D Wayland compositor** built on wlroots 0.20.2 and inspired by TinyWL. It can run as a conventional compositor through its wlroots scene-graph path, or turn normal xdg-shell applications into objects inside a shared perspective 3D world.
 
@@ -16,21 +16,32 @@ From any Wayland desktop, with [Nix](https://nixos.org/download):
 nix run github:gloaming-dusk/shady
 ```
 
-Horizon opens in a window with a terminal. Press **`Super+Shift+/`** to see
+Tide opens in a window with a terminal. Press **`Super+Shift+/`** to see
 every shortcut. [Getting started](docs/GETTING_STARTED.md) covers building
 from a checkout, installing on NixOS or elsewhere, the keys and your own
 configuration.
 
+## Make it yours
+
+Tide is what Shady is out of the box, and where you start changing it
+([Customizing](docs/CUSTOMIZING.md)):
+
+- **Build on it.** `shady.base("tide")` and `shell.base("tide", { ... })` at the
+  top of your config, then change colours, keys, bar islands or control center
+  tiles. Tide's updates keep reaching you.
+- **Take it apart.** `shady-rice eject` copies Tide into `~/.config/shady`, and
+  all of it is yours to rewrite.
+- **Start from nothing.** `SHADY_RICE=none` is the bare compositor; every rice
+  and plugin made for it still works.
+
 ## Rices
 
-A rice pairs the compositor with a shell and a look. Pick one with
-`SHADY_RICE` (`SHADY_RICE=tide nix run github:gloaming-dusk/shady`) or
-`programs.shady.rice` in the NixOS module.
+Other looks are a setting away: `SHADY_RICE=horizon nix run
+github:gloaming-dusk/shady`, or `programs.shady.rice` in the NixOS module.
 
 | | |
 |---|---|
-| [![Horizon](rices/horizon/preview.jpg)](rices/horizon/README.md) **[Horizon](rices/horizon/README.md)**, the default: the shell lives in the sky, with a 3D-turned glass control center and a constellation launcher. | [![Tide](rices/tide/preview.jpg)](rices/tide/README.md) **[Tide](rices/tide/README.md)**: for every day. niri's scrolling columns and keys under a glass bar with a minimap of the strip, a control center, launcher, lock screen and greeter of its own. |
-| [![Afterglow](rices/afterglow/preview.jpg)](rices/afterglow/README.md) **[Afterglow](rices/afterglow/README.md)**: the desktop above an open sea at sunset, cycling through four hours with `Super+T`, its frosted shell following the sky. | |
+| [![Horizon](rices/horizon/preview.jpg)](rices/horizon/README.md) **[Horizon](rices/horizon/README.md)**: the shell lives in the sky, with a 3D-turned glass control center and a constellation launcher. | [![Afterglow](rices/afterglow/preview.jpg)](rices/afterglow/README.md) **[Afterglow](rices/afterglow/README.md)**: the desktop above an open sea at sunset, cycling through four hours with `Super+T`, its frosted shell following the sky. |
 
 More live in their own repositories:
 [Objects](https://github.com/gloaming-dusk/shady-rice-objects),
@@ -93,6 +104,7 @@ Writing one: [C plugin API](docs/C_PLUGIN_API.md), starting from
 ## Documentation
 
 - [Getting started](docs/GETTING_STARTED.md): run, install, keys, configure
+- [Customizing](docs/CUSTOMIZING.md): build on Tide, take it apart, or start from nothing
 - [API overview](docs/API.md): which interface fits which job
 - [Lua API](docs/LUA_API.md) · [Shell Lua API](docs/SHELL_LUA_API.md) · [IPC API](docs/IPC_API.md) · [Headless / automation API](docs/HEADLESS_API.md)
 - [C plugin API](docs/C_PLUGIN_API.md) · [Plugin manager](docs/PLUGIN_MANAGER.md) · [Shader API](docs/SHADER_API.md) · [Environment API](docs/ENVIRONMENT_API.md) · [Shell plugin API](docs/SHELL_PLUGIN_API.md)

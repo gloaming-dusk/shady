@@ -1,9 +1,10 @@
 # Getting started
 
 Shady is two programs: `shady`, the compositor, and `shady-shell`, the
-desktop shell drawn on top of it. A **rice** pairs them with a look:
-Horizon (the default), Objects, Afterglow or Neon Transit. This page gets
-one running, shows the keys, and points at where to change things.
+desktop shell drawn on top of it. Out of the box they are **Tide**, an
+everyday desktop with scrolling columns; other **rices** pair them with
+another look. This page gets it running, shows the keys, and points at where
+to change things.
 
 You need Linux with a GPU that does OpenGL ES 2 (any Mesa or NVIDIA driver
 does). The easy path is [Nix](https://nixos.org/download); without it,
@@ -17,15 +18,15 @@ From any Wayland session (GNOME, KDE, Sway, niri, ...):
 nix run github:gloaming-dusk/shady
 ```
 
-This builds Shady and opens Horizon inside a window of your current
+This builds Shady and opens Tide inside a window of your current
 desktop, with a terminal. Open applications from that terminal, or with
-`Super+D`. Press **`Super+Shift+/`** to see every shortcut. Close the window
+`Super+Space`. Press **`Super+Shift+/`** to see every shortcut. Close the window
 or press `Super+Shift+Escape` to leave.
 
 Another rice:
 
 ```sh
-SHADY_RICE=tide nix run github:gloaming-dusk/shady
+SHADY_RICE=horizon nix run github:gloaming-dusk/shady
 ```
 
 The same command run from a text console (Ctrl+Alt+F3, logged in) starts
@@ -38,17 +39,19 @@ git clone https://github.com/gloaming-dusk/shady
 cd shady
 nix develop          # wlroots 0.20.2, Lua 5.4, Meson, ...
 ./tools/build.sh     # builds into build/
-./rices/horizon/run.sh
+WLR_BACKENDS=wayland ./build/shady   # Tide and its shell, nested
 ```
 
-Each rice has a `run.sh` (`rices/tide/run.sh`, `rices/afterglow/run.sh`) and a
+Each rice has a `run.sh` (`rices/tide/run.sh`, `rices/horizon/run.sh`, ...) and a
 README with its keys and options; those in repositories of their own (see the
 [README](../README.md#rices)) are run with `SHADY_ROOT` set to your checkout. Other
 ways to start the compositor from `build/`:
 
 | Command | |
 |---|---|
-| `WLR_BACKENDS=wayland ./build/shady -s foot` | the bare compositor with a terminal, nested |
+| `WLR_BACKENDS=wayland ./build/shady` | the default desktop, nested |
+| `WLR_BACKENDS=wayland ./build/shady -s foot` | the default desktop without its shell, with a terminal; `-s` replaces what starts |
+| `SHADY_RICE=none WLR_BACKENDS=wayland ./build/shady -s foot` | the bare compositor |
 | `WLR_BACKENDS=wayland ./build/shady --safe` | the plain 2D path: no 3D renderer, physics or effects |
 | `./tools/run-native.sh --safe -s foot` | full screen on a text console, 2D path first |
 | `./tools/run-native.sh -s './build/shady-shell & exec foot'` | full screen with the shell |
@@ -78,7 +81,7 @@ manager:
         shady.nixosModules.default
         {
           programs.shady.enable = true;
-          programs.shady.rice = "horizon";       # or "tide", "afterglow"
+          programs.shady.rice = "tide";          # the default; or "horizon", "afterglow"
           programs.shady.greeter.enable = true;  # optional: log in through the Shady greeter
         }
       ];
@@ -108,15 +111,16 @@ sudo ninja -C build install   # optional; adds the shady and shady-safe sessions
 ```
 
 After installing, `shady-session` starts the session with the rice named
-by `SHADY_RICE` (default `horizon`).
+by `SHADY_RICE` (default `tide`).
 
 ## Keys
 
 `Super+Shift+/` lists the shortcuts of the running session: the
 compositor's, the rice's and those of each loaded plugin. What follows are
-the compositor's defaults; rices add their own (Horizon: `Super+D` for the
-launcher, `Super+Return` for a terminal, `Super+1…3` for workspaces,
-`Super+T` to move the sky to the next hour).
+the compositor's, which Tide mostly replaces with niri's: see
+[its README](../rices/tide/README.md) (`Super+Space` for the launcher,
+`Super+Return` for a terminal, `Super+1…9` for workspaces). The tables below
+describe the bare compositor (`SHADY_RICE=none`) and the 3D rices.
 
 **Everywhere**
 
@@ -162,7 +166,7 @@ Each binding can be changed in `config.lua` (`shady.bind("quit",
 ## Making it yours
 
 Shady reads three Lua files from `~/.config/shady/`. Anything missing comes
-from the rice, so start with one and add the others when you need them.
+from Tide, so start with one and add the others when you need them.
 
 | File | Runs | For |
 |---|---|---|
@@ -170,30 +174,31 @@ from the rice, so start with one and add the others when you need them.
 | `init.lua` | once it is running | your key bindings, window rules, reacting to events |
 | `shell.lua` | in `shady-shell` | bars, panels, the launcher; reloads when saved |
 
+Start from Tide and change what you want:
+
 ```lua
 -- ~/.config/shady/config.lua
-shady.set("window_corner_radius", 14)
-shady.set("window_opacity", 0.95)
-shady.plugins.load("border-accent")       -- Super+B accents a window's border
-shady.bind("quit", "Super+Shift+Escape")
+shady.base("tide")
+shady.set("window_corner_radius", 6)
+shady.plugins.load("border-accent")
 ```
 
 ```lua
 -- ~/.config/shady/init.lua
-shady.bind("Super+Return", function() shady.spawn("foot") end, "Open a terminal")
-shady.rule({ app_id = "firefox", workspace = "web" })
-shady.on("window.mapped", function(w) shady.log("opened " .. w.app_id) end)
+shady.base("tide")
+shady.bind("Super+b", function() shady.spawn("firefox") end, "Browser")
+shady.rule({ app_id = "mpv", floating = true })
 ```
 
 ```lua
--- ~/.config/shady/shell.lua: keep the default UI, change its colours
-shell.theme.accent = "#ff9a5c"
-dofile(shell.data_dir .. "/default.lua")
+-- ~/.config/shady/shell.lua
+shell.base("tide", { palette = { accent = "#FF9E64" } })
 ```
 
-A rice's own files (`rices/horizon/` and the others) show what a complete
-setup looks like. The full references are
-the [Lua API](LUA_API.md), the [Shell Lua API](SHELL_LUA_API.md) and the
+[Customizing](CUSTOMIZING.md) has the rest: everything a config can add to
+Tide, `shady-rice eject` to make a copy of it your own, and `SHADY_RICE=none`
+to start from the bare compositor. The full references are the
+[Lua API](LUA_API.md), the [Shell Lua API](SHELL_LUA_API.md) and the
 [Plugin manager](PLUGIN_MANAGER.md); [API overview](API.md) says which one
 fits a task.
 
@@ -206,7 +211,7 @@ fits a task.
 - **"the spatial module requires the GLES2 renderer":** the 3D path needs
   GLES2; unset `WLR_RENDERER=pixman`, or use `--safe`.
 - **The shell does not appear:** run `shady-shell` from a terminal inside
-  Shady to see its errors; a broken `shell.lua` falls back to the default UI.
+  Shady to see its errors; a broken `shell.lua` falls back to the plain UI.
 
 Shady is experimental. Bug reports with the log are welcome at
 <https://github.com/gloaming-dusk/shady/issues>.

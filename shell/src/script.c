@@ -1585,6 +1585,20 @@ static bool is_file(const char *path) {
  * directory (which ships shell/shaders/). */
 /* shell.fonts(dir): make the fonts in a directory (relative to the config
  * file) available to every widget. */
+/* shell.base(rice[, options]): runs that rice's shell.lua in this config,
+ * passing it the options, and returns what the rice hands back. */
+static int l_base(lua_State *L) {
+    const char *rice = luaL_checkstring(L, 1);
+    if (!rice[0] || rice[0] == '.' || strchr(rice, '/'))
+        return luaL_error(L, "no such rice: %s", rice);
+    char path[2 * PATH_MAX];
+    snprintf(path, sizeof(path), "%s/../rices/%s/shell.lua", host.data_dir, rice);
+    if (luaL_loadfile(L, path) != LUA_OK) return lua_error(L);
+    lua_pushvalue(L, 2);
+    lua_call(L, 1, 1);
+    return 1;
+}
+
 static int l_fonts(lua_State *L) {
     const char *name = luaL_checkstring(L, 1);
     char path[2 * PATH_MAX];
@@ -2043,6 +2057,7 @@ static const luaL_Reg api[] = {
     { "toggle", l_toggle },
     { "is_open", l_is_open },
     { "redraw", l_redraw },
+    { "base", l_base },
     { "fonts", l_fonts },
     { "key", l_key },
     { "shortcuts", l_shortcuts },
@@ -2216,8 +2231,17 @@ static void resolve_paths(void) {
     if (xdg && *xdg) snprintf(host.config, sizeof(host.config), "%s/shady/shell.lua", xdg);
     else if (home && *home) snprintf(host.config, sizeof(host.config), "%s/.config/shady/shell.lua", home);
     else host.config[0] = '\0';
-    if (!host.config[0] || !file_exists(host.config))
-        snprintf(host.config, sizeof(host.config), "%s/default.lua", host.data_dir);
+    if (host.config[0] && file_exists(host.config)) return;
+    /* Nothing of the user's: the rice in SHADY_RICE, Tide unless it says
+     * otherwise. SHADY_RICE=none is the plain default.lua. */
+    const char *rice = getenv("SHADY_RICE");
+    if (!rice || !*rice) rice = "tide";
+    if (strcmp(rice, "none") != 0 && rice[0] != '.' && !strchr(rice, '/')) {
+        int written = snprintf(host.config, sizeof(host.config), "%s/../rices/%s/shell.lua",
+            host.data_dir, rice);
+        if (written > 0 && (size_t)written < sizeof(host.config) && file_exists(host.config)) return;
+    }
+    snprintf(host.config, sizeof(host.config), "%s/default.lua", host.data_dir);
 }
 
 static void reload(void *data) {

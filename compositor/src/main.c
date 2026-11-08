@@ -1,5 +1,6 @@
 /* Adapted from wlroots 0.20.2 TinyWL (CC0). See LICENSES/tinywl-CC0.txt. */
 #include <getopt.h>
+#include <limits.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -48,6 +49,47 @@
 #if SHADY_HAS_SPATIAL
 #include "modules/environment/environment.h"
 #endif
+
+/* With no config of its own, Shady is the rice in SHADY_RICE: Tide unless
+ * that says otherwise, and the bare compositor for SHADY_RICE=none. A user's
+ * init.lua still applies; otherwise the rice's own. */
+static bool default_rice_config(char *buf, size_t size) {
+	const char *rice = getenv("SHADY_RICE");
+	if (!rice || !*rice) rice = "tide";
+	if (strcmp(rice, "none") == 0) return false;
+	if (!shady_rice_file(rice, "config.lua", buf, size)) {
+		wlr_log(WLR_ERROR, "no rice '%s' to start from, using the bare compositor", rice);
+		return false;
+	}
+	const char *init = getenv("SHADY_LUA_INIT");
+	if (init && *init) return true;
+	const char *xdg = getenv("XDG_CONFIG_HOME");
+	const char *home = getenv("HOME");
+	char user_init[4096] = "";
+	if (xdg && *xdg) snprintf(user_init, sizeof(user_init), "%s/shady/init.lua", xdg);
+	else if (home && *home) snprintf(user_init, sizeof(user_init), "%s/.config/shady/init.lua", home);
+	char rice_init[4096];
+	if ((!user_init[0] || access(user_init, F_OK) != 0) &&
+			shady_rice_file(rice, "init.lua", rice_init, sizeof(rice_init)))
+		setenv("SHADY_LUA_INIT", rice_init, 1);
+	return true;
+}
+
+/* shady-shell from the directory this binary is in, build tree or install. */
+static bool shell_command(char *buf, size_t size) {
+	char self[PATH_MAX];
+	ssize_t length = readlink("/proc/self/exe", self, sizeof(self) - 1);
+	if (length <= 0) return false;
+	self[length] = '\0';
+	char *slash = strrchr(self, '/');
+	if (!slash) return false;
+	*slash = '\0';
+	char shell[PATH_MAX + 16];
+	int written = snprintf(shell, sizeof(shell), "%s/shady-shell", self);
+	if (written <= 0 || (size_t)written >= sizeof(shell) || access(shell, X_OK) != 0) return false;
+	written = snprintf(buf, size, "exec '%s'", shell);
+	return written > 0 && (size_t)written < size;
+}
 
 static void default_config_path(char *buf, size_t size) {
 	const char *xdg = getenv("XDG_CONFIG_HOME");
@@ -251,10 +293,19 @@ int main(int argc, char *argv[]) {
 		shady_plugin_manager_finish(&server);
 		return 1;
 	}
+	/* Rices find each other, and the plugins, through this. */
+	setenv("SHADY_ROOT", SHADY_DATA_ROOT, 0);
 	char config_buf[4096];
+	char rice_config[4096];
+	bool default_desktop = false;
 	if (!config_path) {
 		default_config_path(config_buf, sizeof(config_buf));
 		config_path = config_buf;
+		if (access(config_buf, F_OK) != 0 &&
+				default_rice_config(rice_config, sizeof(rice_config))) {
+			config_path = rice_config;
+			default_desktop = true;
+		}
 	}
 	if (legacy_config_path) {
 		shady_config_load(&server.config, legacy_config_path);
@@ -470,6 +521,10 @@ int main(int argc, char *argv[]) {
 			"  WAYLAND_DISPLAY=%s foot\n", socket, socket);
 	}
 	fflush(stdout);
+	/* The default desktop comes with its shell, unless -s says what to run. */
+	char shell_cmd[PATH_MAX + 32];
+	if (!startup_cmd && default_desktop && shell_command(shell_cmd, sizeof(shell_cmd)))
+		startup_cmd = shell_cmd;
 	if (startup_cmd) {
 		pid_t pid = fork();
 		if (pid == 0) {

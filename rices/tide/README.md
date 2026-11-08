@@ -2,8 +2,8 @@
 
 ![Tide: three terminals in a strip of columns under a glass bar, a notification at the top right](preview.jpg)
 
-An everyday desktop. Windows tile in a strip of columns that scrolls
-sideways, niri's model, and the keys are niri's defaults, so moving over
+Shady's default desktop, and where [customizing](../../docs/CUSTOMIZING.md)
+starts. Windows tile in a strip of columns that scrolls sideways, niri's model, and the keys are niri's defaults, so moving over
 from niri needs no relearning:
 
 - a new window opens as a column right of the focused one, half the screen
@@ -65,9 +65,7 @@ On NixOS, with the flake's module:
 ```nix
 programs.shady = {
   enable = true;
-  rice = "tide";
   greeter.enable = true;     # greetd with Shady's greeter, instead of SDDM
-  greeter.theme = "tide";
 };
 ```
 

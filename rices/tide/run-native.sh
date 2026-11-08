@@ -7,7 +7,6 @@ cd "$ROOT"
 
 export SHADY_ROOT="$ROOT"
 export SHADY_LUA_INIT="$ROOT/rices/tide/init.lua"
-source "$ROOT/rices/tide/theme.sh"
 export SHADY_SHELL_CONFIG="${SHADY_SHELL_CONFIG:-$ROOT/rices/tide/shell.lua}"
 
 if [[ $# -eq 0 ]]; then

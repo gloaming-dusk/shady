@@ -23,7 +23,7 @@ shady.set("floor", false)
 shady.set("sky", false)
 shady.set("environment", false)
 shady.set("fps_mode", false)
-shady.set("close_animation", true)
+shady.set("close_animation", not light)
 
 -- The layout.
 shady.set("layout", "scrolling")
@@ -65,7 +65,7 @@ shady.modules({
     ["window-motion"] = false,
     ["physics"] = false,
     ["fps"] = false,
-    ["close-animation"] = true,
+    ["close-animation"] = not light,
     ["scene-effects"] = not light,
     ["lua"] = true,
 })

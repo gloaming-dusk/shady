@@ -7,6 +7,21 @@ between releases. Breaking changes are called out here.
 
 Breaking:
 
+- Tide is the default desktop. Shady with nothing configured, `shady-session`,
+  `nix run` and the NixOS module now start Tide instead of Horizon, and
+  `shady-shell` with no config shows Tide's shell. Set `SHADY_RICE=horizon` (or
+  `programs.shady.rice`) to keep Horizon, and `SHADY_RICE=none` for the bare
+  compositor and `shell/default.lua`. Rices that pass their own config, and the
+  compositor's built-in settings, are unchanged.
+- The greeter is Tide's by default, redrawn to match the desktop and its lock
+  screen. `greeter.theme = "afterglow"` (`SHADY_GREETER_THEME=afterglow`) keeps
+  the old one, which moved to `greeter/afterglow/`.
+- `shady.bind(keys, fn)` on a key that is already bound replaces the binding;
+  the first one used to win.
+- The Manrope and Instrument Serif fonts moved from `rices/horizon/fonts` to
+  `rices/tide/fonts`, and `rices/tide/theme.sh` is gone: Tide's palette is in
+  `rices/tide/style.lua`.
+
 - The Objects and Neon Transit rices moved to repositories of their own
   (`shady-rice-objects`, `shady-rice-neon-transit`), and the retired rices to
   `shady-rice-archive`. `SHADY_RICE=objects` and `SHADY_RICE=neon-transit` no
@@ -19,6 +34,12 @@ Breaking:
   keep loading them, with `programs.shady.plugins` on NixOS. Afterglow and Horizon
   still load `bad-apple` when it is installed, and run without it otherwise.
   `tools/bad-apple.sh` moved along with it.
+
+Fixes:
+
+- `TIDE_LIGHT=1` starts again; it asked for a module that needs the 3D path.
+- Tide's `Super+Return` opens the first terminal that is installed when
+  `TERMINAL` is unset, instead of always trying ghostty.
 
 Security:
 
@@ -37,6 +58,12 @@ Security:
 
 New:
 
+- [Customizing](docs/CUSTOMIZING.md): build on a rice with `shady.base` and
+  `shell.base` (Tide takes `palette`, `wallpaper`, `bar`, `tiles` and `launcher`
+  options and returns its pieces), remove keys with `shady.unbind`, or copy a
+  rice to `~/.config/shady` with the new `shady-rice eject`.
+- `tools/compare-compositors.py` measures Tide's CPU, GPU and memory against
+  niri and labwc, nested.
 - `programs.shady.plugins` in the NixOS module, and `plugin_path` in the C plugin
   API: where a plugin's own files are, since the host runs a private copy of it.
 - The scrolling layout: `shady.set("layout", "scrolling")` tiles each

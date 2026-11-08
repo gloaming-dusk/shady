@@ -120,6 +120,25 @@ shady.bind("F6", debug_dump) -- not listed
 shady.bind("Super", function() shady.layout.overview() end) -- a tap of Super
 ```
 
+A key has one binding: binding it again replaces the earlier one, so a config
+built on a rice can take that rice's keys over.
+
+### `shady.unbind(keys) -> boolean`
+
+Removes a binding made with `shady.bind(keys, fn)`, returning whether there
+was one.
+
+### `shady.base(rice)`
+
+Runs that rice's file for this stage: `config.lua` when called from
+`config.lua`, `init.lua` from `init.lua`. Call it first and change what you
+want afterwards; see [Customizing](CUSTOMIZING.md).
+
+```lua
+shady.base("tide")
+shady.set("layout_gap", 16)
+```
+
 ### `shady.rule(table)`
 
 Register a window rule. Rules may match `app_id` and/or `title`, and can set workspace/maximized/fullscreen state.

@@ -2,11 +2,12 @@
 # Start shady as a login session.
 #
 # Your own ~/.config/shady/{config,init,shell}.lua win when present; anything
-# missing comes from the rice named by SHADY_RICE (default: horizon).
+# missing comes from the rice named by SHADY_RICE (default: tide; "none" is
+# the bare compositor and its plain shell).
 # Extra arguments go to shady, e.g. `shady-session --safe`.
 
 : "${SHADY_ROOT:=@datadir@}"
-: "${SHADY_RICE:=horizon}"
+: "${SHADY_RICE:=tide}"
 export SHADY_ROOT SHADY_RICE
 
 export XDG_SESSION_TYPE=wayland
@@ -17,7 +18,9 @@ export MOZ_ENABLE_WAYLAND=1
 
 config_dir="${XDG_CONFIG_HOME:-$HOME/.config}/shady"
 rice_dir="$SHADY_ROOT/rices/$SHADY_RICE"
-if [ ! -d "$rice_dir" ]; then
+if [ "$SHADY_RICE" = none ]; then
+    rice_dir=
+elif [ ! -d "$rice_dir" ]; then
     echo "shady-session: unknown rice '$SHADY_RICE' ($rice_dir)" >&2
     rice_dir=
 fi

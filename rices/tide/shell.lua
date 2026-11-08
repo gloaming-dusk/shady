@@ -7,39 +7,30 @@
 -- session commands), Super+Shift+E the power menu. Volume and brightness
 -- keys show an OSD. The compositor (init.lua) sends keys as `tide.do`.
 
--- Files next to this one, also when another config dofile()s it.
+-- shell.base("tide", options) builds on this file instead of copying it:
+--   palette   colours to change, by the names in style.lua
+--   wallpaper a picture for the desktop and the lock screen
+--   bar       { left = fn(ctx), center = fn(ctx), right = fn(ctx) }, islands to add
+--   tiles     fn(ctx, tile), more tiles for the control center, as a list
+--   launcher  fn(query), results to put first: { title, subtitle, icon, run }
+-- It returns the pieces it is made of (see the end of the file).
+local options = ... or {}
+
+-- Files next to this one, also when another config runs it.
 local HERE = (debug.getinfo(1, "S").source:match("^@(.*)/[^/]*$")) or "."
-shell.fonts(HERE .. "/../horizon/fonts")
+shell.fonts(HERE .. "/fonts")
 
 local a, mix = shell.alpha, shell.mix
-local t = shell.theme
-local SANS = "Manrope"
-local function font(weight, size) return SANS .. " " .. weight .. " " .. size end
-
-local P = {
-    text = t.text, dim = t.text_dim, accent = t.accent, accent_2 = t.accent_2,
-    deep = t.accent_deep, surface = t.surface, danger = t.danger,
-    base = "#11111B", good = "#8BD5A8", warn = "#F2C27B",
-}
+local S = dofile(HERE .. "/style.lua")(options.palette)
+local P, SANS, font, text, glass, island = S.P, S.SANS, S.font, S.text, S.glass, S.island
 local WHITE = "#FFFFFF"
-local BAR, ISLAND = 44, 32
+local BAR = 44
 -- Springs for values the user drives (sliders, OSD): quick enough to read
 -- as following the hand, short so few frames are drawn.
 local QUICK = { stiffness = 1600, damping = 80 }
 local POP = { opacity = 0, scale = 0.97, translate = { 0, -8 } }
 
-local function text(s, props)
-    props = props or {}
-    props.color = props.color or P.text
-    props.font = props.font or font("Medium", 9.5)
-    return shell.text(s, props)
-end
-
 local function trim(s) return ((s or ""):gsub("^%s+", ""):gsub("%s+$", "")) end
-
-local function glass(alpha)
-    return shell.gradient("vertical", a(mix(P.surface, WHITE, 0.035), alpha), a(P.surface, alpha))
-end
 
 -- The card every panel sits on.
 local function card(props)
@@ -220,7 +211,8 @@ local SESSION = {
 -- ~/.config/shady/wallpaper.png when there is one, else the night sea shader.
 
 local home = os.getenv("HOME") or ""
-local wallpaper = (os.getenv("XDG_CONFIG_HOME") or (home .. "/.config")) .. "/shady/wallpaper.png"
+local wallpaper = options.wallpaper and options.wallpaper:gsub("^~/", home .. "/")
+    or (os.getenv("XDG_CONFIG_HOME") or (home .. "/.config")) .. "/shady/wallpaper.png"
 local function exists(path)
     local f = io.open(path, "rb")
     if f then f:close() return true end
@@ -228,7 +220,7 @@ local function exists(path)
 end
 
 local SEA = not exists(wallpaper) and shell.shader(HERE .. "/shaders/tide.frag") or nil
-local SEA_UNIFORMS = { accent = P.accent, accent_2 = P.accent_2, base = "#0F0F1A" }
+local SEA_UNIFORMS = S.SEA_UNIFORMS
 
 -- What lies under the wallpaper and the lock screen: the picture, or (with
 -- the sea shader on top) nothing; the gradient covers the shm renderer.
@@ -296,18 +288,6 @@ local function minimap()
 end
 
 -- ---- bar ---------------------------------------------------------------------
-
-local function island(props)
-    props.height = ISLAND
-    props.radius = props.radius or 16
-    props.padding = props.padding or { 0, 12 }
-    props.gap = props.gap or 10
-    props.align = "center"
-    props.background = glass(0.88)
-    props.border = a(P.text, 0.07)
-    props.animate = "snappy"
-    return shell.row(props)
-end
 
 local function workspace_names()
     local busy = {}
@@ -441,6 +421,7 @@ shell.bar {
     layer = "top",
     view = function(ctx)
         local title = focused_title()
+        local extra = options.bar or {}
         return shell.stack {
             align = "start", justify = "center",
             shell.row { left = 8, top = 6, gap = 8, align = "center",
@@ -448,9 +429,12 @@ shell.bar {
                 title and island { key = "island:title", padding = { 0, 12 },
                     text(title, { font = font("Medium", 9), max_width = math.floor(ctx.width * 0.22),
                         color = a(P.text, 0.82) }) } or false,
+                extra.left and extra.left(ctx) or false,
             },
-            shell.row { top = 6, clock_island(ctx) },
-            shell.row { right = 8, top = 6, status_island(ctx) },
+            shell.row { top = 6, gap = 8, align = "center", clock_island(ctx),
+                extra.center and extra.center(ctx) or false },
+            shell.row { right = 8, top = 6, gap = 8, align = "center",
+                extra.right and extra.right(ctx) or false, status_island(ctx) },
         }
     end,
 }
@@ -694,6 +678,9 @@ local function control_view(ctx)
         shell.close("tide-control")
         shell.after(350, function() shell.key("Print") end)
     end)
+    if options.tiles then
+        for _, extra in ipairs(options.tiles(ctx, tile)) do tiles[#tiles + 1] = extra end
+    end
     local grid = {}
     for i = 1, #tiles, 2 do
         grid[#grid + 1] = shell.row { gap = 8, align = "stretch", tiles[i], tiles[i + 1] or shell.spacer { grow = 1 } }
@@ -864,6 +851,13 @@ local function results()
                 run = function() shell.spawn(cmd) end }
         end
         return list
+    end
+    if options.launcher then
+        for _, item in ipairs(options.launcher(q)) do
+            item.kind = "extra"
+            item.subtitle = item.subtitle or ""
+            list[#list + 1] = item
+        end
     end
     local value = calculate(q)
     if value and (q:match("^=") or q:match("[%+%-%*/%^%%]")) then
@@ -1584,4 +1578,11 @@ require("shortcut_overlay").install {
     frame = function(body)
         return card { radius = 24, padding = 24, body }
     end,
+}
+
+-- ---- what a config built on Tide can use -----------------------------------
+
+return {
+    style = S, P = P, font = font, text = text, glass = glass, card = card, island = island,
+    tile = tile, slider = slider, has = has, sys = sys, act = act, lock = function() lock() end,
 }
