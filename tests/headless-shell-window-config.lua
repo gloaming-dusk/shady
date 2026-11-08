@@ -1,0 +1,6 @@
+shady.set("spatial_mode", false)
+shady.set("window_titlebar", false)
+shady.set("layout", "scrolling")
+shady.set("layout_gap", 10)
+shady.set("layout_animation", 0)
+shady.set("layout_center_single", false)

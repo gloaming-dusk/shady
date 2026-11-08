@@ -299,6 +299,17 @@ bool shell_compositor_key(const char *keys) {
     return n > 0 && send(link_state.fd, request, (size_t)n, MSG_NOSIGNAL) == n;
 }
 
+bool shell_compositor_lua(const char *code) {
+    if (!link_state.ready || link_state.fd < 0 || !code) return false;
+    struct json_buf request = { 0 };
+    json_puts(&request, "{\"cmd\":\"lua\",\"code\":");
+    json_string(&request, code);
+    json_puts(&request, "}\n");
+    bool sent = send(link_state.fd, request.data, request.len, MSG_NOSIGNAL) == (ssize_t)request.len;
+    json_buf_free(&request);
+    return sent;
+}
+
 bool shell_compositor_screenshot(int delay_ms) {
     if (!link_state.ready || link_state.fd < 0 || delay_ms < 0 || delay_ms > 10000) return false;
     char request[64];

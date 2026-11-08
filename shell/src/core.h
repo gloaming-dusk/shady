@@ -56,6 +56,7 @@ struct shell_core {
     struct wl_pointer *pointer;
     struct wl_keyboard *keyboard;
     struct zwlr_layer_shell_v1 *layer_shell;
+    struct xdg_wm_base *wm_base;
     /* The session lock (ext-session-lock-v1): while `lock` is set, lock
      * surfaces cover every output and have the keyboard. */
     struct ext_session_lock_manager_v1 *lock_manager;
@@ -137,6 +138,10 @@ struct shell_surface_config {
     /* A lock surface on `output` instead of a layer surface; the layer
      * fields are ignored. Only while shell_core_lock() holds a lock. */
     bool lock;
+    /* An ordinary application window (xdg-toplevel) instead of a layer
+     * surface, starting at width x height; the layer fields are ignored. */
+    bool window;
+    const char *title, *app_id;
 };
 
 struct shell_surface_handler {
@@ -175,6 +180,9 @@ struct shell_surface {
     struct wl_surface *wl_surface;
     struct zwlr_layer_surface_v1 *layer_surface;
     struct ext_session_lock_surface_v1 *lock_surface;
+    struct xdg_surface *xdg_surface;
+    struct xdg_toplevel *xdg_toplevel;
+    uint32_t pending_width, pending_height; /* from the toplevel's configure */
     struct shell_output *output;
     const struct shell_surface_handler *handler;
     void *data;

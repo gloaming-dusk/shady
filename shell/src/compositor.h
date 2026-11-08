@@ -35,6 +35,7 @@ const struct shell_shortcut *shell_compositor_shortcut_at(size_t index);
 /* Ask the compositor to toggle the overlay: it answers with the event. */
 bool shell_compositor_toggle_shortcuts(void);
 /* Ask the compositor to save its next frame, after delay_ms, to ~/Pictures. */
+bool shell_compositor_lua(const char *code);
 bool shell_compositor_screenshot(int delay_ms);
 
 #endif

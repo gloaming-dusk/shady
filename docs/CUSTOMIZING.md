@@ -27,6 +27,11 @@ Some things need no Lua at all:
 - `TIDE_XKB_LAYOUT` and `TIDE_XKB_OPTIONS` set the keyboard.
 - `TERMINAL` picks the terminal for `Super+Return`.
 
+The [Gloam](https://github.com/gloaming-dusk/gloam) Settings application changes
+the accent colour, wallpaper, corners, gaps, keyboard and touchpad, and saves
+them to `~/.config/shady/settings.lua`. Tide reads that file over its own values,
+and a config built on Tide can override it.
+
 ## Build on it
 
 Start each file from Tide and change what you want afterwards.

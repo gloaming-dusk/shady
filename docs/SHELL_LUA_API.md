@@ -259,6 +259,32 @@ shell.stack {
 }
 ```
 
+## Windows and applications
+
+`shell.window` declares an ordinary application window instead of a layer
+surface. It is opened and closed like a popup, the compositor decides its size
+(`ctx.width`, `ctx.height`), and it takes `view`, `on_key` and `text_input`:
+
+```lua
+shell.window {
+    name = "main", title = "Notes", app_id = "my-notes",
+    width = 800, height = 600,
+    view = function(ctx)
+        return shell.box { width = ctx.width, height = ctx.height, background = "#11111B" }
+    end,
+}
+shell.after(0, function() shell.open("main") end)
+```
+
+`shady-shell --app file.lua` runs such a file as an application of its own: its
+own process, no fallback config, no reloading, and it ends with its last window.
+`shell.quit()` then ends the application, not the session.
+
+| | |
+|---|---|
+| `shell.reload()` | run the config again, once the current callback has returned |
+| `shell.compositor_lua(code)` | run Lua in the compositor (as `shadyctl lua`); false when there is no connection |
+
 ## Compositor state and actions
 
 State comes from the compositor over the `shady-shell-v1` protocol.

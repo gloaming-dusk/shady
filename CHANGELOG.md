@@ -66,6 +66,11 @@ New:
   `shell.base` (Tide takes `palette`, `wallpaper`, `bar`, `tiles` and `launcher`
   options and returns its pieces), remove keys with `shady.unbind`, or copy a
   rice to `~/.config/shady` with the new `shady-rice eject`.
+- `shell.window` and `shady-shell --app`: ordinary application windows drawn like
+  the shell, which Gloam's Settings is made with; `shell.reload` and
+  `shell.compositor_lua`.
+- Tide reads `~/.config/shady/settings.lua`, and `shady.set` applies keyboard,
+  touchpad and layout settings while the compositor runs.
 - `tools/compare-compositors.py` measures Tide's CPU, GPU and memory against
   niri and labwc, nested.
 - `programs.shady.plugins` in the NixOS module, and `plugin_path` in the C plugin

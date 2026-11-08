@@ -179,11 +179,18 @@ static const struct shell_core_listener core_listener = {
     .global = global,
 };
 
-int main(void) {
+int main(int argc, char **argv) {
     signal(SIGCHLD, SIG_IGN);
     ui_load_theme();
     static struct shell shell;
-    apps_load(&shell);
+    /* shady-shell --app file.lua: an application drawn the way the shell is. */
+    bool app = argc == 3 && strcmp(argv[1], "--app") == 0;
+    if (argc > 1 && !app) {
+        fprintf(stderr, "usage: shady-shell [--app file.lua]\n");
+        return 2;
+    }
+    if (app) shell_lua_set_app(argv[2]);
+    else apps_load(&shell);
 
     int status = 1;
     if (!shell_core_init(&shell.core, &core_listener, &shell)) goto out;

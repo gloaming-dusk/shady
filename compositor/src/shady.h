@@ -209,6 +209,7 @@ struct shady_server {
 	struct wl_listener request_set_selection;
 	struct wl_listener request_set_primary_selection;
 	struct wl_list keyboards;
+	struct wl_list pointers;
 	enum shady_cursor_mode cursor_mode;
 	struct shady_toplevel *grabbed_toplevel;
 	double grab_x, grab_y;
@@ -382,10 +383,17 @@ struct shady_popup {
 	struct wl_listener destroy;
 };
 
+struct shady_pointer {
+	struct wl_list link;
+	struct wlr_input_device *device;
+	struct wl_listener destroy;
+};
+
 struct shady_keyboard {
 	struct wl_list link;
 	struct shady_server *server;
 	struct wlr_keyboard *wlr_keyboard;
+	bool is_virtual;
 	struct xkb_state *binding_state;
 
 	struct wl_listener modifiers;
@@ -420,6 +428,8 @@ void server_new_input(struct wl_listener *listener, void *data);
 void shady_input_add_keyboard(struct shady_server *server,
 	struct wlr_input_device *device);
 void shady_input_update_seat_capabilities(struct shady_server *server);
+/* Apply the keyboard and touchpad settings to the devices already there. */
+void shady_input_config_changed(struct shady_server *server);
 void seat_request_cursor(struct wl_listener *listener, void *data);
 void seat_pointer_focus_change(struct wl_listener *listener, void *data);
 void seat_request_set_selection(struct wl_listener *listener, void *data);

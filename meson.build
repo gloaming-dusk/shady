@@ -268,6 +268,7 @@ if shell_enabled
       text_input_protocol_code,
       layer_shell_protocol_header,
       layer_shell_protocol_code,
+      xdg_shell_client_header,
       xdg_shell_protocol_code,
       shady_shell_client_header,
       shady_shell_protocol_code,
@@ -757,7 +758,7 @@ install_subdir('greeter', install_dir: shady_data_install_dir,
 install_subdir('plugins/shaders', install_dir: join_paths(shady_data_install_dir, 'plugins'))
 foreach rice : ['horizon', 'afterglow', 'tide']
   rice_files = []
-  foreach file : ['config.lua', 'init.lua', 'shell.lua', 'style.lua', 'theme.sh', 'README.md']
+  foreach file : ['config.lua', 'init.lua', 'shell.lua', 'style.lua', 'settings.lua', 'theme.sh', 'README.md']
     if import('fs').is_file(join_paths('rices', rice, file))
       rice_files += join_paths('rices', rice, file)
     endif

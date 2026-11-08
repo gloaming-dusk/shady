@@ -21,7 +21,11 @@ local HERE = (debug.getinfo(1, "S").source:match("^@(.*)/[^/]*$")) or "."
 shell.fonts(HERE .. "/fonts")
 
 local a, mix = shell.alpha, shell.mix
-local S = dofile(HERE .. "/style.lua")(options.palette)
+-- What the Settings application saved; the options of a config win over it.
+local settings = dofile(HERE .. "/settings.lua")
+local palette = { accent = settings.accent, accent_2 = settings.accent_2 }
+for name, colour in pairs(options.palette or {}) do palette[name] = colour end
+local S = dofile(HERE .. "/style.lua")(palette)
 local P, SANS, font, text, glass, island = S.P, S.SANS, S.font, S.text, S.glass, S.island
 local WHITE = "#FFFFFF"
 local BAR = 44
@@ -54,7 +58,7 @@ local function has(command)
 end
 local HAVE = {
     grim = has("grim"), playerctl = has("playerctl"), nmcli = has("nmcli"), bluetoothctl = has("bluetoothctl"),
-    powerprofiles = has("powerprofilesctl"), wlcopy = has("wl-copy"), swaylock = has("swaylock"),
+    settings = has("gloam-settings"), powerprofiles = has("powerprofilesctl"), wlcopy = has("wl-copy"), swaylock = has("swaylock"),
 }
 
 -- ---- system state ----------------------------------------------------------
@@ -211,7 +215,8 @@ local SESSION = {
 -- ~/.config/shady/wallpaper.png when there is one, else the night sea shader.
 
 local home = os.getenv("HOME") or ""
-local wallpaper = options.wallpaper and options.wallpaper:gsub("^~/", home .. "/")
+local chosen = options.wallpaper or (settings.wallpaper ~= "" and settings.wallpaper) or nil
+local wallpaper = chosen and chosen:gsub("^~/", home .. "/")
     or (os.getenv("XDG_CONFIG_HOME") or (home .. "/.config")) .. "/shady/wallpaper.png"
 local function exists(path)
     local f = io.open(path, "rb")
@@ -647,6 +652,10 @@ local function control_view(ctx)
         shell.column { grow = 1, align = "start", gap = 1,
             text(user, { font = font("Bold", 11) }),
             text(sys.uptime(), { font = font("Medium", 8.5), color = P.dim }) },
+        HAVE.settings and shell.row { id = "cc:settings", width = 34, height = 34, radius = 17, justify = "center",
+            background = a(P.text, ctx.hovered == "cc:settings" and 0.12 or 0.06),
+            on_click = function() shell.close("tide-control"); shell.spawn("gloam-settings") end,
+            shell.icon("sliders", { size = 15 }) } or false,
         shell.row { id = "cc:lock", width = 34, height = 34, radius = 17, justify = "center",
             background = a(P.text, ctx.hovered == "cc:lock" and 0.12 or 0.06),
             on_click = function() lock() end, shell.icon("lock", { size = 15 }) },
@@ -1579,6 +1588,17 @@ require("shortcut_overlay").install {
         return card { radius = 24, padding = 24, body }
     end,
 }
+
+-- The Settings application changed something: draw the shell again with it.
+do
+    local seen = shell.compositor_value("tide.settings")
+    shell.on("value", function(k, v)
+        if k == "tide.settings" and v and v ~= seen then
+            seen = v
+            shell.reload()
+        end
+    end)
+end
 
 -- ---- what a config built on Tide can use -----------------------------------
 

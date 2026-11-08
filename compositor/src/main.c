@@ -284,6 +284,7 @@ int main(int argc, char *argv[]) {
 	wl_list_init(&server.all_toplevels);
 	wl_list_init(&server.popups);
 	wl_list_init(&server.keyboards);
+	wl_list_init(&server.pointers);
 	shady_events_init(&server);
 	shady_config_defaults(&server.config);
 	shady_modules_init(&server.modules);

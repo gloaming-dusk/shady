@@ -12,6 +12,7 @@
 #include <unistd.h>
 
 #include "render.h"
+#include "xdg-shell-client-protocol.h"
 
 struct shell_timer {
     struct wl_list link;
@@ -190,6 +191,61 @@ static void layer_closed(void *data, struct zwlr_layer_surface_v1 *layer_surface
     if (surface->handler->closed) surface->handler->closed(surface->data, surface);
 }
 
+static void toplevel_configure(void *data, struct xdg_toplevel *toplevel,
+        int32_t width, int32_t height, struct wl_array *states) {
+    (void)toplevel;
+    (void)states;
+    struct shell_surface *surface = data;
+    /* 0 leaves the size to us: keep what the window has. */
+    surface->pending_width = width > 0 ? (uint32_t)width : surface->width;
+    surface->pending_height = height > 0 ? (uint32_t)height : surface->height;
+}
+
+static void toplevel_close(void *data, struct xdg_toplevel *toplevel) {
+    (void)toplevel;
+    struct shell_surface *surface = data;
+    if (surface->handler->closed) surface->handler->closed(surface->data, surface);
+}
+
+static void toplevel_configure_bounds(void *data, struct xdg_toplevel *toplevel,
+        int32_t width, int32_t height) {
+    (void)data; (void)toplevel; (void)width; (void)height;
+}
+
+static void toplevel_capabilities(void *data, struct xdg_toplevel *toplevel,
+        struct wl_array *capabilities) {
+    (void)data; (void)toplevel; (void)capabilities;
+}
+
+static const struct xdg_toplevel_listener toplevel_listener = {
+    .configure = toplevel_configure,
+    .close = toplevel_close,
+    .configure_bounds = toplevel_configure_bounds,
+    .wm_capabilities = toplevel_capabilities,
+};
+
+static void xdg_surface_configure(void *data, struct xdg_surface *xdg_surface, uint32_t serial) {
+    struct shell_surface *surface = data;
+    xdg_surface_ack_configure(xdg_surface, serial);
+    if (surface->pending_width) surface->width = surface->pending_width;
+    if (surface->pending_height) surface->height = surface->pending_height;
+    surface->configured = true;
+    shell_surface_redraw(surface);
+}
+
+static const struct xdg_surface_listener xdg_surface_listener = {
+    .configure = xdg_surface_configure,
+};
+
+static void wm_base_ping(void *data, struct xdg_wm_base *wm_base, uint32_t serial) {
+    (void)data;
+    xdg_wm_base_pong(wm_base, serial);
+}
+
+static const struct xdg_wm_base_listener wm_base_listener = {
+    .ping = wm_base_ping,
+};
+
 static const struct zwlr_layer_surface_v1_listener layer_listener = {
     .configure = layer_configure,
     .closed = layer_closed,
@@ -263,7 +319,8 @@ void shell_core_unlock(struct shell_core *core) {
 struct shell_surface *shell_surface_create(struct shell_core *core,
         const struct shell_surface_config *config,
         const struct shell_surface_handler *handler, void *data) {
-    if (!core->compositor || (!config->lock && !core->layer_shell)) return NULL;
+    if (!core->compositor) return NULL;
+    if (config->window ? !core->wm_base : (!config->lock && !core->layer_shell)) return NULL;
     if (config->lock && (!core->lock || !config->output)) return NULL;
     struct shell_surface *surface = calloc(1, sizeof(*surface));
     if (!surface) return NULL;
@@ -296,6 +353,27 @@ struct shell_surface *shell_surface_create(struct shell_core *core,
         /* No commit: a lock surface may not commit before its first
          * configure, which the compositor sends unasked. */
         surface->dirty = false;
+        return surface;
+    }
+    if (config->window) {
+        surface->xdg_surface = xdg_wm_base_get_xdg_surface(core->wm_base, surface->wl_surface);
+        surface->xdg_toplevel = surface->xdg_surface ?
+            xdg_surface_get_toplevel(surface->xdg_surface) : NULL;
+        if (!surface->xdg_toplevel) {
+            if (surface->xdg_surface) xdg_surface_destroy(surface->xdg_surface);
+            wl_surface_destroy(surface->wl_surface);
+            free(surface);
+            return NULL;
+        }
+        xdg_surface_add_listener(surface->xdg_surface, &xdg_surface_listener, surface);
+        xdg_toplevel_add_listener(surface->xdg_toplevel, &toplevel_listener, surface);
+        if (config->title) xdg_toplevel_set_title(surface->xdg_toplevel, config->title);
+        if (config->app_id) xdg_toplevel_set_app_id(surface->xdg_toplevel, config->app_id);
+        surface->wants_text_input = config->text_input;
+        wl_list_insert(core->surfaces.prev, &surface->link);
+        surface_update_scale(surface);
+        surface->dirty = false;
+        wl_surface_commit(surface->wl_surface);
         return surface;
     }
     surface->layer_surface = zwlr_layer_shell_v1_get_layer_surface(core->layer_shell,
@@ -338,6 +416,8 @@ void shell_surface_destroy(struct shell_surface *surface) {
     if (surface->frame) wl_callback_destroy(surface->frame);
     if (surface->lock_surface) ext_session_lock_surface_v1_destroy(surface->lock_surface);
     if (surface->layer_surface) zwlr_layer_surface_v1_destroy(surface->layer_surface);
+    if (surface->xdg_toplevel) xdg_toplevel_destroy(surface->xdg_toplevel);
+    if (surface->xdg_surface) xdg_surface_destroy(surface->xdg_surface);
     shell_effects_finish(&surface->effects);
     wl_surface_destroy(surface->wl_surface);
     wl_list_remove(&surface->link);
@@ -769,6 +849,9 @@ static void registry_global(void *data, struct wl_registry *registry, uint32_t n
     } else if (!strcmp(interface, ext_session_lock_manager_v1_interface.name)) {
         core->lock_manager = wl_registry_bind(registry, name,
             &ext_session_lock_manager_v1_interface, 1);
+    } else if (!strcmp(interface, xdg_wm_base_interface.name)) {
+        core->wm_base = wl_registry_bind(registry, name, &xdg_wm_base_interface, min_u32(version, 4));
+        xdg_wm_base_add_listener(core->wm_base, &wm_base_listener, core);
     } else if (!strcmp(interface, zwlr_layer_shell_v1_interface.name)) {
         core->layer_shell = wl_registry_bind(registry, name, &zwlr_layer_shell_v1_interface,
             min_u32(version, 4));
@@ -1088,6 +1171,7 @@ void shell_core_finish(struct shell_core *core) {
     if (core->seat) wl_seat_release(core->seat);
     if (core->lock) ext_session_lock_v1_destroy(core->lock);
     if (core->lock_manager) ext_session_lock_manager_v1_destroy(core->lock_manager);
+    if (core->wm_base) xdg_wm_base_destroy(core->wm_base);
     if (core->layer_shell) zwlr_layer_shell_v1_destroy(core->layer_shell);
     if (core->shm) wl_shm_destroy(core->shm);
     if (core->compositor) wl_compositor_destroy(core->compositor);

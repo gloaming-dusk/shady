@@ -33,7 +33,7 @@ case "${1:-}" in
             exit 1
         fi
         conflict=0
-        for item in config.lua init.lua shell.lua style.lua theme.sh fonts shaders; do
+        for item in config.lua init.lua shell.lua style.lua settings.lua theme.sh fonts shaders; do
             if [ -e "$source_dir/$item" ] && [ -e "$config_dir/$item" ]; then
                 echo "shady-rice: $config_dir/$item already exists" >&2
                 conflict=1
@@ -44,7 +44,7 @@ case "${1:-}" in
             exit 1
         fi
         mkdir -p "$config_dir"
-        for item in config.lua init.lua shell.lua style.lua theme.sh fonts shaders; do
+        for item in config.lua init.lua shell.lua style.lua settings.lua theme.sh fonts shaders; do
             if [ -e "$source_dir/$item" ]; then
                 cp -R "$source_dir/$item" "$config_dir/$item"
                 chmod -R u+w "$config_dir/$item"

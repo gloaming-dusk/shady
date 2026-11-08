@@ -110,6 +110,9 @@ SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
 SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
   nix develop -c bash ./tests/headless-tide-layers.sh
 
+SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
+  nix develop -c bash ./tests/headless-shell-window.sh
+
 SHADY_CLOSE_TEST_BUILD_DIR="$BUILD_DIR" \
   nix develop -c bash ./tests/headless-close-effect-plugin.sh
 

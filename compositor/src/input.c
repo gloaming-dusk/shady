@@ -594,6 +594,37 @@ static void keyboard_handle_destroy(struct wl_listener *listener, void *data) {
 	shady_input_update_seat_capabilities(server);
 }
 
+/* The keymap and repeat rate from the config; again when they change. */
+static void keyboard_apply_config(struct shady_keyboard *keyboard) {
+	struct wlr_keyboard *wlr_keyboard = keyboard->wlr_keyboard;
+	struct xkb_context *context = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
+	/* Empty fields fall back to XKB_DEFAULT_* and then "us". */
+	const struct shady_config *c = &keyboard->server->config;
+	const struct xkb_rule_names names = {
+		.layout = c->xkb_layout[0] ? c->xkb_layout : NULL,
+		.variant = c->xkb_variant[0] ? c->xkb_variant : NULL,
+		.options = c->xkb_options[0] ? c->xkb_options : NULL,
+	};
+	struct xkb_keymap *keymap = xkb_keymap_new_from_names(context, &names,
+		XKB_KEYMAP_COMPILE_NO_FLAGS);
+	if (!keymap) {
+		wlr_log(WLR_ERROR, "input: invalid xkb layout '%s', using the default",
+			c->xkb_layout);
+		keymap = xkb_keymap_new_from_names(context, NULL, XKB_KEYMAP_COMPILE_NO_FLAGS);
+	}
+	if (keyboard->binding_state) xkb_state_unref(keyboard->binding_state);
+	keyboard->binding_state = xkb_state_new(keymap);
+	wlr_keyboard_set_keymap(wlr_keyboard, keymap);
+	if (c->numlock) {
+		xkb_mod_index_t num = xkb_keymap_mod_get_index(keymap, XKB_MOD_NAME_NUM);
+		if (num != XKB_MOD_INVALID)
+			wlr_keyboard_notify_modifiers(wlr_keyboard, 0, 0, 1u << num, 0);
+	}
+	xkb_keymap_unref(keymap);
+	xkb_context_unref(context);
+	wlr_keyboard_set_repeat_info(wlr_keyboard, c->repeat_rate, c->repeat_delay);
+}
+
 void shady_input_add_keyboard(struct shady_server *server,
 		struct wlr_input_device *device) {
 	struct wlr_keyboard *wlr_keyboard = wlr_keyboard_from_input_device(device);
@@ -602,34 +633,8 @@ void shady_input_add_keyboard(struct shady_server *server,
 	keyboard->server = server;
 	keyboard->wlr_keyboard = wlr_keyboard;
 
-	bool is_virtual = wlr_input_device_get_virtual_keyboard(device) != NULL;
-	if (!is_virtual) {
-		struct xkb_context *context = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
-		/* Empty fields fall back to XKB_DEFAULT_* and then "us". */
-		const struct shady_config *c = &server->config;
-		const struct xkb_rule_names names = {
-			.layout = c->xkb_layout[0] ? c->xkb_layout : NULL,
-			.variant = c->xkb_variant[0] ? c->xkb_variant : NULL,
-			.options = c->xkb_options[0] ? c->xkb_options : NULL,
-		};
-		struct xkb_keymap *keymap = xkb_keymap_new_from_names(context, &names,
-			XKB_KEYMAP_COMPILE_NO_FLAGS);
-		if (!keymap) {
-			wlr_log(WLR_ERROR, "input: invalid xkb layout '%s', using the default",
-				c->xkb_layout);
-			keymap = xkb_keymap_new_from_names(context, NULL, XKB_KEYMAP_COMPILE_NO_FLAGS);
-		}
-		keyboard->binding_state = xkb_state_new(keymap);
-		wlr_keyboard_set_keymap(wlr_keyboard, keymap);
-		if (c->numlock) {
-			xkb_mod_index_t num = xkb_keymap_mod_get_index(keymap, XKB_MOD_NAME_NUM);
-			if (num != XKB_MOD_INVALID)
-				wlr_keyboard_notify_modifiers(wlr_keyboard, 0, 0, 1u << num, 0);
-		}
-		xkb_keymap_unref(keymap);
-		xkb_context_unref(context);
-		wlr_keyboard_set_repeat_info(wlr_keyboard, c->repeat_rate, c->repeat_delay);
-	}
+	keyboard->is_virtual = wlr_input_device_get_virtual_keyboard(device) != NULL;
+	if (!keyboard->is_virtual) keyboard_apply_config(keyboard);
 
 	keyboard->modifiers.notify = keyboard_handle_modifiers;
 	wl_signal_add(&wlr_keyboard->events.modifiers, &keyboard->modifiers);
@@ -695,10 +700,33 @@ static void configure_libinput_pointer(struct shady_server *server,
 	}
 }
 
+static void pointer_destroyed(struct wl_listener *listener, void *data) {
+	(void)data;
+	struct shady_pointer *pointer = wl_container_of(listener, pointer, destroy);
+	wl_list_remove(&pointer->link);
+	wl_list_remove(&pointer->destroy.link);
+	free(pointer);
+}
+
 static void server_new_pointer(struct shady_server *server,
 		struct wlr_input_device *device) {
 	configure_libinput_pointer(server, device);
 	wlr_cursor_attach_input_device(server->cursor, device);
+	struct shady_pointer *pointer = calloc(1, sizeof(*pointer));
+	if (!pointer) return;
+	pointer->device = device;
+	pointer->destroy.notify = pointer_destroyed;
+	wl_signal_add(&device->events.destroy, &pointer->destroy);
+	wl_list_insert(&server->pointers, &pointer->link);
+}
+
+void shady_input_config_changed(struct shady_server *server) {
+	struct shady_keyboard *keyboard;
+	wl_list_for_each(keyboard, &server->keyboards, link)
+		if (!keyboard->is_virtual) keyboard_apply_config(keyboard);
+	struct shady_pointer *pointer;
+	wl_list_for_each(pointer, &server->pointers, link)
+		configure_libinput_pointer(server, pointer->device);
 }
 
 void server_new_input(struct wl_listener *listener, void *data) {

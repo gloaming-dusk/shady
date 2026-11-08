@@ -58,6 +58,20 @@ shady.set("touchpad_natural_scroll", true)
 shady.set("numlock", true)
 shady.set("repeat_rate", 30)
 shady.set("repeat_delay", 300)
+-- What the Settings application saved, over Tide's own values. Anything a
+-- config built on Tide sets afterwards wins over these.
+local here = debug.getinfo(1, "S").source:match("^@(.*)/[^/]*$") or "."
+local settings = dofile(here .. "/settings.lua")
+for _, key in ipairs({ "layout_gap", "window_corner_radius", "touchpad_tap",
+        "touchpad_natural_scroll", "gesture_fingers", "repeat_rate", "repeat_delay",
+        "xkb_layout", "xkb_options" }) do
+    -- A bad value must not cost the whole desktop.
+    if settings[key] ~= nil and not pcall(shady.set, key, settings[key]) then
+        shady.log("settings: ignoring " .. key)
+    end
+end
+if settings.accent then pcall(shady.set, "window_border_focus_color", settings.accent) end
+
 if os.getenv("TIDE_XKB_LAYOUT") then shady.set("xkb_layout", os.getenv("TIDE_XKB_LAYOUT")) end
 if os.getenv("TIDE_XKB_OPTIONS") then shady.set("xkb_options", os.getenv("TIDE_XKB_OPTIONS")) end
 

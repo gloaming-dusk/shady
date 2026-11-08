@@ -520,6 +520,9 @@ static int l_shady_config(lua_State *L){
 	else value=luaL_checkstring(L,2);
 	if(!shady_config_set(&lua_server->config,key,value))
 		return luaL_error(L,"invalid Shady config: %s = %s",key,value);
+	/* What is read once, when a device arrives or a window is placed. */
+	if(!strncmp(key,"xkb_",4)||!strncmp(key,"repeat_",7)||!strncmp(key,"touchpad_",9))shady_input_config_changed(lua_server);
+	if(!strncmp(key,"layout_",7))shady_layout_arrange(lua_server);
 	if(lua_server->renderer)shady_render_schedule_all_outputs(lua_server);
 	return 0;
 }

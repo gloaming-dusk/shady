@@ -65,6 +65,10 @@ struct view_def {
     bool input_widgets; /* take the pointer only over interactive widgets */
     bool text_input; /* take text from input methods (text-input-v3) */
     bool lock; /* a lock surface on every output while the session is locked */
+    /* shell.window: an ordinary application window. */
+    bool window;
+    char title[NAME_MAX_LEN], app_id[NAME_MAX_LEN];
+    uint32_t window_width, window_height;
 };
 
 /* A popup anchored to both edges of an axis, without a size along it, is
@@ -173,6 +177,7 @@ static struct {
     int inotify;
     struct shell_watch *watch;
     struct shell_timer *debounce;
+    const char *app; /* --app: the application to run instead of a shell */
 } host = { .inotify = -1 };
 
 static const char *REGISTRY_KEY = "shady.shell";
@@ -758,7 +763,11 @@ static void view_text(void *data, struct shell_surface *surface, const char *com
 
 static void view_closed(void *data, struct shell_surface *surface) {
     (void)surface;
-    view_destroy(data);
+    struct view *view = data;
+    struct shell_lua *lua = view->lua;
+    view_destroy(view);
+    /* An application ends with its last window. */
+    if (host.app && wl_list_empty(&lua->views)) shell_core_stop(&lua->shell->core);
 }
 
 static const struct shell_surface_handler view_handler = {
@@ -803,6 +812,9 @@ static struct view *view_create(struct shell_lua *lua, struct view_def *def,
         .output = output,
         .text_input = def->text_input,
         .lock = def->lock,
+        .window = def->window,
+        .title = def->title,
+        .app_id = def->app_id,
     };
     view->surface = shell_surface_create(&lua->shell->core, &config, &view_handler, view);
     if (!view->surface) {
@@ -1093,6 +1105,25 @@ static int l_popup(lua_State *L) {
     return 0;
 }
 
+/* shell.window{name=, title=, app_id=, width=, height=, view=, on_key=,
+ *              text_input=}: an ordinary window, opened like a popup. */
+static int l_window(lua_State *L) {
+    struct view_def *def = new_def(L, true);
+    def->window = def->fill = true; /* the view gets the size the window has */
+    lua_getfield(L, 1, "title");
+    snprintf(def->title, sizeof(def->title), "%s", luaL_optstring(L, -1, def->name));
+    lua_getfield(L, 1, "app_id");
+    snprintf(def->app_id, sizeof(def->app_id), "%s", luaL_optstring(L, -1, def->name));
+    lua_getfield(L, 1, "width");
+    def->window_width = (uint32_t)luaL_optinteger(L, -1, 800);
+    lua_getfield(L, 1, "height");
+    def->window_height = (uint32_t)luaL_optinteger(L, -1, 600);
+    lua_getfield(L, 1, "text_input");
+    def->text_input = lua_toboolean(L, -1);
+    lua_pop(L, 5);
+    return 0;
+}
+
 /* ---- popups ----------------------------------------------------------- */
 
 static void close_popup(struct shell_lua *lua, const char *name) {
@@ -1124,7 +1155,9 @@ static int l_open(lua_State *L) {
     }
     uint32_t width = 0, height = 0;
     if (!measure_popup(lua, def, output, args, &width, &height) ||
-            !view_create(lua, def, output, args, margin, width, height)) {
+            !view_create(lua, def, output, args, margin,
+                def->window ? def->window_width : width,
+                def->window ? def->window_height : height)) {
         if (args != LUA_NOREF) luaL_unref(L, LUA_REGISTRYINDEX, args);
         lua_pushboolean(L, 0);
         return 1;
@@ -1347,6 +1380,11 @@ static int l_cycle(lua_State *L) {
 }
 
 static int l_quit(lua_State *L) {
+    /* An application leaves by itself; the session goes on. */
+    if (host.app) {
+        shell_core_stop(&lua_of(L)->shell->core);
+        return 0;
+    }
     shady_shell_v1_terminate(protocol_of(L));
     shell_flush(lua_of(L)->shell);
     return 0;
@@ -1585,6 +1623,21 @@ static bool is_file(const char *path) {
  * directory (which ships shell/shaders/). */
 /* shell.fonts(dir): make the fonts in a directory (relative to the config
  * file) available to every widget. */
+static void reload(void *data);
+
+/* shell.reload(): run the config again, once this callback has returned. */
+static int l_reload(lua_State *L) {
+    shell_timer_cancel(host.debounce);
+    host.debounce = shell_timer_add(&lua_of(L)->shell->core, 0, reload, NULL);
+    return 0;
+}
+
+/* shell.compositor_lua(code): run Lua in the compositor. */
+static int l_compositor_lua(lua_State *L) {
+    lua_pushboolean(L, shell_compositor_lua(luaL_checkstring(L, 1)));
+    return 1;
+}
+
 /* shell.base(rice[, options]): runs that rice's shell.lua in this config,
  * passing it the options, and returns what the rice hands back. */
 static int l_base(lua_State *L) {
@@ -2058,6 +2111,9 @@ static const luaL_Reg api[] = {
     { "is_open", l_is_open },
     { "redraw", l_redraw },
     { "base", l_base },
+    { "window", l_window },
+    { "reload", l_reload },
+    { "compositor_lua", l_compositor_lua },
     { "fonts", l_fonts },
     { "key", l_key },
     { "shortcuts", l_shortcuts },
@@ -2220,6 +2276,10 @@ static void resolve_paths(void) {
     const char *data = getenv("SHADY_SHELL_DATA_DIR");
     snprintf(host.data_dir, sizeof(host.data_dir), "%s",
         data && *data ? data : SHADY_SHELL_DATA_DIR);
+    if (host.app) {
+        snprintf(host.config, sizeof(host.config), "%s", host.app);
+        return;
+    }
 
     const char *config = getenv("SHADY_SHELL_CONFIG");
     if (config && *config) {
@@ -2301,6 +2361,7 @@ bool shell_lua_init(struct shell *shell) {
     host.shell = shell;
     resolve_paths();
     struct shell_lua *lua = generation_load(shell, host.config);
+    if (!lua && host.app) return false; /* an application has no fallback */
     if (!lua) {
         char fallback[PATH_MAX + 16];
         snprintf(fallback, sizeof(fallback), "%s/default.lua", host.data_dir);
@@ -2317,6 +2378,7 @@ bool shell_lua_init(struct shell *shell) {
         fprintf(stderr, "shady-shell: loaded %s\n", host.config);
     }
     generation_start(shell, lua);
+    if (host.app) return true;
 
     host.inotify = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
     if (host.inotify >= 0) {
@@ -2324,6 +2386,10 @@ bool shell_lua_init(struct shell *shell) {
         host.watch = shell_watch_add(&shell->core, host.inotify, POLLIN, config_changed, NULL);
     }
     return true;
+}
+
+void shell_lua_set_app(const char *path) {
+    host.app = path;
 }
 
 void shell_lua_finish(struct shell *shell) {

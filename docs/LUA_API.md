@@ -79,6 +79,9 @@ shady.set("environment", true)
 shady.set("environment_path", os.getenv("HOME") .. "/rooms/test-room.obj")
 ```
 
+Called from `init.lua` or `shadyctl lua`, settings apply at once, also the ones
+read only when something starts: `xkb_*`, `repeat_*`, `touchpad_*` and `layout_*`.
+
 ### `shady.bind(action, shortcut)`
 
 In `config.lua`: set the key of a compositor binding.

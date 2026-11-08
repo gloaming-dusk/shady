@@ -13,6 +13,9 @@
 struct shell;
 struct shell_output;
 
+/* Before shell_lua_init: run `path` as an application, which has windows
+ * instead of the desktop's bars, and ends with its last window. */
+void shell_lua_set_app(const char *path);
 bool shell_lua_init(struct shell *shell);
 void shell_lua_finish(struct shell *shell);
 void shell_lua_output_added(struct shell *shell, struct shell_output *output);
