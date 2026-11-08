@@ -13,6 +13,8 @@
 #include <wayland-client.h>
 
 #include "ext-session-lock-v1-client-protocol.h"
+#include "virtual-keyboard-unstable-v1-client-protocol.h"
+#include "wlr-layer-shell-unstable-v1-protocol.h"
 #include "wlr-output-management-unstable-v1-client-protocol.h"
 
 struct probe;
@@ -52,6 +54,22 @@ struct probe {
 	bool exit_locked;
 	const char *disable_output;
 	bool disable_before_locked;
+	/* SHADY_SESSION_LOCK_LAYER: while locked, map an overlay layer surface
+	 * that asks for the keyboard, and see who gets the input. */
+	bool layer_mode;
+	struct wl_seat *seat;
+	struct wl_keyboard *keyboard;
+	struct wl_pointer *pointer;
+	struct wl_surface *keyboard_focus;
+	struct zwlr_layer_shell_v1 *layer_shell;
+	struct zwp_virtual_keyboard_manager_v1 *virtual_keyboard_manager;
+	struct zwp_virtual_keyboard_v1 *virtual_keyboard;
+	struct wl_surface *layer_wl_surface;
+	struct zwlr_layer_surface_v1 *layer_surface;
+	struct wl_buffer *layer_buffer;
+	bool layer_mapped;
+	uint64_t layer_mapped_at_ms;
+	uint64_t key_sent_at_ms;
 };
 
 static uint64_t now_ms(void) {
@@ -284,10 +302,174 @@ static bool request_output_disable(struct probe *p) {
 	return true;
 }
 
+static void keyboard_keymap(void *data, struct wl_keyboard *keyboard,
+		uint32_t format, int32_t fd, uint32_t size) {
+	(void)data; (void)keyboard; (void)format; (void)size;
+	close(fd);
+}
+static void keyboard_enter(void *data, struct wl_keyboard *keyboard, uint32_t serial,
+		struct wl_surface *surface, struct wl_array *keys) {
+	(void)keyboard; (void)serial; (void)keys;
+	struct probe *p = data;
+	p->keyboard_focus = surface;
+	if (surface != p->surface) status(p, "KEYBOARD_ON_LAYER=FAIL");
+}
+static void keyboard_leave(void *data, struct wl_keyboard *keyboard, uint32_t serial,
+		struct wl_surface *surface) {
+	(void)keyboard; (void)serial; (void)surface;
+	((struct probe *)data)->keyboard_focus = NULL;
+}
+static void keyboard_key(void *data, struct wl_keyboard *keyboard, uint32_t serial,
+		uint32_t time, uint32_t key, uint32_t state) {
+	(void)keyboard; (void)serial; (void)time; (void)key;
+	struct probe *p = data;
+	if (state != WL_KEYBOARD_KEY_STATE_PRESSED) return;
+	status(p, p->keyboard_focus == p->surface ? "KEY_TO_LOCK=PASS" : "KEY_TO_LOCK=FAIL");
+}
+static void keyboard_modifiers(void *data, struct wl_keyboard *keyboard, uint32_t serial,
+		uint32_t depressed, uint32_t latched, uint32_t locked, uint32_t group) {
+	(void)data; (void)keyboard; (void)serial;
+	(void)depressed; (void)latched; (void)locked; (void)group;
+}
+static const struct wl_keyboard_listener keyboard_listener = {
+	.keymap = keyboard_keymap,
+	.enter = keyboard_enter,
+	.leave = keyboard_leave,
+	.key = keyboard_key,
+	.modifiers = keyboard_modifiers,
+};
+
+static void pointer_enter(void *data, struct wl_pointer *pointer, uint32_t serial,
+		struct wl_surface *surface, wl_fixed_t x, wl_fixed_t y) {
+	(void)pointer; (void)serial; (void)x; (void)y;
+	struct probe *p = data;
+	status(p, surface == p->surface ? "POINTER_ON_LOCK=PASS" : "POINTER_ON_LAYER=FAIL");
+}
+static void pointer_leave(void *data, struct wl_pointer *pointer, uint32_t serial,
+		struct wl_surface *surface) {(void)data;(void)pointer;(void)serial;(void)surface;}
+static void pointer_motion(void *data, struct wl_pointer *pointer, uint32_t time,
+		wl_fixed_t x, wl_fixed_t y) {(void)data;(void)pointer;(void)time;(void)x;(void)y;}
+static void pointer_button(void *data, struct wl_pointer *pointer, uint32_t serial,
+		uint32_t time, uint32_t button, uint32_t state) {
+	(void)data; (void)pointer; (void)serial; (void)time; (void)button; (void)state;
+}
+static void pointer_axis(void *data, struct wl_pointer *pointer, uint32_t time,
+		uint32_t axis, wl_fixed_t value) {(void)data;(void)pointer;(void)time;(void)axis;(void)value;}
+static const struct wl_pointer_listener pointer_listener = {
+	.enter = pointer_enter,
+	.leave = pointer_leave,
+	.motion = pointer_motion,
+	.button = pointer_button,
+	.axis = pointer_axis,
+};
+
+static void seat_capabilities(void *data, struct wl_seat *seat, uint32_t capabilities) {
+	struct probe *p = data;
+	if ((capabilities & WL_SEAT_CAPABILITY_KEYBOARD) && !p->keyboard) {
+		p->keyboard = wl_seat_get_keyboard(seat);
+		wl_keyboard_add_listener(p->keyboard, &keyboard_listener, p);
+	}
+	if ((capabilities & WL_SEAT_CAPABILITY_POINTER) && !p->pointer) {
+		p->pointer = wl_seat_get_pointer(seat);
+		wl_pointer_add_listener(p->pointer, &pointer_listener, p);
+	}
+}
+static void seat_name(void *data, struct wl_seat *seat, const char *name) {
+	(void)data; (void)seat; (void)name;
+}
+static const struct wl_seat_listener seat_listener = {
+	.capabilities = seat_capabilities,
+	.name = seat_name,
+};
+
+/* A headless seat has no keyboard until a client makes one. */
+static bool create_virtual_keyboard(struct probe *p) {
+	static const char keymap[] =
+		"xkb_keymap {\n"
+		"  xkb_keycodes { include \"evdev+aliases(qwerty)\" };\n"
+		"  xkb_types { include \"complete\" };\n"
+		"  xkb_compat { include \"complete\" };\n"
+		"  xkb_symbols { include \"pc+us+inet(evdev)\" };\n"
+		"};\n";
+	char name[] = "/tmp/shady-lock-keymap-XXXXXX";
+	int fd = mkstemp(name);
+	if (fd < 0) return false;
+	unlink(name);
+	if (write(fd, keymap, sizeof(keymap)) != (ssize_t)sizeof(keymap)) {
+		close(fd);
+		return false;
+	}
+	p->virtual_keyboard = zwp_virtual_keyboard_manager_v1_create_virtual_keyboard(
+		p->virtual_keyboard_manager, p->seat);
+	zwp_virtual_keyboard_v1_keymap(p->virtual_keyboard,
+		WL_KEYBOARD_KEYMAP_FORMAT_XKB_V1, fd, sizeof(keymap));
+	close(fd);
+	return true;
+}
+
+static void layer_configure(void *data, struct zwlr_layer_surface_v1 *surface,
+		uint32_t serial, uint32_t width, uint32_t height) {
+	struct probe *p = data;
+	zwlr_layer_surface_v1_ack_configure(surface, serial);
+	if (p->layer_buffer) return;
+	p->layer_buffer = make_buffer(p, width, height);
+	if (!p->layer_buffer) return;
+	wl_surface_attach(p->layer_wl_surface, p->layer_buffer, 0, 0);
+	wl_surface_damage_buffer(p->layer_wl_surface, 0, 0, (int32_t)width, (int32_t)height);
+	wl_surface_commit(p->layer_wl_surface);
+	if (wl_display_roundtrip(p->display) < 0) return;
+	p->layer_mapped = true;
+	p->layer_mapped_at_ms = now_ms();
+	status(p, "LAYER_MAPPED=PASS");
+}
+static void layer_closed(void *data, struct zwlr_layer_surface_v1 *surface) {
+	(void)data; (void)surface;
+}
+static const struct zwlr_layer_surface_v1_listener layer_listener = {
+	.configure = layer_configure,
+	.closed = layer_closed,
+};
+
+static void create_layer_surface(struct probe *p) {
+	p->layer_wl_surface = wl_compositor_create_surface(p->compositor);
+	p->layer_surface = zwlr_layer_shell_v1_get_layer_surface(p->layer_shell,
+		p->layer_wl_surface, p->output, ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY, "lock-probe");
+	zwlr_layer_surface_v1_set_anchor(p->layer_surface,
+		ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP | ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM |
+		ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT | ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT);
+	zwlr_layer_surface_v1_set_keyboard_interactivity(p->layer_surface,
+		ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_EXCLUSIVE);
+	zwlr_layer_surface_v1_add_listener(p->layer_surface, &layer_listener, p);
+	wl_surface_commit(p->layer_wl_surface);
+}
+
+/* Lock held and drawn: map the layer surface, give it time to take the
+ * keyboard, then press a key. True once the key has had time to arrive. */
+static bool layer_step(struct probe *p) {
+	if (!p->layer_surface) create_layer_surface(p);
+	if (!p->layer_mapped || now_ms() - p->layer_mapped_at_ms < 150) return false;
+	if (!p->key_sent_at_ms) {
+		zwp_virtual_keyboard_v1_key(p->virtual_keyboard, 0, 30, WL_KEYBOARD_KEY_STATE_PRESSED);
+		zwp_virtual_keyboard_v1_key(p->virtual_keyboard, 1, 30, WL_KEYBOARD_KEY_STATE_RELEASED);
+		p->key_sent_at_ms = now_ms();
+	}
+	return now_ms() - p->key_sent_at_ms >= 200;
+}
+
 static void registry_global(void *data, struct wl_registry *registry,
 		uint32_t name, const char *interface, uint32_t version) {
 	struct probe *p = data;
-	if (strcmp(interface, wl_compositor_interface.name) == 0) {
+	if (p->layer_mode && strcmp(interface, wl_seat_interface.name) == 0 && !p->seat) {
+		p->seat = wl_registry_bind(registry, name, &wl_seat_interface, 1);
+		wl_seat_add_listener(p->seat, &seat_listener, p);
+	} else if (p->layer_mode && strcmp(interface, zwlr_layer_shell_v1_interface.name) == 0) {
+		p->layer_shell = wl_registry_bind(registry, name,
+			&zwlr_layer_shell_v1_interface, version < 4 ? version : 4);
+	} else if (p->layer_mode &&
+			strcmp(interface, zwp_virtual_keyboard_manager_v1_interface.name) == 0) {
+		p->virtual_keyboard_manager = wl_registry_bind(registry, name,
+			&zwp_virtual_keyboard_manager_v1_interface, 1);
+	} else if (strcmp(interface, wl_compositor_interface.name) == 0) {
 		p->compositor = wl_registry_bind(registry, name,
 			&wl_compositor_interface, version < 6 ? version : 6);
 	} else if (strcmp(interface, wl_shm_interface.name) == 0) {
@@ -322,7 +504,9 @@ static int dispatch_until_unlock(struct probe *p) {
 	int fd = wl_display_get_fd(p->display);
 	for (;;) {
 		if (p->finished) return 5;
-		if (p->locked && p->configured &&
+		bool layer_done = !p->layer_mode ||
+			(p->locked && p->configured && layer_step(p));
+		if (p->locked && p->configured && layer_done &&
 				(!p->disable_output || !*p->disable_output || p->output_config_done) &&
 				now_ms() - p->locked_at_ms >= p->hold_ms) {
 			if (p->exit_locked) {
@@ -354,6 +538,7 @@ int main(void) {
 		.hold_ms = hold && *hold ? (uint32_t)strtoul(hold, NULL, 10) : 800u,
 		.exit_locked = getenv("SHADY_SESSION_LOCK_EXIT_LOCKED") != NULL,
 		.disable_output = getenv("SHADY_SESSION_LOCK_DISABLE_OUTPUT"),
+		.layer_mode = getenv("SHADY_SESSION_LOCK_LAYER") != NULL,
 	};
 	p.display = wl_display_connect(NULL);
 	if (!p.display) return 1;
@@ -362,6 +547,12 @@ int main(void) {
 	wl_registry_add_listener(registry, &registry_listener, &p);
 	if (wl_display_roundtrip(p.display) < 0) return 2;
 	if (!p.compositor || !p.shm || !p.output || !p.manager) return 3;
+	if (p.layer_mode) {
+		if (!p.seat || !p.layer_shell || !p.virtual_keyboard_manager ||
+				!create_virtual_keyboard(&p) ||
+				wl_display_roundtrip(p.display) < 0 ||
+				wl_display_roundtrip(p.display) < 0 || !p.keyboard || !p.pointer) return 16;
+	}
 	if (p.disable_output && *p.disable_output) {
 		if (!p.output_manager || wl_display_roundtrip(p.display) < 0 ||
 				!p.output_manager_done) return 14;

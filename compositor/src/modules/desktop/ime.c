@@ -277,7 +277,8 @@ bool shady_ime_handle_key(struct shady_server *server, struct wlr_keyboard *sour
 		uint32_t time_msec, uint32_t keycode, uint32_t state) {
 	struct shady_desktop_state *desktop = shady_desktop_state(server);
 	struct shady_ime_state *ime = desktop ? desktop->ime : NULL;
-	if (!keyboard_grabbed(ime, source)) return false;
+	/* A locked session's keys, its password, go to the lock surface alone. */
+	if ((desktop && desktop->session_locked) || !keyboard_grabbed(ime, source)) return false;
 	struct wlr_keyboard *keyboard = wlr_seat_get_keyboard(server->seat);
 	if (keyboard)
 		wlr_input_method_keyboard_grab_v2_set_keyboard(ime->active_keyboard_grab, keyboard);
@@ -290,7 +291,7 @@ bool shady_ime_handle_modifiers(struct shady_server *server, struct wlr_keyboard
 		struct wlr_keyboard_modifiers *modifiers) {
 	struct shady_desktop_state *desktop = shady_desktop_state(server);
 	struct shady_ime_state *ime = desktop ? desktop->ime : NULL;
-	if (!keyboard_grabbed(ime, source)) return false;
+	if ((desktop && desktop->session_locked) || !keyboard_grabbed(ime, source)) return false;
 	struct wlr_keyboard *keyboard = wlr_seat_get_keyboard(server->seat);
 	if (keyboard)
 		wlr_input_method_keyboard_grab_v2_set_keyboard(ime->active_keyboard_grab, keyboard);

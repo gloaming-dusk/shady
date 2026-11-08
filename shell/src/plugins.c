@@ -391,9 +391,13 @@ static bool resolve(const char *spec, const char *config_dir, char *out, size_t 
     }
     char plugins_dir[PATH_MAX];
     snprintf(plugins_dir, sizeof(plugins_dir), "%s/plugins", config_dir ? config_dir : ".");
-    return try_dir(config_dir, file, out, size) || try_dir(plugins_dir, file, out, size) ||
-        try_dir(SHADY_SHELL_PLUGIN_DIR, file, out, size) ||
-        try_dir(SHADY_SHELL_PLUGIN_INSTALL_DIR, file, out, size);
+    if (try_dir(config_dir, file, out, size) || try_dir(plugins_dir, file, out, size))
+        return true;
+#ifdef SHADY_SHELL_PLUGIN_DIR
+    /* The build tree, in builds that run from it (not -Dinstalled_data). */
+    if (try_dir(SHADY_SHELL_PLUGIN_DIR, file, out, size)) return true;
+#endif
+    return try_dir(SHADY_SHELL_PLUGIN_INSTALL_DIR, file, out, size);
 }
 
 void shell_plugins_init(struct shell *shell) {

@@ -104,6 +104,13 @@ static void set_message(const char *kind, const char *text) {
     api->set_value(host, "greetd.message", text ? text : "");
 }
 
+/* Whether the answer is shown belongs to one question: the next password
+ * must not inherit a visible prompt's "0". */
+static void clear_prompt(void) {
+    api->set_value(host, "greetd.prompt", "");
+    api->set_value(host, "greetd.secret", "1");
+}
+
 /* ---- accounts and sessions -------------------------------------------- */
 
 static bool login_shell(const char *shell) {
@@ -396,6 +403,7 @@ static void handle_response(const struct json_object *msg) {
         const char *kind = json_get_string(msg, "error_type");
         if (kind && !strcmp(kind, "auth_error")) text = "Wrong password";
         set_message("error", text && *text ? text : "Login failed");
+        clear_prompt();
         wipe(g.pending, sizeof(g.pending));
         g.has_pending = false;
         request_cancel();
@@ -485,7 +493,7 @@ static void action_login(const char *user, void *data) {
     (void)data;
     if (!*user) return;
     set_message("info", "");
-    api->set_value(host, "greetd.prompt", "");
+    clear_prompt();
     if (g.demo) {
         snprintf(g.user, sizeof(g.user), "%s", user);
         demo_login();
@@ -531,6 +539,7 @@ static void action_cancel(const char *argument, void *data) {
     wipe(g.pending, sizeof(g.pending));
     g.has_pending = false;
     set_message("info", "");
+    clear_prompt();
     if (!g.demo && g.active && g.inflight == REQUEST_NONE) request_cancel();
     else set_state("idle");
 }

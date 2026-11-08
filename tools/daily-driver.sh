@@ -59,6 +59,7 @@ test_daily() {
   SHADY_DAILY_BUILD_DIR="$BUILD_DIR" SHADY_SESSION_LOCK_OUTPUTS=2 bash ./tests/headless-session-lock.sh
   SHADY_DAILY_BUILD_DIR="$BUILD_DIR" bash ./tests/headless-session-lock-output-race.sh
   SHADY_DAILY_BUILD_DIR="$BUILD_DIR" bash ./tests/headless-session-lock-client-exit.sh
+  SHADY_DAILY_BUILD_DIR="$BUILD_DIR" bash ./tests/headless-session-lock-layer.sh
   SHADY_BORDER_TEST_BUILD_DIR="$BUILD_DIR" bash ./tests/headless-border-plugin.sh
   SHADY_DAILY_BUILD_DIR="$BUILD_DIR" bash ./tests/headless-shell-taskbar.sh
   SHADY_DAILY_BUILD_DIR="$BUILD_DIR" bash ./tests/headless-shell-quick.sh

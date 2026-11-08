@@ -98,6 +98,9 @@ static void focus_layer_surface(struct shady_layer_surface *layer) {
 			ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE) return;
 
 	struct shady_server *server = layer->server;
+	/* The lock surface keeps the keyboard until the session is unlocked,
+	 * whatever maps meanwhile. */
+	if (shady_desktop_state(server)->session_locked) return;
 	struct wlr_surface *old = server->seat->keyboard_state.focused_surface;
 	if (old && old != surface->surface) {
 		struct wlr_xdg_toplevel *xdg = wlr_xdg_toplevel_try_from_wlr_surface(old);

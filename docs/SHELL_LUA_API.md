@@ -14,7 +14,8 @@ The shell loads the first of:
    overrides it)
 
 If your config fails to load at startup, the shell logs the error and
-falls back to the default. Edits are picked up live: saving any `.lua` file
+falls back to the default, unless `SHADY_SHELL_NO_FALLBACK=1` makes it exit
+instead (the greeter does). Edits are picked up live: saving any `.lua` file
 in the config's directory reloads the config in a fresh Lua state. If the
 new version fails, the error is logged and the running UI stays as it was.
 `require` finds modules next to the config and in the data directory.

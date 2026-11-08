@@ -206,10 +206,13 @@ static struct shady_toplevel *desktop_toplevel_at(struct shady_server *server,
 
 static bool overlay_surface_at(struct shady_server *server,
 		double lx, double ly, struct wlr_surface **surface, double *sx, double *sy) {
-	if (!server->overlay_tree) return false;
+	/* While locked only the lock's own tree can take the pointer. */
+	struct shady_desktop_state *desktop = shady_desktop_state(server);
+	struct wlr_scene_tree *tree =
+		desktop->session_locked ? desktop->session_lock_tree : server->overlay_tree;
+	if (!tree) return false;
 	struct wlr_surface *scene_hit = NULL;
-	struct wlr_scene_node *node = wlr_scene_node_at(&server->overlay_tree->node,
-		lx, ly, sx, sy);
+	struct wlr_scene_node *node = wlr_scene_node_at(&tree->node, lx, ly, sx, sy);
 	if (node && node->type == WLR_SCENE_NODE_BUFFER) {
 		struct wlr_scene_surface *scene_surface =
 			wlr_scene_surface_try_from_buffer(wlr_scene_buffer_from_node(node));
@@ -641,7 +644,8 @@ void shady_input_add_keyboard(struct shady_server *server,
 	/* A headless compositor can gain its first keyboard after a window was
 	 * already focused (for example via zwp_virtual_keyboard_v1). Restore
 	 * keyboard focus to the topmost visible mapped toplevel in that case. */
-	if (!server->seat->keyboard_state.focused_surface) {
+	if (!server->seat->keyboard_state.focused_surface &&
+			!shady_desktop_state(server)->session_locked) {
 		struct shady_toplevel *toplevel;
 		wl_list_for_each(toplevel, &server->toplevels, link) {
 			if (!toplevel->mapped || !toplevel->scene_tree ||

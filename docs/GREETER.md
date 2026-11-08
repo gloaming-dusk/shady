@@ -49,6 +49,11 @@ The card asks the plugin to authenticate; when greetd accepts the chosen
 session the plugin asks the compositor to quit over its IPC socket, and
 greetd starts the session once the greeter has exited.
 
+The greeter fails closed. If the card cannot load, `shady-shell` exits rather
+than showing the default shell and its launcher, and when `shady-shell` ends
+for any reason the compositor ends with it. The `greetd` plugin, which sees
+every password, is looked for in the install directory first.
+
 ## The greetd plugin
 
 Values (read with `shell.value`):

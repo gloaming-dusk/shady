@@ -291,9 +291,11 @@ if shell_enabled
       '-DSHELL_HAS_GL=@0@'.format(shell_gl_deps_found ? 1 : 0),
       '-DHAVE_SD_BUS=@0@'.format(shell_sd_bus.found() ? 1 : 0),
       '-DSHADY_SHELL_DATA_DIR="@0@"'.format(join_paths(shady_data_root, 'shell')),
-      '-DSHADY_SHELL_PLUGIN_DIR="@0@"'.format(meson.current_build_dir()),
       '-DSHADY_SHELL_PLUGIN_INSTALL_DIR="@0@"'.format(join_paths(get_option('prefix'), get_option('libdir'), 'shady', 'shell-plugins')),
-    ],
+    # An installed shell must not load code from where it happened to be built.
+    ] + (get_option('installed_data') ? [] : [
+      '-DSHADY_SHELL_PLUGIN_DIR="@0@"'.format(meson.current_build_dir()),
+    ]),
     dependencies: [wayland_client, cairo, pangocairo, shell_pangoft2, shell_fontconfig, shell_xkbcommon, shell_sd_bus, lua, dl, cc.find_library('m')] + shell_gl_deps,
     install: true)
 
@@ -329,6 +331,13 @@ if shell_enabled
     dependencies: [cairo],
     install: true,
     install_dir: join_paths(get_option('libdir'), 'shady', 'shell-plugins'))
+
+  greetd_plugin_test = executable('greetd-plugin-test',
+    ['tests/greetd-plugin-test.c', 'greeter/src/greetd.c', 'compositor/src/ipc/json.c'],
+    include_directories: include_directories('compositor/src', 'include'),
+    dependencies: [cairo],
+    install: false)
+  test('greetd-plugin', greetd_plugin_test)
 
   shared_module('shady-shell-plugin-probe',
     'tests/shell-plugin-probe.c',
@@ -418,6 +427,11 @@ if shell_enabled
       ext_session_lock_protocol_code,
       output_management_client_header,
       output_management_protocol_code,
+      layer_shell_protocol_header,
+      layer_shell_protocol_code,
+      xdg_shell_protocol_code,
+      virtual_keyboard_client_header,
+      virtual_keyboard_protocol_code,
       'tests/headless-session-lock-probe.c',
     ],
     include_directories: include_directories('.'),
@@ -766,6 +780,7 @@ install_symlink('build',
 session_conf = configuration_data()
 session_conf.set('bindir', join_paths(get_option('prefix'), get_option('bindir')))
 session_conf.set('datadir', join_paths(get_option('prefix'), shady_data_install_dir))
+session_conf.set('shellplugindir', join_paths(get_option('prefix'), get_option('libdir'), 'shady', 'shell-plugins'))
 configure_file(input: 'data/shady-session.in', output: 'shady-session',
   configuration: session_conf,
   install: true, install_dir: get_option('bindir'), install_mode: 'rwxr-xr-x')

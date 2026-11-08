@@ -281,7 +281,9 @@ void server_new_session_lock(struct wl_listener *listener, void *data) {
 	if (desktop->session_lock_tree) {
 		wlr_scene_node_destroy(&desktop->session_lock_tree->node);
 	}
-	desktop->session_lock_tree = wlr_scene_tree_create(server->overlay_tree);
+	/* Directly under the root, above the overlay tree: layer surfaces added to
+	 * that tree later must not end up on top of the lock. */
+	desktop->session_lock_tree = wlr_scene_tree_create(&server->scene->tree);
 	if (!desktop->session_lock_tree) {
 		wlr_session_lock_v1_destroy(wlr_lock);
 		return;
@@ -312,6 +314,8 @@ void server_new_session_lock(struct wl_listener *listener, void *data) {
 	wl_signal_add(&wlr_lock->events.destroy, &lock->destroy);
 
 	wlr_seat_pointer_clear_focus(server->seat);
+	/* Nothing hears the keyboard until a lock surface exists to take it. */
+	wlr_seat_keyboard_clear_focus(server->seat);
 
 	struct shady_output *output;
 	wl_list_for_each(output, &server->outputs, link) {

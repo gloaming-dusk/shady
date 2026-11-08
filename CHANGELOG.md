@@ -20,6 +20,21 @@ Breaking:
   still load `bad-apple` when it is installed, and run without it otherwise.
   `tools/bad-apple.sh` moved along with it.
 
+Security:
+
+- A locked session keeps its input and its screen: layer surfaces can no longer
+  take the keyboard or the pointer from the lock or draw over it, and neither
+  an input method's keyboard grab, a newly connected keyboard nor a workspace
+  switch can take keys from it.
+- The greeter never falls back to the default shell and its launcher when its
+  login card cannot load (`SHADY_SHELL_NO_FALLBACK`), and ends instead of
+  staying on an empty screen when the card goes away.
+- The greeter only loads its password-handling plugin from the install
+  directory, and `-Dinstalled_data=true` builds no longer search their build
+  directory for shell plugins.
+- The greeter no longer shows a password in clear after a PAM prompt that
+  displayed its answer.
+
 New:
 
 - `programs.shady.plugins` in the NixOS module, and `plugin_path` in the C plugin

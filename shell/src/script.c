@@ -2280,7 +2280,11 @@ bool shell_lua_init(struct shell *shell) {
     if (!lua) {
         char fallback[PATH_MAX + 16];
         snprintf(fallback, sizeof(fallback), "%s/default.lua", host.data_dir);
-        if (strcmp(fallback, host.config) != 0) {
+        /* The greeter sets this: the default shell has a launcher, which
+         * must never appear on a login screen. */
+        const char *no_fallback = getenv("SHADY_SHELL_NO_FALLBACK");
+        bool may_fall_back = !no_fallback || !*no_fallback || strcmp(no_fallback, "0") == 0;
+        if (may_fall_back && strcmp(fallback, host.config) != 0) {
             fprintf(stderr, "shady-shell: falling back to %s\n", fallback);
             lua = generation_load(shell, fallback);
         }

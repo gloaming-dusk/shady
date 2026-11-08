@@ -33,8 +33,9 @@ local ok, err = shell.plugin("sysinfo", { interval = 1000 })
 
 A name is looked up as `libshady-shell-plugin-<name>.so` in
 `$SHADY_SHELL_PLUGIN_PATH` (colon-separated), next to the config, in its
-`plugins/` subdirectory, in the build directory and in
-`<libdir>/shady/shell-plugins`. Anything containing a `/` is a path. The
+`plugins/` subdirectory, in the build directory (unless built with
+`-Dinstalled_data=true`) and in `<libdir>/shady/shell-plugins`. Anything
+containing a `/` is a path. The
 table becomes the plugin's options.
 
 A plugin is loaded once per shell process. Reloading the Lua config keeps

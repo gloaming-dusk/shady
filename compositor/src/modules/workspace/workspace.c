@@ -11,6 +11,7 @@
 #include "../../event/event.h"
 #include "../../render/render.h"
 #include "state.h"
+#include "../desktop/state.h"
 #include "../layout/layout.h"
 
 static ssize_t find_workspace(struct shady_workspace_state *state,
@@ -92,7 +93,9 @@ bool shady_workspace_switch(struct shady_server *server, const char *name) {
 	}
 	state->current = (size_t)index;
 	refresh_visibility(server);
-	wlr_seat_keyboard_clear_focus(server->seat);
+	/* Any client can switch workspaces: not away from the lock's keyboard. */
+	if (!shady_desktop_state(server)->session_locked)
+		wlr_seat_keyboard_clear_focus(server->seat);
 	wlr_seat_pointer_clear_focus(server->seat);
 	struct shady_toplevel *focus = preferred_current_mapped(server);
 	if (focus) focus_toplevel(focus);
