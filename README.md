@@ -111,9 +111,10 @@ Writing one: [C plugin API](docs/C_PLUGIN_API.md), starting from
 - [Desktop integration](docs/DESKTOP.md) · [Greeter](docs/GREETER.md) · [Shell design](docs/SHELL_DESIGN.md)
 - [Development](docs/DEVELOPMENT.md): layout, build options, tests · [Architecture](docs/ARCHITECTURE.md)
 
-The project site, <https://gloaming-dusk.github.io/shady/>, is built from
-[shady-website](https://github.com/gloaming-dusk/shady-website) and renders
-these `docs/*.md` files directly; `.github/workflows/pages.yml` deploys it.
+Shady is the compositor of [Gloam](https://github.com/gloaming-dusk/gloam), a
+desktop. Its site, <https://gloaming-dusk.github.io/>, renders these `docs/*.md`
+files directly; its source is in
+[gloaming-dusk.github.io](https://github.com/gloaming-dusk/gloaming-dusk.github.io).
 
 ## What this repository holds
 

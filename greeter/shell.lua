@@ -51,7 +51,7 @@ local function selection()
     end
     if not login.session then
         login.session = index_of(kinds, "id", shell.value("greetd.last_session", ""),
-            index_of(kinds, "id", "shady", 1))
+            index_of(kinds, "id", "gloam", index_of(kinds, "id", "shady", 1)))
     end
     login.user = math.max(1, math.min(login.user, math.max(#people, 1)))
     login.session = math.max(1, math.min(login.session, math.max(#kinds, 1)))
