@@ -1,4 +1,4 @@
-project('shady', 'c', version: '0.1.0',
+project('shady', 'c', version: '0.2.0',
   default_options: ['buildtype=debugoptimized', 'c_std=c11', 'warning_level=2'])
 
 wlroots = dependency('wlroots-0.20', version: ['>=0.20.2', '<0.21'])
