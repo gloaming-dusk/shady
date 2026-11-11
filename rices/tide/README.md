@@ -1,88 +1,24 @@
-# Tide
+# Tide (compositor side)
 
-![Tide: three terminals in a strip of columns under a glass bar, a notification at the top right](preview.jpg)
+What Shady is with nothing configured: niri's scrolling columns and keys,
+window rules, screenshots and idle. Tide's shell (bar, launcher, control
+center, notifications, lock screen) is not part of Shady: it comes with
+[Gloam](https://github.com/gloaming-dusk/gloam), which installs its
+`shell.lua` into this same rice, `share/shady/rices/tide`.
 
-Shady's default desktop, and where [customizing](../../docs/CUSTOMIZING.md)
-starts. Windows tile in a strip of columns that scrolls sideways, niri's model, and the keys are niri's defaults, so moving over
-from niri needs no relearning:
+| | |
+|---|---|
+| `config.lua` | the scrolling layout, borders and corners, input |
+| `init.lua` | the keys (`Super+Shift+/` lists them), rules, idle, screenshots |
+| `settings.lua` | reads what Gloam's Settings saved in `~/.config/shady/settings.lua` |
 
-- a new window opens as a column right of the focused one, half the screen
-  wide; moving the focus glides the strip so the focused column is on
-  screen (`Super+←/→`, `Super+h/l`), and a column stacks windows
-  (`Super+[`/`]` to join or leave one),
-- `Super+R` steps a column through ⅓, ½ and ⅔ of the screen,
-  `Super+-`/`=` narrows and widens it, `Super+F` fills the screen with it,
-  `Super+V` floats a window and back,
-- workspaces are numbered and made as needed: `Super+1…9`,
-  `Super+Page Up/Down` or `U`/`I`, `Super`+wheel, or a three-finger swipe up
-  and down; a three-finger swipe sideways moves to the next window over, the
-  strip following the fingers,
-- tapping `Super` on its own, or `Super+O`, pulls the camera back over the
-  strip, tilted a little. Start typing to search the launcher, in Hangul too.
-  Click a window to fly back into it, or choose with the arrows and press
-  `Enter`; `Esc` or another tap leaves. A strip too long to show whole
-  scrolls: sideways on the touchpad, `Shift`+wheel or a three-finger swipe.
-  The wheel changes workspace. Neither moves the focus.
+With a shell connected, the keys that belong to it (launcher, control
+center, lock, volume, brightness, media, the screenshot picker) are sent to
+it as the published value `tide.do`. Without one they do what can be done
+alone: `fuzzel`, `wofi`, `tofi` or `bemenu` for the launcher, `swaylock`
+to lock, `wpctl` or `pactl`, `brightnessctl` and `playerctl` for the
+hardware keys, and `shady.screenshot()` for `Print`, whichever is
+installed.
 
-![The overview: the camera pulled back over the strip of columns](overview.jpg)
-
-The shell floats over the top edge as three glass islands: the workspaces,
-with a live minimap of the current strip (its columns, the focused one lit,
-the part on screen framed); the clock (click: a calendar); and the
-system's state (click: the control center, `Super+S`).
-
-![The control center: sliders, toggles, media and notifications](control.jpg)
-
-- **Control center**: volume and brightness, Wi-Fi, Bluetooth, do not
-  disturb, stay awake, the power profile, a region screenshot, what is
-  playing, the notifications and the battery.
-- **Launcher** (`Super+Space`): applications ordered by how often you
-  launch them; `= 12*7` calculates (Enter copies the result), `> cmd` runs
-  a command, and "lock", "suspend", "restart" match the session's commands.
-- **Screenshots** (`Print`, or the control center's tile): a picker over the
-  live screen. Drag a region and press `Enter`, click a window, or take the
-  whole screen; `Tab` or `R`, `W`, `S` change mode and `Esc` cancels. The
-  picture goes to `~/Pictures/Screenshots` and, with `wl-copy`, the clipboard,
-  and a notification says so. `Ctrl+Print`
-  takes the screen and `Alt+Print` the focused window straight away.
-- **Power menu** (`Super+Shift+E`): lock, log out, suspend, restart, shut
-  down.
-- **OSD**: volume and brightness keys show a bar at the bottom.
-- **Lock screen** (`Super+Alt+L`, and after five minutes idle): the shell's
-  own, over the same sea, checked with PAM; with a fingerprint reader it
-  listens to the reader and the password field at once. The screen turns
-  off half a minute later. A playing video holds both back.
-
-![The launcher](launcher.jpg) ![The lock screen](lock.jpg)
-
-```bash
-nix develop -c ./tools/build.sh
-nix develop -c ./rices/tide/run.sh          # nested in a Wayland session
-nix develop -c ./rices/tide/run-native.sh   # directly on a VT (DRM + libinput)
-```
-
-On NixOS, with the flake's module:
-
-```nix
-programs.shady = {
-  enable = true;
-  greeter.enable = true;     # greetd with Shady's greeter, instead of SDDM
-};
-```
-
-`Super+Shift+/` lists every key. `TIDE_LIGHT=1` draws through wlroots'
-scene graph instead of the GL renderer: no rounded corners, glass or
-overview, and the least GPU work. `TIDE_IDLE_LOCK` and
-`TIDE_IDLE_SCREEN_OFF` (seconds, 0 for never) change the idle times;
-`TIDE_XKB_LAYOUT` and `TIDE_XKB_OPTIONS` the keyboard. A PNG at
-`~/.config/shady/wallpaper.png` replaces the night sea.
-
-The shell uses optional tools when they are installed: `wpctl`, `nmcli`,
-`bluetoothctl`, `powerprofilesctl`, `playerctl`, `upower`, `grim`, `slurp`,
-`wl-copy` and `notify-send`; the NixOS module installs the ones that are
-not already part of a desktop. The lock screen checks passwords with the
-`shady-lock` PAM service (and fingerprints with `shady-lock-fingerprint`),
-which the module sets up; elsewhere it falls back to `swaylock`'s or
-`login`'s.
-
-`capture.sh` regenerates the pictures.
+Start a config of your own from it with `shady.base("tide")` in
+`config.lua` and `init.lua`; see [Customizing](../../docs/CUSTOMIZING.md).

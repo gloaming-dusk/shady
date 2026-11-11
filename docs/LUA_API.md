@@ -171,9 +171,17 @@ Run a shell command through `/bin/sh -lc`.
 
 Terminate the compositor from the event loop.
 
-### `shady.toggle_launcher()`
+### `shady.toggle_launcher() -> boolean`
 
-Ask `shady-shell` to toggle its launcher through the shell protocol.
+Ask `shady-shell` to toggle its launcher through the shell protocol. False
+when no shell heard it.
+
+### `shady.shell_connected() -> boolean`
+
+Whether a shell is connected over the `shady-shell-v1` protocol
+([shady-shell](https://github.com/gloaming-dusk/shady-shell), which is a
+separate package). Tide's keys use it to fall back on something the
+compositor can do alone when there is no shell.
 
 ### Shortcut overlay
 

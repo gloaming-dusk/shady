@@ -428,7 +428,8 @@ static int l_shady_value(lua_State *L) {
 	return 1;
 }
 
-static int l_shady_toggle_launcher(lua_State *L){(void)L;shady_shell_protocol_toggle_launcher(lua_server);return 0;}
+static int l_shady_toggle_launcher(lua_State *L){lua_pushboolean(L,shady_shell_protocol_toggle_launcher(lua_server));return 1;}
+static int l_shady_shell_connected(lua_State *L){lua_pushboolean(L,shady_shell_protocol_connected(lua_server));return 1;}
 /* shady.describe(keys, description[, group]): list a shortcut handled
  * elsewhere (by the shell, or several bindings under one line such as
  * "Super+1…3"); description nil removes it. */
@@ -990,6 +991,7 @@ static void install_api(lua_State *L){
 	lua_pushcfunction(L,l_shady_quit);lua_setfield(L,-2,"quit");
 	lua_pushcfunction(L,l_shady_spawn);lua_setfield(L,-2,"spawn");
 	lua_pushcfunction(L,l_shady_toggle_launcher);lua_setfield(L,-2,"toggle_launcher");
+	lua_pushcfunction(L,l_shady_shell_connected);lua_setfield(L,-2,"shell_connected");
 	lua_pushcfunction(L,l_shady_toggle_shortcuts);lua_setfield(L,-2,"toggle_shortcuts");
 	lua_pushcfunction(L,l_shady_shortcuts);lua_setfield(L,-2,"shortcuts");
 	lua_pushcfunction(L,l_shady_describe);lua_setfield(L,-2,"describe");

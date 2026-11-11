@@ -8,9 +8,10 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 BUILD_DIR="${SHADY_SPATIAL_TEST_BUILD_DIR:-build-spatial-asan}"
-for bin in shady shady-shell; do
+for bin in shady; do
     [[ -x "$BUILD_DIR/$bin" ]] || { echo "layer-effect: missing $BUILD_DIR/$bin" >&2; exit 2; }
 done
+source "$ROOT/tests/shell-client.sh"
 command -v grim >/dev/null || { echo "layer-effect: needs grim" >&2; exit 2; }
 
 tmp="$(mktemp -d)"
@@ -25,7 +26,6 @@ log="$tmp/log"
     export LIBGL_ALWAYS_SOFTWARE=1
     export SHADY_ROOT="$ROOT"
     export SHADY_LUA_INIT="$ROOT/tests/headless-layer-effect-init.lua"
-    export SHADY_SHELL_BIN="$ROOT/$BUILD_DIR/shady-shell"
     export SHADY_SHELL_CONFIG="$ROOT/tests/layer-effect/shell.lua"
     export SHADY_SHELL_RENDERER=shm
     export LAYER_EFFECT_STATUS="$status"

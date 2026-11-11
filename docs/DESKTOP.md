@@ -1,8 +1,8 @@
 # Desktop integration
 
-What Shady offers ordinary Wayland clients, bars and shells, and how its own
-shell is connected. The shell's Lua API is in
-[SHELL_LUA_API.md](SHELL_LUA_API.md), the IPC socket in
+What Shady offers ordinary Wayland clients, bars and shells, and how
+[shady-shell](https://github.com/gloaming-dusk/shady-shell) is connected. The shell's Lua API is in
+[its repository](https://github.com/gloaming-dusk/shady-shell/blob/main/docs/SHELL_LUA_API.md), the IPC socket in
 [IPC_API.md](IPC_API.md).
 
 ## Two render paths
@@ -59,21 +59,24 @@ lines.
 
 ## shady-shell
 
-`shady-shell` is a separate Wayland client, not compositor UI. Everything it
-shows comes from a Lua config: the default desktop is Tide's
-(`rices/tide/shell.lua`), each rice brings its own, and `shell/default.lua`
-is a plain bar, Quick Settings, task menu, launcher and notifications. Bars follow outputs as they come and go and draw
+[`shady-shell`](https://github.com/gloaming-dusk/shady-shell) is a separate Wayland client and a separate
+package, not compositor UI; Shady starts it when it finds one, and any other
+shell or bar works too. Everything it shows comes from a Lua config: the
+default desktop is Tide's (`rices/tide/shell.lua` in
+[Gloam](https://github.com/gloaming-dusk/gloam)), each rice brings its own, and
+its `default.lua` is a plain bar, Quick Settings, task menu, launcher and notifications. Bars follow outputs as they come and go and draw
 at the output's scale.
 
 It talks to the compositor two ways:
 
-- the `shady-shell-v1` Wayland protocol (`compositor/protocols/shady-shell-v1.xml`)
-  for workspaces, windows and actions. Version 1 carries the workspace
+- the `shady-shell-v1` Wayland protocol, owned by shady-shell (Shady keeps
+  a copy in `compositor/protocols/shady-shell-v1.xml`) for workspaces, windows and actions. Version 1 carries the workspace
   list, the active workspace and the focused window; version 2 adds stable
   window ids, window snapshots and activate/close; version 3 window state
   plus maximize, fullscreen and move-to-workspace; version 4 cycling
   windows and ending the session. `shady.toggle_launcher()` reaches the
-  shell through it.
+  shell through it, and `shady.shell_connected()` says whether one is
+  bound.
 - the IPC socket for published values (a rice's palette, the sky's hour)
   and the shortcut overlay.
 
@@ -84,7 +87,7 @@ The default palette is Neon Transit's cyan. A rice sets its own through
 `#RRGGBB` environment variables read at startup: `SHADY_SHELL_ACCENT`,
 `SHADY_SHELL_ACCENT_2` (the badge gradient's end), `SHADY_SHELL_ACCENT_DEEP`
 (selected fills), `SHADY_SHELL_SURFACE`, `SHADY_SHELL_TEXT`,
-`SHADY_SHELL_TEXT_DIM` and `SHADY_SHELL_DANGER`; see
-`rices/afterglow/theme.sh`. In spatial mode `shady.layer_effect` turns any
+`SHADY_SHELL_TEXT_DIM` and `SHADY_SHELL_DANGER`; see Afterglow's
+[`theme.sh`](https://github.com/gloaming-dusk/shady-rice-afterglow/blob/main/theme.sh). In spatial mode `shady.layer_effect` turns any
 layer surface, Shady's or another client's, into frosted glass, and
 `shady.layer_transform` places it in 3D ([LUA_API.md](LUA_API.md)).

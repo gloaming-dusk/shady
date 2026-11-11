@@ -3,7 +3,7 @@
 Shady listens on a Unix socket so that shells, bars and scripts can read
 compositor state, send commands and follow events without being Lua or a
 native plugin. It is the foundation for the scriptable shell described in
-[SHELL_DESIGN.md](SHELL_DESIGN.md), and it is equally usable from any
+[shady-shell's design notes](https://github.com/gloaming-dusk/shady-shell/blob/main/docs/SHELL_DESIGN.md), and it is equally usable from any
 language that can open a socket.
 
 ## Socket

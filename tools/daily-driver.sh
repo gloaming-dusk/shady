@@ -16,7 +16,6 @@ configure() {
       -Dwindow_motion=disabled \
       -Dclose_animation=disabled \
       -Dscene_effects=disabled \
-      -Dshell=enabled \
       -Dbuildtype=debug \
       -Db_sanitize=address,undefined
   else
@@ -28,7 +27,6 @@ configure() {
       -Dwindow_motion=disabled \
       -Dclose_animation=disabled \
       -Dscene_effects=disabled \
-      -Dshell=enabled \
       -Dbuildtype=debug \
       -Db_sanitize=address,undefined
   fi
@@ -61,15 +59,7 @@ test_daily() {
   SHADY_DAILY_BUILD_DIR="$BUILD_DIR" bash ./tests/headless-session-lock-client-exit.sh
   SHADY_DAILY_BUILD_DIR="$BUILD_DIR" bash ./tests/headless-session-lock-layer.sh
   SHADY_BORDER_TEST_BUILD_DIR="$BUILD_DIR" bash ./tests/headless-border-plugin.sh
-  SHADY_DAILY_BUILD_DIR="$BUILD_DIR" bash ./tests/headless-shell-taskbar.sh
-  SHADY_DAILY_BUILD_DIR="$BUILD_DIR" bash ./tests/headless-shell-quick.sh
-  SHADY_DAILY_BUILD_DIR="$BUILD_DIR" bash ./tests/headless-shell-outputs.sh
-  SHADY_DAILY_BUILD_DIR="$BUILD_DIR" bash ./tests/headless-shell-lua.sh
-  SHADY_DAILY_BUILD_DIR="$BUILD_DIR" bash ./tests/headless-shell-notify.sh
-  SHADY_DAILY_BUILD_DIR="$BUILD_DIR" bash ./tests/headless-shell-ime.sh
-  SHADY_DAILY_BUILD_DIR="$BUILD_DIR" bash ./tests/headless-shell-wrap.sh
-  SHADY_DAILY_BUILD_DIR="$BUILD_DIR" bash ./tests/headless-shell-effects.sh
-  SHADY_DAILY_BUILD_DIR="$BUILD_DIR" bash ./tests/headless-shell-plugin.sh
+  # The shell's own tests (headless-shell-*) are in shady-shell: tests/run.sh.
 }
 
 case "${1:-all}" in

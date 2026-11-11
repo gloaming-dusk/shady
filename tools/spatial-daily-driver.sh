@@ -18,7 +18,6 @@ configure() {
       -Dwindow_motion=enabled \
       -Dclose_animation=enabled \
       -Dscene_effects=enabled \
-      -Dshell=enabled \
       -Dbuildtype="$BUILD_TYPE" \
       -Db_sanitize="$SANITIZE"
   else
@@ -30,7 +29,6 @@ configure() {
       -Dwindow_motion=enabled \
       -Dclose_animation=enabled \
       -Dscene_effects=enabled \
-      -Dshell=enabled \
       -Dbuildtype="$BUILD_TYPE" \
       -Db_sanitize="$SANITIZE"
   fi

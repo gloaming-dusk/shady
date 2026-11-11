@@ -1,9 +1,12 @@
 # Customizing
 
-Shady's default desktop is [Tide](../rices/tide/README.md): scrolling columns,
-a glass bar, control center, launcher, lock screen and login screen. Run Shady
-with nothing configured and that is what you get. From there you can go as far
-as you like, and each step leaves the previous ones working.
+Shady's default desktop is [Tide](../rices/tide/README.md): scrolling columns
+and niri's keys in the compositor, and, with
+[Gloam](https://github.com/gloaming-dusk/gloam), a glass bar, control center,
+launcher, lock screen and login screen in
+[shady-shell](https://github.com/gloaming-dusk/shady-shell). Run Shady with
+nothing configured and that is what you get. From there you can go as far as
+you like, and each step leaves the previous ones working.
 
 | | Start from | You maintain | Tide updates reach you |
 |---|---|---|---|
@@ -14,8 +17,16 @@ as you like, and each step leaves the previous ones working.
 
 Files live in `~/.config/shady/`. Any of `config.lua`, `init.lua` and
 `shell.lua` that is missing comes from the rice, so you only write the ones
-you need. Another complete rice is one setting away: `SHADY_RICE=horizon`, or
-`programs.shady.rice` on NixOS.
+you need. Another complete rice is one setting away once it is installed
+([the list](../README.md#rices)): `SHADY_RICE=afterglow`, or
+`programs.shady.rice` and `programs.shady.rices` on NixOS.
+
+A rice is a directory named after it, in `$SHADY_RICE_PATH`,
+`~/.local/share/shady/rices`, Shady's own `share/shady/rices` or any
+`$XDG_DATA_DIRS/shady/rices`; each file is looked for on its own, in that
+order. So one rice can come from several packages: Shady installs Tide's
+`config.lua` and `init.lua`, Gloam its `shell.lua`, and a file of yours in
+`~/.local/share/shady/rices/tide/` replaces just that one.
 
 ## Use it
 
@@ -60,8 +71,9 @@ shady.unbind("Super+c")
 shady.rule({ app_id = "mpv", floating = true })
 ```
 
-`shell.lua` is hot-reloaded. `shell.base` takes the options below and returns
-the pieces Tide is made of, so what you add looks like it belongs:
+`shell.lua` runs in shady-shell and is hot-reloaded. `shell.base` takes the
+options below and returns the pieces Tide is made of (with Gloam's Tide
+installed), so what you add looks like it belongs:
 
 ```lua
 -- ~/.config/shady/shell.lua
@@ -106,24 +118,24 @@ The same calls work with any rice, though the options are particular to each.
 When options are not enough, make Tide yours:
 
 ```sh
-shady-rice eject        # or: shady-rice eject horizon
+shady-rice eject        # or: shady-rice eject afterglow
 ```
 
 This copies the rice into `~/.config/shady/`, and that copy is what runs from
 then on. Everything is open: `shell.lua` is the whole shell, `style.lua` its
 look, `init.lua` the keys. It refuses to overwrite files you already have.
-Updates to Shady no longer change your copy, so compare it with
-`rices/tide/` now and then.
+Updates to Shady and Gloam no longer change your copy, so compare it with
+their `rices/tide/` now and then.
 
 ## Start from nothing
 
 `SHADY_RICE=none` is the bare compositor with its C defaults (the 3D floor,
-wobble, title bars) and the plain `shell/default.lua`. Every rice written
+wobble, title bars) and the shell's plain `default.lua`. Every rice written
 before Tide became the default keeps working: they say what they want with
 `shady -c`, `SHADY_LUA_INIT` and `SHADY_SHELL_CONFIG`, or link their files
 into `~/.config/shady/`, and none of that goes through Tide. Native plugins
 load with `shady.plugins.load` either way.
 
 The references are the [Lua API](LUA_API.md), the
-[Shell Lua API](SHELL_LUA_API.md), the [Plugin manager](PLUGIN_MANAGER.md) and
+[Shell Lua API](https://github.com/gloaming-dusk/shady-shell/blob/main/docs/SHELL_LUA_API.md), the [Plugin manager](PLUGIN_MANAGER.md) and
 the [C plugin API](C_PLUGIN_API.md).

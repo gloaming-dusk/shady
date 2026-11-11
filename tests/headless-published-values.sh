@@ -7,9 +7,10 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 BUILD_DIR="${SHADY_SPATIAL_TEST_BUILD_DIR:-build-spatial-asan}"
-for bin in shady shady-shell shadyctl libshady-plugin-publish-probe.so; do
+for bin in shady shadyctl libshady-plugin-publish-probe.so; do
     [[ -e "$BUILD_DIR/$bin" ]] || { echo "published-values: missing $BUILD_DIR/$bin" >&2; exit 2; }
 done
+source "$ROOT/tests/shell-client.sh"
 
 tmp="$(mktemp -d)"
 mkdir -m 700 "$tmp/runtime"
@@ -22,7 +23,6 @@ log="$tmp/log"
     export WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=1 WLR_RENDERER=pixman
     export SHADY_LUA_INIT="$ROOT/tests/headless-published-values-init.lua"
     export SHADY_TEST_PLUGIN_DIR="$ROOT/$BUILD_DIR"
-    export SHADY_SHELL_BIN="$ROOT/$BUILD_DIR/shady-shell"
     export SHADY_SHELL_CONFIG="$ROOT/tests/published-values/shell.lua"
     export VALUES_STATUS="$status"
     export ASAN_OPTIONS="${ASAN_OPTIONS:-abort_on_error=1:halt_on_error=1:detect_leaks=0}"

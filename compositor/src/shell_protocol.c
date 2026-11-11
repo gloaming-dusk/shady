@@ -331,6 +331,12 @@ bool shady_shell_protocol_toggle_launcher(struct shady_server *server) {
     return heard;
 }
 
+bool shady_shell_protocol_connected(struct shady_server *server) {
+    struct shady_desktop_state *desktop = shady_desktop_state(server);
+    if (!desktop || !desktop->shell_protocol) return false;
+    return !wl_list_empty(&desktop->shell_protocol->clients);
+}
+
 void shady_shell_protocol_finish(struct shady_server *server) {
     struct shady_desktop_state *desktop = shady_desktop_state(server);
     if (!desktop || !desktop->shell_protocol) return;

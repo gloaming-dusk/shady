@@ -16,13 +16,15 @@
         default = shady;
       });
 
-      # `nix run github:gloaming-dusk/shady`: try the default desktop in a window
-      # of the current Wayland session (or on a VT), with a terminal open.
+      # `nix run github:gloaming-dusk/shady`: try Shady in a window of the
+      # current Wayland session (or on a VT), with a terminal open. This is the
+      # compositor and Tide's keys and layout alone; the whole desktop, with
+      # its shell, is Gloam's (`nix run github:gloaming-dusk/gloam`).
       apps = forAllSystems (pkgs: let
         shady = shadyFor pkgs;
         try = pkgs.writeShellScript "shady-try" ''
           export SHADY_SESSION_LOG=stderr
-          export SHADY_STARTUP="${shady}/bin/shady-shell & exec ${pkgs.foot}/bin/foot"
+          export SHADY_STARTUP="exec ${pkgs.foot}/bin/foot"
           exec ${shady}/bin/shady-session "$@"
         '';
       in {
@@ -47,7 +49,7 @@
           buildInputs = [ wlroots ] ++ (with pkgs; [
             wayland wayland-protocols libxkbcommon pixman libdrm
             mesa libglvnd libffi libxau libxdmcp lua5_4
-            cairo cairo.dev pango pango.dev linux-pam
+            cairo cairo.dev pango pango.dev
           ]);
           packages = with pkgs; [ stdenv.cc gdb foot seatd wlr-randr grim wl-clipboard wtype ];
           # tools/build.sh builds with this cursor theme (meson -Dcursor_path).

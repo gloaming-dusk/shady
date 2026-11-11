@@ -1,7 +1,9 @@
 -- Tide runtime layer: the keys (niri's, so the hands need not relearn),
--- window rules, idle and the hardware keys. The shell (shell.lua) owns the
--- system state: volume, brightness, the lock screen and so on; keys reach it
--- as published values.
+-- window rules, idle and the hardware keys. Tide's shell (shell.lua, from
+-- Gloam: https://github.com/gloaming-dusk/gloam) owns the system state:
+-- volume, brightness, the lock screen and so on; keys reach it as published
+-- values. Without a shell, Shady alone, the keys do what the compositor and
+-- the usual tools can do themselves.
 
 local L = shady.layout
 
@@ -29,8 +31,34 @@ end
 -- `tide.do` carries an action and a counter, so pressing the same key twice
 -- is still a change the shell hears about.
 
+-- With no shell connected: the first of these that is installed.
+local function first(commands)
+    return function()
+        for _, command in ipairs(commands) do
+            if has(command:match("^%S+")) then return shady.spawn(command) end
+        end
+        shady.log("tide: nothing installed for this key without a shell")
+    end
+end
+local alone = {
+    lock = first({ "swaylock -f", "waylock" }),
+    ["volume +5"] = first({ "wpctl set-volume -l 1.5 @DEFAULT_AUDIO_SINK@ 5%+", "pactl set-sink-volume @DEFAULT_SINK@ +5%" }),
+    ["volume -5"] = first({ "wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-", "pactl set-sink-volume @DEFAULT_SINK@ -5%" }),
+    mute = first({ "wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle", "pactl set-sink-mute @DEFAULT_SINK@ toggle" }),
+    ["mic-mute"] = first({ "wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle", "pactl set-source-mute @DEFAULT_SOURCE@ toggle" }),
+    ["brightness +5"] = first({ "brightnessctl set 5%+" }),
+    ["brightness -5"] = first({ "brightnessctl set 5%-" }),
+    ["media play-pause"] = first({ "playerctl play-pause" }),
+    ["media next"] = first({ "playerctl next" }),
+    ["media previous"] = first({ "playerctl previous" }),
+}
+
 local serial = 0
 local function shell_do(action)
+    if not shady.shell_connected() then
+        if alone[action] then alone[action]() end
+        return
+    end
     serial = serial + 1
     shady.publish("tide.do", action .. " " .. serial)
 end
@@ -124,8 +152,12 @@ shady.describe("Three-finger swipe", "Next window sideways, or change workspace"
 
 -- ---- shell ---------------------------------------------------------------
 
-key("Super+space", function() shady.toggle_launcher() end, "Launcher", "Shell")
-key("Super+d", function() shady.toggle_launcher() end)
+local launcher_alone = first({ "fuzzel", "wofi --show drun", "tofi-drun --drun-launch=true", "bemenu-run" })
+local function launcher()
+    if not shady.toggle_launcher() then launcher_alone() end
+end
+key("Super+space", launcher, "Launcher", "Shell")
+key("Super+d", launcher)
 key("Super+s", function() shell_do("control") end, "Control center", "Shell")
 key("Super+n", function() shell_do("notifications") end, "Notifications", "Shell")
 key("Super+comma", function() shell_do("control") end)
@@ -179,7 +211,8 @@ local function screenshot(action)
         local function take()
             if publish_screen() then shell_do(action) end
         end
-        if not has("grim") then
+        -- The shell's picker needs grim; without either, the whole screen.
+        if not has("grim") or not shady.shell_connected() then
             shady.screenshot()
         elseif L.state().overview then
             -- Windows are where they are drawn again once the camera is back.

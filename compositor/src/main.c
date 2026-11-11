@@ -75,19 +75,37 @@ static bool default_rice_config(char *buf, size_t size) {
 	return true;
 }
 
-/* shady-shell from the directory this binary is in, build tree or install. */
+/* shady-shell, which is its own package: $SHADY_SHELL_BIN, else the one
+ * beside this binary (a build tree, or one prefix), else the one on PATH. */
 static bool shell_command(char *buf, size_t size) {
-	char self[PATH_MAX];
-	ssize_t length = readlink("/proc/self/exe", self, sizeof(self) - 1);
-	if (length <= 0) return false;
-	self[length] = '\0';
-	char *slash = strrchr(self, '/');
-	if (!slash) return false;
-	*slash = '\0';
-	char shell[PATH_MAX + 16];
-	int written = snprintf(shell, sizeof(shell), "%s/shady-shell", self);
-	if (written <= 0 || (size_t)written >= sizeof(shell) || access(shell, X_OK) != 0) return false;
-	written = snprintf(buf, size, "exec '%s'", shell);
+	char shell[PATH_MAX + 16] = "";
+	const char *configured = getenv("SHADY_SHELL_BIN");
+	if (configured && *configured) {
+		snprintf(shell, sizeof(shell), "%s", configured);
+	} else {
+		char self[PATH_MAX];
+		ssize_t length = readlink("/proc/self/exe", self, sizeof(self) - 1);
+		char *slash = length > 0 ? (self[length] = '\0', strrchr(self, '/')) : NULL;
+		if (slash) {
+			*slash = '\0';
+			snprintf(shell, sizeof(shell), "%s/shady-shell", self);
+		}
+		if (!shell[0] || access(shell, X_OK) != 0) {
+			shell[0] = '\0';
+			for (const char *dir = getenv("PATH"); dir && *dir;) {
+				size_t len = strcspn(dir, ":");
+				int written = snprintf(shell, sizeof(shell), "%.*s/shady-shell", (int)len, dir);
+				if (len > 0 && written > 0 && (size_t)written < sizeof(shell) &&
+						access(shell, X_OK) == 0)
+					break;
+				shell[0] = '\0';
+				dir += len;
+				if (*dir == ':') dir++;
+			}
+		}
+	}
+	if (!shell[0] || access(shell, X_OK) != 0 || strchr(shell, '\'')) return false;
+	int written = snprintf(buf, size, "exec '%s'", shell);
 	return written > 0 && (size_t)written < size;
 }
 

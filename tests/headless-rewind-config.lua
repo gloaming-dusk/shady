@@ -1,3 +1,6 @@
+-- Afterglow's config.lua (from shady-rice-afterglow), kept here as the
+-- rewind test's world: the sky plugin, folded paper and the overview.
+
 -- Afterglow
 -- A low sun over a mirror-still sea. Windows float like warm glass panels
 -- above the water; the sky, the sea and every accent move through four hours

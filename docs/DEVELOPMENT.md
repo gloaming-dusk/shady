@@ -22,20 +22,15 @@ compositor/           the shady compositor
     ipc/              the IPC socket, its JSON, published values, shortcuts
     world/            shared world and collider representation
   shaders/            the renderer's GLSL
-  protocols/          shady-shell-v1 and vendored protocol XML
+  protocols/          vendored protocol XML, and a copy of shady-shell-v1 (owned by shady-shell)
   ctl/                shadyctl
-include/shady/        public plugin and shell-plugin ABI headers
+include/shady/        public plugin ABI headers
 plugins/              native feature plugins (window-motion, afterglow, ...)
   shaders/            their GLSL
   loaders/            environment asset loader plugins (obj/; gltf/ etc. later)
-shell/                shady-shell: default Lua UI, the shortcut overlay, examples, shaders
-  src/                its C sources
-  plugins/            shell plugins (sysinfo)
-greeter/              the greetd login screen (see GREETER.md)
-  src/                the greetd shell plugin
-rices/                complete looks: Tide (the default desktop), Horizon, Afterglow
+rices/tide/           Tide's compositor side: what Shady is with nothing configured
 examples/             small plugins and configs to start from
-data/                 session and greeter launchers, wayland-sessions entries
+data/                 session launcher, shady-rice, wayland-sessions entries
 nix/                  Nix package and NixOS module
 tests/                unit and headless tests
 tools/                build, run and regression scripts
@@ -44,8 +39,15 @@ docs/                 documentation, also rendered by the project site
 ```
 
 Installed data under `share/shady` mirrors this tree (`compositor/shaders`,
-`plugins/shaders`, `shell`, `greeter`, `rices`), so plugins and rices find
-their files through `SHADY_ROOT` in a checkout and in an installation alike.
+`plugins/shaders`, `rices`), so plugins and rices find their files through
+`SHADY_ROOT` in a checkout and in an installation alike.
+
+The shell, the greeter and the other rices are repositories of their own:
+[shady-shell](https://github.com/gloaming-dusk/shady-shell),
+[shady-greeter](https://github.com/gloaming-dusk/shady-greeter) and the
+`shady-rice-*` ones. Shady builds and its tests run without them; the few
+tests that use shady-shell as a layer-shell client take it from
+`SHADY_SHELL_BIN` or `PATH` and are skipped without it.
 
 ## Build options
 
@@ -56,7 +58,7 @@ modules and the spatial subfeatures:
 ```text
 -Dspatial=enabled|disabled|auto
 -Dlua=enabled|disabled|auto
--Dshell=enabled|disabled|auto
+-Dtest_clients=enabled|disabled|auto
 -Dphysics=enabled|disabled|auto
 -Dfps=enabled|disabled|auto
 -Dwindow_motion=enabled|disabled|auto
@@ -70,7 +72,7 @@ build drops the spatial stack, runtime Lua and the shell; the bootstrap Lua
 config engine stays, so `config.lua` still works:
 
 ```sh
-meson setup build-minimal -Dspatial=disabled -Dlua=disabled -Dshell=disabled
+meson setup build-minimal -Dspatial=disabled -Dlua=disabled -Dtest_clients=disabled
 ninja -C build-minimal
 ```
 
@@ -136,7 +138,7 @@ finishes first. `examples/plugins/counter.c` is the reference V2 plugin.
 | Command | Covers |
 |---|---|
 | `meson test -C build` | unit tests: math, physics collision, config, module resolver, plugin contracts |
-| `./tests/spatial-suite.sh` | the 3D stack under ASan/UBSan with software GLES2: FPS mode, plugins, IPC, shortcuts, layer effects, the shell, Neon Transit and Afterglow |
+| `./tests/spatial-suite.sh` | the 3D stack under ASan/UBSan with software GLES2: FPS mode, plugins, IPC, shortcuts, layer effects (with shady-shell, when there is one), Neon Transit |
 | `./tools/daily-driver.sh all` | the 2D path under ASan/UBSan: two headless outputs, output removal with a live window, window churn, an idle-render check |
 
 CI runs the package build (with the unit tests) on every push. The
@@ -155,8 +157,8 @@ continuous frames only while something moves (physics, FPS movement, wobble
 settling, close animations). `SHADY_RENDER_STATS=1` logs per-output
 scheduling, coalesced requests, frame callbacks, CPU frame timing and why
 continuous frames were requested. For shady-shell, `SHADY_SHELL_PAINT_STATS=1`
-logs how often each surface paints and how much of it (see
-[SHELL_DESIGN.md](SHELL_DESIGN.md)).
+logs how often each surface paints and how much of it (see its
+[design notes](https://github.com/gloaming-dusk/shady-shell/blob/main/docs/SHELL_DESIGN.md)).
 
 `./tools/test.sh` runs the development build nested with
 `tools/test-shady.lua`, which binds a few scripting examples: F6 gravity,

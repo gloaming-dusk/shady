@@ -29,12 +29,6 @@ shady_shell_server_header = custom_target(
   output: 'shady-shell-v1-server-protocol.h',
   command: [wayland_scanner, 'server-header', '@INPUT@', '@OUTPUT@'],
 )
-shady_shell_client_header = custom_target(
-  'shady-shell-v1-client-protocol.h',
-  input: shady_shell_protocol_xml,
-  output: 'shady-shell-v1-client-protocol.h',
-  command: [wayland_scanner, 'client-header', '@INPUT@', '@OUTPUT@'],
-)
 shady_shell_protocol_code = custom_target(
   'shady-shell-v1-protocol.c',
   input: shady_shell_protocol_xml,
@@ -50,7 +44,7 @@ egl = dependency('egl', required: spatial_enabled)
 glesv2 = dependency('glesv2', required: spatial_enabled)
 lua = cc.find_library('lua', required: true)
 dl = cc.find_library('dl', required: false)
-# Shaders, shell data and plugin assets live under one root that mirrors the
+# Shaders, rices and plugin assets live under one root that mirrors the
 # source tree, so plugins resolve them through SHADY_ROOT either way.
 shady_data_install_dir = join_paths(get_option('datadir'), 'shady')
 plugin_install_dir = join_paths(get_option('libdir'), 'shady', 'plugins')
@@ -183,26 +177,14 @@ if spatial_enabled
   shady_deps += [egl, glesv2]
 endif
 
-shell_option = get_option('shell')
-wayland_client = dependency('wayland-client', required: shell_option)
-cairo = dependency('cairo', required: shell_option)
-pangocairo = dependency('pangocairo', required: shell_option)
-shell_xkbcommon = dependency('xkbcommon', required: shell_option)
-# App fonts for shell.fonts(): fontconfig, and pango's fontconfig font map.
-shell_fontconfig = dependency('fontconfig', required: shell_option)
-shell_pangoft2 = dependency('pangoft2', required: shell_option)
-# The notification server (org.freedesktop.Notifications) talks D-Bus through sd-bus.
-shell_sd_bus = dependency('libsystemd', required: false)
-# GL composition for the shell; without these it renders with wl_shm only.
-shell_egl = dependency('egl', required: false)
-shell_glesv2 = dependency('glesv2', required: false)
-shell_wayland_egl = dependency('wayland-egl', required: false)
-shell_gl_deps_found = shell_egl.found() and shell_glesv2.found() and shell_wayland_egl.found()
-shell_gl_deps = shell_gl_deps_found ? [shell_egl, shell_glesv2, shell_wayland_egl] : []
-wayland_protocols = dependency('wayland-protocols', required: shell_option)
-shell_enabled = wayland_client.found() and cairo.found() and pangocairo.found() and shell_fontconfig.found() and shell_pangoft2.found() and shell_xkbcommon.found() and wayland_protocols.found()
+# Wayland clients the headless tests drive the compositor with. The desktop
+# shell is its own project: https://github.com/gloaming-dusk/shady-shell
+test_clients_option = get_option('test_clients')
+wayland_client = dependency('wayland-client', required: test_clients_option)
+wayland_protocols = dependency('wayland-protocols', required: test_clients_option)
+test_clients_enabled = wayland_client.found() and wayland_protocols.found()
 
-if shell_enabled
+if test_clients_enabled
   wayland_protocols_dir = wayland_protocols.get_variable(pkgconfig: 'pkgdatadir')
   xdg_shell_xml = join_paths(wayland_protocols_dir, 'stable/xdg-shell/xdg-shell.xml')
   xdg_shell_client_header = custom_target(
@@ -260,92 +242,6 @@ if shell_enabled
     output: 'text-input-unstable-v3-protocol.c',
     command: [wayland_scanner, 'private-code', '@INPUT@', '@OUTPUT@'],
   )
-  executable('shady-shell',
-    [
-      ext_session_lock_client_header,
-      ext_session_lock_protocol_code,
-      text_input_client_header,
-      text_input_protocol_code,
-      layer_shell_protocol_header,
-      layer_shell_protocol_code,
-      xdg_shell_client_header,
-      xdg_shell_protocol_code,
-      shady_shell_client_header,
-      shady_shell_protocol_code,
-      'shell/src/main.c',
-      'shell/src/core.c',
-      'shell/src/render_gl.c',
-      'shell/src/render_shm.c',
-      'shell/src/theme.c',
-      'shell/src/apps.c',
-      'shell/src/ui.c',
-      'shell/src/anim.c',
-      'shell/src/notify.c',
-      'shell/src/script.c',
-      'shell/src/plugins.c',
-      'shell/src/compositor.c',
-      'shell/src/auth.c',
-      'compositor/src/ipc/json.c',
-    ],
-    include_directories: include_directories('.', 'include', 'compositor/src'),
-    c_args: [
-      '-DSHELL_HAS_GL=@0@'.format(shell_gl_deps_found ? 1 : 0),
-      '-DHAVE_SD_BUS=@0@'.format(shell_sd_bus.found() ? 1 : 0),
-      '-DSHADY_SHELL_DATA_DIR="@0@"'.format(join_paths(shady_data_root, 'shell')),
-      '-DSHADY_SHELL_PLUGIN_INSTALL_DIR="@0@"'.format(join_paths(get_option('prefix'), get_option('libdir'), 'shady', 'shell-plugins')),
-    # An installed shell must not load code from where it happened to be built.
-    ] + (get_option('installed_data') ? [] : [
-      '-DSHADY_SHELL_PLUGIN_DIR="@0@"'.format(meson.current_build_dir()),
-    ]),
-    dependencies: [wayland_client, cairo, pangocairo, shell_pangoft2, shell_fontconfig, shell_xkbcommon, shell_sd_bus, lua, dl, cc.find_library('m')] + shell_gl_deps,
-    install: true)
-
-  # Checks passwords for the lock screen (shell.authenticate) with PAM, out
-  # of the shell's process.
-  shell_pam = cc.find_library('pam', required: false)
-  if shell_pam.found()
-    executable('shady-auth', 'shell/src/auth_helper.c',
-      dependencies: [shell_pam],
-      install: true)
-    # Next to shady-auth, where auth.c looks for the helper.
-    shell_auth_test = executable('shell-auth-test',
-      ['tests/shell-auth-test.c', 'shell/src/auth.c',
-       ext_session_lock_client_header, text_input_client_header, layer_shell_protocol_header],
-      include_directories: include_directories('shell/src'),
-      dependencies: [wayland_client, cairo, shell_xkbcommon],
-      install: false)
-    test('shell-auth', shell_auth_test)
-  endif
-
-  # Native shell plugins (include/shady/shell_plugin.h).
-  shared_module('shady-shell-plugin-sysinfo',
-    'shell/plugins/sysinfo.c',
-    include_directories: include_directories('include'),
-    dependencies: [cairo],
-    install: true,
-    install_dir: join_paths(get_option('libdir'), 'shady', 'shell-plugins'))
-
-  # Logs people in through greetd for the Shady greeter (greeter/shell.lua).
-  shared_module('shady-shell-plugin-greetd',
-    ['greeter/src/greetd.c', 'compositor/src/ipc/json.c'],
-    include_directories: include_directories('compositor/src', 'include'),
-    dependencies: [cairo],
-    install: true,
-    install_dir: join_paths(get_option('libdir'), 'shady', 'shell-plugins'))
-
-  greetd_plugin_test = executable('greetd-plugin-test',
-    ['tests/greetd-plugin-test.c', 'greeter/src/greetd.c', 'compositor/src/ipc/json.c'],
-    include_directories: include_directories('compositor/src', 'include'),
-    dependencies: [cairo],
-    install: false)
-  test('greetd-plugin', greetd_plugin_test)
-
-  shared_module('shady-shell-plugin-probe',
-    'tests/shell-plugin-probe.c',
-    include_directories: include_directories('include'),
-    dependencies: [cairo],
-    install: false)
-
   # Client bindings for the standard window and workspace protocols, used
   # by protocol-probe (tests/headless-standard-protocols.sh).
   standard_protocol_xmls = {
@@ -407,7 +303,7 @@ if shell_enabled
     output: 'virtual-keyboard-unstable-v1-protocol.c',
     command: [wayland_scanner, 'private-code', '@INPUT@', '@OUTPUT@'],
   )
-  # A scripted input method for tests/headless-shell-ime.sh.
+  # A scripted input method, for testing text input through the compositor.
   executable('ime-probe',
     [
       input_method_client_header,
@@ -502,7 +398,6 @@ install_headers(
   'include/shady/representation.h',
   'include/shady/event.h',
   'include/shady/environment.h',
-  'include/shady/shell_plugin.h',
   subdir: 'shady')
 
 shared_module('shady-plugin-hello',
@@ -750,30 +645,13 @@ endif
 # ---- installed data and session ------------------------------------------
 
 install_subdir('compositor/shaders', install_dir: join_paths(shady_data_install_dir, 'compositor'))
-# The Lua UIs and their data; their C sources stay behind.
-install_subdir('shell', install_dir: shady_data_install_dir,
-  exclude_directories: ['src', 'plugins'])
-install_subdir('greeter', install_dir: shady_data_install_dir,
-  exclude_directories: ['src'])
 install_subdir('plugins/shaders', install_dir: join_paths(shady_data_install_dir, 'plugins'))
-foreach rice : ['horizon', 'afterglow', 'tide']
-  rice_files = []
-  foreach file : ['config.lua', 'init.lua', 'shell.lua', 'style.lua', 'settings.lua', 'theme.sh', 'README.md']
-    if import('fs').is_file(join_paths('rices', rice, file))
-      rice_files += join_paths('rices', rice, file)
-    endif
-  endforeach
-  install_data(rice_files,
-    install_dir: join_paths(shady_data_install_dir, 'rices', rice))
-  # Typefaces the rice's shell.lua loads with shell.fonts("fonts"), and
-  # its shaders.
-  foreach dir : ['fonts', 'shaders']
-    if import('fs').is_dir(join_paths('rices', rice, dir))
-      install_subdir(join_paths('rices', rice, dir),
-        install_dir: join_paths(shady_data_install_dir, 'rices', rice))
-    endif
-  endforeach
-endforeach
+# Tide's compositor side: the layout, keys, screenshots, rules and idle that
+# Shady is with nothing configured. Its shell side (shell.lua) is installed
+# into the same rice by whichever package provides it (Gloam).
+install_data('rices/tide/config.lua', 'rices/tide/init.lua', 'rices/tide/settings.lua',
+  'rices/tide/README.md',
+  install_dir: join_paths(shady_data_install_dir, 'rices', 'tide'))
 # Rice configs load plugins from $SHADY_ROOT/build, as they do in a checkout.
 install_symlink('build',
   pointing_to: join_paths('..', '..', get_option('libdir'), 'shady', 'plugins'),
@@ -782,11 +660,7 @@ install_symlink('build',
 session_conf = configuration_data()
 session_conf.set('bindir', join_paths(get_option('prefix'), get_option('bindir')))
 session_conf.set('datadir', join_paths(get_option('prefix'), shady_data_install_dir))
-session_conf.set('shellplugindir', join_paths(get_option('prefix'), get_option('libdir'), 'shady', 'shell-plugins'))
 configure_file(input: 'data/shady-session.in', output: 'shady-session',
-  configuration: session_conf,
-  install: true, install_dir: get_option('bindir'), install_mode: 'rwxr-xr-x')
-configure_file(input: 'data/shady-greeter.in', output: 'shady-greeter',
   configuration: session_conf,
   install: true, install_dir: get_option('bindir'), install_mode: 'rwxr-xr-x')
 configure_file(input: 'data/shady-rice.in', output: 'shady-rice',

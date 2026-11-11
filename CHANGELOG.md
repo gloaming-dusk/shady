@@ -3,6 +3,45 @@
 Shady is experimental: the Lua, IPC and plugin interfaces may still change
 between releases. Breaking changes are called out here.
 
+## Unreleased
+
+Breaking:
+
+- Shady is the compositor only. The rest moved, with its history, to
+  repositories of its own:
+  [shady-shell](https://github.com/gloaming-dusk/shady-shell) (the shell, its
+  docs, its plugin header and the `shady-shell-v1` protocol, of which Shady
+  keeps a copy),
+  [shady-greeter](https://github.com/gloaming-dusk/shady-greeter) (the login
+  screen), [Gloam](https://github.com/gloaming-dusk/gloam) (Tide's shell:
+  `shell.lua`, its style, fonts and sea), and
+  [shady-rice-afterglow](https://github.com/gloaming-dusk/shady-rice-afterglow)
+  and [shady-rice-horizon](https://github.com/gloaming-dusk/shady-rice-horizon).
+  The `shady` package no longer contains `shady-shell`, `shady-auth`,
+  `shady-greeter` or the shell plugins, and `-Dshell` is gone
+  (`-Dtest_clients` builds the headless tests' clients).
+- NixOS: `programs.shady.greeter.*` and `programs.shady.lock.fingerprint`
+  moved to the greeter's and the shell's modules
+  (`services.shady-greeter`, `programs.shady-shell`). Gloam turns them on.
+- `nix run github:gloaming-dusk/shady` is the compositor with Tide's layout
+  and keys and a terminal; the whole desktop is `nix run github:gloaming-dusk/gloam`.
+
+New:
+
+- Tide's compositor side stays Shady's default, and works without a shell:
+  the launcher, lock, volume, brightness, media and screenshot keys fall back
+  on `fuzzel`/`wofi`/`tofi`/`bemenu`, `swaylock`, `wpctl`/`pactl`,
+  `brightnessctl`, `playerctl` and `shady.screenshot()`.
+- Rices are found file by file in `$SHADY_RICE_PATH`,
+  `$XDG_DATA_HOME/shady/rices`, `$SHADY_ROOT/rices` and
+  `$XDG_DATA_DIRS/shady/rices`, so one rice can come from several packages.
+  `shady-session` and `shady-rice` look them up the same way.
+- `programs.shady.rices`: rice packages to install.
+- Shady starts `shady-shell` from `$SHADY_SHELL_BIN` or `PATH` as well as from
+  next to itself.
+- `shady.shell_connected()`, and `shady.toggle_launcher()` says whether a
+  shell heard it.
+
 ## 0.2.0 (2026-11-08)
 
 Breaking:

@@ -37,10 +37,18 @@ nix develop -c ninja -C "$BUILD_DIR" \
   libshady-plugin-counter.so \
   shadyctl \
   ipc-json-test \
-  shady-shell \
   protocol-probe \
   libshady-plugin-publish-probe.so \
   obj-loader-test
+
+# Tests whose layer-shell client is shady-shell (its own project): skipped,
+# not failed, when none is on PATH or in SHADY_SHELL_BIN.
+with_shell() {
+  local rc=0
+  SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" nix develop -c bash "$1" || rc=$?
+  if [[ $rc -eq 77 ]]; then echo "spatial-suite: skipped $1"; return 0; fi
+  return $rc
+}
 
 export SHADY_FPS_REPRESENTATION_PLUGIN="$ROOT/$BUILD_DIR/libshady-plugin-fps-cube.so"
 
@@ -71,23 +79,16 @@ SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
 SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
   nix develop -c bash ./tests/headless-ipc.sh
 
-SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
-  nix develop -c bash ./tests/headless-layer-effect.sh
+with_shell ./tests/headless-layer-effect.sh
 
 SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
   nix develop -c bash ./tests/headless-standard-protocols.sh
 
-SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
-  nix develop -c bash ./tests/headless-layer-transform.sh
+with_shell ./tests/headless-layer-transform.sh
 
-SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
-  nix develop -c bash ./tests/headless-layer-below.sh
+with_shell ./tests/headless-layer-below.sh
 
-SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
-  nix develop -c bash ./tests/headless-published-values.sh
-
-SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
-  nix develop -c bash ./tests/headless-afterglow-shell.sh
+with_shell ./tests/headless-published-values.sh
 
 SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
   nix develop -c bash ./tests/headless-fps-toggle.sh
@@ -101,18 +102,6 @@ SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
 SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
   nix develop -c bash ./tests/headless-overview.sh
 
-SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
-  nix develop -c bash ./tests/headless-overview-search.sh
-
-SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
-  nix develop -c bash ./tests/headless-tide-screenshot.sh
-
-SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
-  nix develop -c bash ./tests/headless-tide-layers.sh
-
-SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
-  nix develop -c bash ./tests/headless-shell-window.sh
-
 SHADY_CLOSE_TEST_BUILD_DIR="$BUILD_DIR" \
   nix develop -c bash ./tests/headless-close-effect-plugin.sh
 
@@ -121,9 +110,6 @@ SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
 
 SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
   nix develop -c bash ./tests/headless-neon-quit.sh
-
-SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
-  nix develop -c bash ./tests/headless-afterglow.sh
 
 SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
   nix develop -c bash ./tests/headless-rewind.sh

@@ -5,6 +5,10 @@
 #   a config that starts from it        shady.base("tide"), shell.base("tide", {...})
 #   your own copy of it                 shady-rice eject
 #   nothing but the bare compositor     SHADY_RICE=none
+#
+# Rices are found in $SHADY_RICE_PATH, $XDG_DATA_HOME/shady/rices,
+# $SHADY_ROOT/rices and $XDG_DATA_DIRS/shady/rices, file by file: Shady
+# installs Tide's compositor side, and a shell package (Gloam) its shell.lua.
 
 : "${SHADY_ROOT:=@datadir@}"
 config_dir="${XDG_CONFIG_HOME:-$HOME/.config}/shady"
@@ -15,11 +19,38 @@ usage() {
     exit 2
 }
 
+# Every rice directory, in lookup order, one per line.
+rice_dirs() {
+    old_ifs=$IFS
+    IFS=:
+    for dir in ${SHADY_RICE_PATH:-} "${XDG_DATA_HOME:-$HOME/.local/share}/shady/rices" \
+            "$SHADY_ROOT/rices" \
+            $(printf '%s' "${XDG_DATA_DIRS:-/usr/local/share:/usr/share}" | sed 's|\([^:][^:]*\)|\1/shady/rices|g'); do
+        [ -n "$dir" ] && [ -d "$dir" ] && printf '%s\n' "$dir"
+    done
+    IFS=$old_ifs
+}
+
+# The first <dir>/<rice>/<item>.
+rice_item() {
+    rice_dirs | while IFS= read -r dir; do
+        if [ -e "$dir/$1/$2" ]; then
+            printf '%s\n' "$dir/$1/$2"
+            break
+        fi
+    done
+}
+
+items="config.lua init.lua shell.lua style.lua settings.lua theme.sh fonts shaders"
+
 case "${1:-}" in
     list)
-        for dir in "$SHADY_ROOT"/rices/*/; do
-            basename "$dir"
-        done
+        rice_dirs | while IFS= read -r dir; do
+            for rice in "$dir"/*/; do
+                [ -f "$rice/config.lua" ] || [ -f "$rice/shell.lua" ] || continue
+                basename "$rice"
+            done
+        done | awk '!seen[$0]++'
         ;;
     eject)
         [ $# -le 2 ] || usage
@@ -27,14 +58,13 @@ case "${1:-}" in
         case "$rice" in
             */*|.*|'') echo "shady-rice: no such rice: $rice" >&2; exit 1 ;;
         esac
-        source_dir="$SHADY_ROOT/rices/$rice"
-        if [ ! -f "$source_dir/config.lua" ]; then
+        if [ -z "$(rice_item "$rice" config.lua)" ]; then
             echo "shady-rice: no such rice: $rice" >&2
             exit 1
         fi
         conflict=0
-        for item in config.lua init.lua shell.lua style.lua settings.lua theme.sh fonts shaders; do
-            if [ -e "$source_dir/$item" ] && [ -e "$config_dir/$item" ]; then
+        for item in $items; do
+            if [ -n "$(rice_item "$rice" "$item")" ] && [ -e "$config_dir/$item" ]; then
                 echo "shady-rice: $config_dir/$item already exists" >&2
                 conflict=1
             fi
@@ -44,14 +74,19 @@ case "${1:-}" in
             exit 1
         fi
         mkdir -p "$config_dir"
-        for item in config.lua init.lua shell.lua style.lua settings.lua theme.sh fonts shaders; do
-            if [ -e "$source_dir/$item" ]; then
-                cp -R "$source_dir/$item" "$config_dir/$item"
+        for item in $items; do
+            source_item="$(rice_item "$rice" "$item")"
+            if [ -n "$source_item" ]; then
+                cp -R "$source_item" "$config_dir/$item"
                 chmod -R u+w "$config_dir/$item"
                 echo "copied $config_dir/$item"
             fi
         done
-        echo "$rice is yours now; shady-shell reloads shell.lua as you edit it."
+        if [ -z "$(rice_item "$rice" shell.lua)" ]; then
+            echo "$rice is yours now (it has no shell.lua installed; the shell keeps its own)."
+        else
+            echo "$rice is yours now; shady-shell reloads shell.lua as you edit it."
+        fi
         ;;
     *)
         usage

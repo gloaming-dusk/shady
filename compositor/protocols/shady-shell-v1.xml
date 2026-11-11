@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <protocol name="shady_shell_v1">
+  <!-- A copy. shady-shell owns this protocol
+       (https://github.com/gloaming-dusk/shady-shell, protocol/shady-shell-v1.xml);
+       changes land there first and are copied here. -->
   <copyright>
     Copyright 2026 Shady contributors
     SPDX-License-Identifier: MIT

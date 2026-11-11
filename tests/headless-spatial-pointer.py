@@ -6,6 +6,7 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 
@@ -19,9 +20,15 @@ def main():
     grim = shutil.which("grim")
     if not grim:
         parser.error("grim must be on PATH")
-    for name in ("shady", "shady-shell", "headless-automation-probe"):
+    for name in ("shady", "headless-automation-probe"):
         if not (build / name).is_file():
             parser.error(f"missing {build / name}")
+    # shady-shell is its own project: $SHADY_SHELL_BIN, the build dir, or PATH.
+    shell_bin = os.environ.get("SHADY_SHELL_BIN") or (
+        str(build / "shady-shell") if (build / "shady-shell").is_file() else shutil.which("shady-shell"))
+    if not shell_bin:
+        print("spatial-pointer: skipped, needs shady-shell (SHADY_SHELL_BIN, or on PATH)", file=sys.stderr)
+        sys.exit(77)
 
     with tempfile.TemporaryDirectory(prefix="shady-spatial-pointer-") as directory:
         tmp = Path(directory)
@@ -100,7 +107,7 @@ shady.spawn(string.format("%q", assert(os.getenv("SHADY_AUTOMATION_PROBE"))))
             LIBGL_ALWAYS_SOFTWARE="1", WLR_RENDERER_ALLOW_SOFTWARE="1",
             SHADY_SOFTWARE_CURSORS="1", SHADY_ROOT=str(root),
             SHADY_LUA_INIT=str(tmp / "init.lua"),
-            SHADY_SHELL_BIN=str(build / "shady-shell"),
+            SHADY_SHELL_BIN=shell_bin,
             SHADY_SHELL_CONFIG=str(tmp / "shell.lua"), SHADY_SHELL_RENDERER="shm",
             SHADY_AUTOMATION_PROBE=str(build / "headless-automation-probe"),
             SHADY_AUTOMATION_PROBE_APP_ID="pointer-probe",

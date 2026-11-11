@@ -18,12 +18,52 @@
 
 static struct shady_server *config_server;
 
+/* Whether <dir>/<rice>/<file> exists; the path goes to out. An empty file
+ * asks for the rice's directory itself. */
+static bool rice_in(const char *dir, size_t dir_len, const char *rice, const char *file,
+		char *out, size_t size) {
+	if (dir_len == 0) return false;
+	int written = snprintf(out, size, "%.*s/%s%s%s", (int)dir_len, dir, rice,
+		file[0] ? "/" : "", file);
+	return written > 0 && (size_t)written < size && access(out, R_OK) == 0;
+}
+
+/* Each entry of a colon-separated list, with a suffix such as /shady/rices. */
+static bool rice_in_list(const char *list, const char *suffix, const char *rice,
+		const char *file, char *out, size_t size) {
+	if (!list) return false;
+	while (*list) {
+		size_t len = strcspn(list, ":");
+		char dir[4096];
+		int written = snprintf(dir, sizeof(dir), "%.*s%s", (int)len, list, suffix);
+		if (len > 0 && written > 0 && (size_t)written < sizeof(dir) &&
+				rice_in(dir, (size_t)written, rice, file, out, size))
+			return true;
+		list += len;
+		if (*list == ':') list++;
+	}
+	return false;
+}
+
 bool shady_rice_file(const char *rice, const char *file, char *out, size_t size) {
 	if (!rice[0] || rice[0] == '.' || strchr(rice, '/')) return false;
+	/* A rice may be spread over several packages (Shady's own part of Tide,
+	 * a shell's part of it), so each file is looked for on its own. */
+	if (rice_in_list(getenv("SHADY_RICE_PATH"), "", rice, file, out, size)) return true;
+	const char *data_home = getenv("XDG_DATA_HOME");
+	const char *home = getenv("HOME");
+	char user_dir[4096] = "";
+	if (data_home && *data_home) snprintf(user_dir, sizeof(user_dir), "%s/shady/rices", data_home);
+	else if (home && *home) snprintf(user_dir, sizeof(user_dir), "%s/.local/share/shady/rices", home);
+	if (rice_in(user_dir, strlen(user_dir), rice, file, out, size)) return true;
 	const char *root = getenv("SHADY_ROOT");
 	if (!root || !*root) root = SHADY_DATA_ROOT;
-	int written = snprintf(out, size, "%s/rices/%s/%s", root, rice, file);
-	return written > 0 && (size_t)written < size && access(out, R_OK) == 0;
+	char root_dir[4096];
+	snprintf(root_dir, sizeof(root_dir), "%s/rices", root);
+	if (rice_in(root_dir, strlen(root_dir), rice, file, out, size)) return true;
+	const char *data_dirs = getenv("XDG_DATA_DIRS");
+	if (!data_dirs || !*data_dirs) data_dirs = "/usr/local/share:/usr/share";
+	return rice_in_list(data_dirs, "/shady/rices", rice, file, out, size);
 }
 
 int shady_rice_lua_base(lua_State *L, const char *file) {

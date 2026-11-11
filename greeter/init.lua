@@ -1,2 +1,0 @@
--- The greeter's runtime layer. Empty on purpose: the path is set explicitly so
--- that no ~/.config/shady/init.lua can run on the login screen.

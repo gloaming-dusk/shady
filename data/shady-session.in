@@ -3,7 +3,9 @@
 #
 # Your own ~/.config/shady/{config,init,shell}.lua win when present; anything
 # missing comes from the rice named by SHADY_RICE (default: tide; "none" is
-# the bare compositor and its plain shell).
+# the bare compositor and its plain shell). Shady and shady-shell each look
+# the rice up themselves, in $SHADY_RICE_PATH, $XDG_DATA_HOME/shady/rices,
+# $SHADY_ROOT/rices and $XDG_DATA_DIRS/shady/rices.
 # Extra arguments go to shady, e.g. `shady-session --safe`.
 
 : "${SHADY_ROOT:=@datadir@}"
@@ -16,36 +18,51 @@ export XDG_SESSION_DESKTOP=shady
 # Shady provides a native Wayland session without Xwayland.
 export MOZ_ENABLE_WAYLAND=1
 
+# The first <dir>/$SHADY_RICE/<file> in the places above.
+rice_file() {
+    [ "$SHADY_RICE" = none ] && return 1
+    case "$SHADY_RICE" in */*|.*|'') return 1 ;; esac
+    old_ifs=$IFS
+    IFS=:
+    for dir in ${SHADY_RICE_PATH:-} "${XDG_DATA_HOME:-$HOME/.local/share}/shady/rices" \
+            "$SHADY_ROOT/rices" \
+            $(printf '%s' "${XDG_DATA_DIRS:-/usr/local/share:/usr/share}" | sed 's|\([^:][^:]*\)|\1/shady/rices|g'); do
+        if [ -n "$dir" ] && [ -f "$dir/$SHADY_RICE/$1" ]; then
+            IFS=$old_ifs
+            printf '%s\n' "$dir/$SHADY_RICE/$1"
+            return 0
+        fi
+    done
+    IFS=$old_ifs
+    return 1
+}
 config_dir="${XDG_CONFIG_HOME:-$HOME/.config}/shady"
-rice_dir="$SHADY_ROOT/rices/$SHADY_RICE"
-if [ "$SHADY_RICE" = none ]; then
-    rice_dir=
-elif [ ! -d "$rice_dir" ]; then
-    echo "shady-session: unknown rice '$SHADY_RICE' ($rice_dir)" >&2
-    rice_dir=
-fi
-
-if [ ! -f "$config_dir/config.lua" ] && [ -n "$rice_dir" ]; then
-    set -- -c "$rice_dir/config.lua" "$@"
+if rice_config=$(rice_file config.lua); then
+    [ -f "$config_dir/config.lua" ] || set -- -c "$rice_config" "$@"
+elif [ "$SHADY_RICE" != none ]; then
+    echo "shady-session: unknown rice '$SHADY_RICE', using the bare compositor" >&2
 fi
 if [ -z "${SHADY_LUA_INIT:-}" ] && [ ! -f "$config_dir/init.lua" ] && \
-   [ -n "$rice_dir" ] && [ -f "$rice_dir/init.lua" ]; then
-    export SHADY_LUA_INIT="$rice_dir/init.lua"
+        rice_init=$(rice_file init.lua); then
+    export SHADY_LUA_INIT="$rice_init"
 fi
-if [ -z "${SHADY_SHELL_CONFIG:-}" ] && [ ! -f "$config_dir/shell.lua" ] && \
-   [ -n "$rice_dir" ] && [ -f "$rice_dir/shell.lua" ]; then
-    export SHADY_SHELL_CONFIG="$rice_dir/shell.lua"
-fi
-if [ -n "$rice_dir" ] && [ -f "$rice_dir/theme.sh" ]; then
-    . "$rice_dir/theme.sh"
+# The rice's colours for the shell, when it keeps them in theme.sh.
+if theme=$(rice_file theme.sh); then
+    . "$theme"
 fi
 
-# The shell, started again if it crashes (a few times, not forever).
-# Portals and other D-Bus activated services need to find this session, and
-# user services of a graphical session (a polkit agent) start with
-# shady-session.target.
+# The shell is its own package (shady-shell): $SHADY_SHELL_BIN, else the one
+# on PATH. Without one the session is the compositor alone. It is started
+# again if it crashes (a few times, not forever). Portals and other D-Bus
+# activated services need to find this session, and user services of a
+# graphical session (a polkit agent) start with shady-session.target.
 if [ -z "${SHADY_STARTUP:-}" ]; then
-    SHADY_STARTUP="for try in 1 2 3 4 5; do '@bindir@/shady-shell' && break; sleep 1; done"
+    shell="${SHADY_SHELL_BIN:-$(command -v shady-shell)}"
+    if [ -n "$shell" ] && [ -x "$shell" ]; then
+        SHADY_STARTUP="for try in 1 2 3 4 5; do '$shell' && break; sleep 1; done"
+    else
+        SHADY_STARTUP=":"
+    fi
     if command -v dbus-update-activation-environment >/dev/null 2>&1; then
         SHADY_STARTUP="dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_TYPE XDG_SESSION_DESKTOP SHADY_SOCKET; systemctl --user start shady-session.target 2>/dev/null; $SHADY_STARTUP"
     fi

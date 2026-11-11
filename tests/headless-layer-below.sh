@@ -6,9 +6,10 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 BUILD_DIR="${SHADY_SPATIAL_TEST_BUILD_DIR:-build-spatial-asan}"
-for bin in shady shady-shell headless-automation-probe; do
+for bin in shady headless-automation-probe; do
     [[ -x "$BUILD_DIR/$bin" ]] || { echo "layer-below: missing $BUILD_DIR/$bin" >&2; exit 2; }
 done
+source "$ROOT/tests/shell-client.sh"
 command -v grim >/dev/null || { echo "layer-below: needs grim" >&2; exit 2; }
 
 tmp="$(mktemp -d)"
@@ -24,7 +25,6 @@ log="$tmp/log"
     export WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=1 WLR_RENDERER=gles2
     export LIBGL_ALWAYS_SOFTWARE=1
     export SHADY_LUA_INIT="$ROOT/tests/headless-layer-below-init.lua"
-    export SHADY_SHELL_BIN="$ROOT/$BUILD_DIR/shady-shell"
     export SHADY_SHELL_CONFIG="$ROOT/tests/layer-below/shell.lua"
     export SHADY_SHELL_RENDERER=shm
     export SHADY_AUTOMATION_PROBE="$ROOT/$BUILD_DIR/headless-automation-probe"

@@ -206,7 +206,10 @@ class Compositor:
 
 class Tide(Compositor):
     name = "tide"
-    needs = (str(ROOT / "build/shady"), str(ROOT / "build/shady-shell"), "foot")
+    # shady-shell is its own project: $SHADY_SHELL_BIN or the one on PATH, and
+    # Tide's shell.lua is found where the shell finds rices (Gloam has it).
+    shell_bin = os.environ.get("SHADY_SHELL_BIN") or shutil.which("shady-shell") or "shady-shell"
+    needs = (str(ROOT / "build/shady"), shell_bin, "foot")
     light = False
 
     def __init__(self, workdir):
@@ -215,13 +218,13 @@ class Tide(Compositor):
         self.env.update({
             "SHADY_ROOT": str(ROOT),
             "SHADY_LUA_INIT": str(rice / "init.lua"),
-            "SHADY_SHELL_CONFIG": str(rice / "shell.lua"),
             "WLR_BACKENDS": "wayland",
             "TIDE_IDLE_LOCK": "0",
             "TIDE_IDLE_SCREEN_OFF": "0",
             "TIDE_LIGHT": "1" if self.light else "0",
         })
-        for line in (rice / "theme.sh").read_text().splitlines():
+        theme = rice / "theme.sh"
+        for line in (theme.read_text().splitlines() if theme.exists() else []):
             match = re.match(r'export (\w+)="\$\{\w+:-(#\w+)\}"', line)
             if match:
                 self.env[match.group(1)] = match.group(2)
@@ -230,7 +233,7 @@ class Tide(Compositor):
         return [str(ROOT / "build/shady"), "-c", str(ROOT / "rices/tide/config.lua")]
 
     def after_start(self):
-        self.shell = subprocess.Popen([str(ROOT / "build/shady-shell")], env=self.client_env(),
+        self.shell = subprocess.Popen([self.shell_bin], env=self.client_env(),
             stdout=self.log, stderr=self.log)
         time.sleep(1.5)
 

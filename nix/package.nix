@@ -18,8 +18,6 @@
   cairo,
   pango,
   fontconfig,
-  systemd,
-  linux-pam,
   adwaita-icon-theme,
 }:
 
@@ -37,14 +35,12 @@ stdenv.mkDerivation {
         ../compositor
         ../data
         ../examples
-        ../greeter
         ../include
         ../plugins
         ../rices
-        ../shell
         ../tests
       ])
-      # Media and retired rices the build never reads.
+      # Media the build never reads.
       (lib.fileset.unions [ ../assets/screenshots ../assets/test-videos ]);
   };
 
@@ -53,7 +49,7 @@ stdenv.mkDerivation {
   nativeBuildInputs = [ meson ninja pkg-config wayland-scanner ];
   buildInputs = [
     wlroots wayland wayland-protocols wlr-protocols libxkbcommon libinput
-    pixman libdrm libGL lua5_4 cairo pango fontconfig systemd linux-pam
+    pixman libdrm libGL lua5_4 cairo pango fontconfig
   ];
 
   mesonBuildType = "release";
