@@ -33,6 +33,8 @@
 #include "ipc/ipc.h"
 #include "module/module.h"
 #include "modules/desktop/ime.h"
+#include "capture.h"
+#include "shortcut_overlay.h"
 #include "modules/desktop/state.h"
 #include "modules/layout/layout.h"
 #include <wlr/types/wlr_layer_shell_v1.h>
@@ -376,7 +378,15 @@ static bool handle_keybinding(struct shady_server *server,
 		return true;
 	}
 	if (bind_matches(&c->bind_show_shortcuts, sym, modifiers)) {
-		shady_ipc_shortcuts_toggle(server);
+		shady_shortcuts_toggle(server);
+		return true;
+	}
+	/* The whole screen to ~/Pictures. A rice with a picker (a region, a
+	 * window) binds Print itself; its binding runs first. */
+	if (bind_matches(&c->bind_screenshot, sym, modifiers)) {
+		char path[4096];
+		if (shady_capture_request(server, NULL, 0, path, sizeof(path)))
+			wlr_log(WLR_INFO, "screenshot: saving %s", path);
 		return true;
 	}
 	if (bind_matches(&c->bind_cycle_windows, sym, modifiers)) {
@@ -529,8 +539,22 @@ static void keyboard_handle_key(
 	bool handled = false;
 	uint32_t modifiers = wlr_keyboard_get_modifiers(keyboard->wlr_keyboard);
 
-	super_tap_track(server, syms, nsyms, modifiers,
-		event->state == WL_KEYBOARD_KEY_STATE_PRESSED, event->time_msec);
+	/* Escape puts away the shortcut overlay Shady drew itself. */
+	if (event->state == WL_KEYBOARD_KEY_STATE_PRESSED && shady_shortcut_overlay_visible()) {
+		for (int i = 0; i < nsyms; i++) {
+			if (syms[i] != XKB_KEY_Escape) continue;
+			shady_shortcut_overlay_hide(server);
+			return;
+		}
+	}
+
+	/* Not the keys an input method gives back (fcitx5 does, for a window
+	 * with a text field, such as a browser): the tap was tracked on the real
+	 * keyboard already, and an echoed Super arriving after the modifiers the
+	 * input method also gives back would disarm it. */
+	if (!shady_ime_owns_keyboard(server, keyboard->wlr_keyboard))
+		super_tap_track(server, syms, nsyms, modifiers,
+			event->state == WL_KEYBOARD_KEY_STATE_PRESSED, event->time_msec);
 	if (server->key_hold.active && !shady_desktop_state(server)->session_locked) {
 		hold_key(keyboard, event);
 		return;
@@ -892,6 +916,14 @@ static void handle_pointer_button(struct shady_server *server,
 	uint32_t mods = seat_modifiers(server);
 	server->super_tap_armed = false;
 
+	/* A click puts away the shortcut overlay, and does nothing else. The
+	 * release that follows reaches no client: the seat drops a release it
+	 * never saw pressed. */
+	if (event->state == WL_POINTER_BUTTON_STATE_PRESSED && shady_shortcut_overlay_visible()) {
+		shady_shortcut_overlay_hide(server);
+		return;
+	}
+
 	/* A move or resize ends with the button. One the client started (its
 	 * title bar or border, xdg_toplevel.move/resize) began with a press the
 	 * client saw, so it gets the release too: the seat counts presses, and
@@ -987,6 +1019,10 @@ bool shady_input_automation_key(struct shady_server *server, xkb_keysym_t sym,
 	uint32_t state = pressed ? WL_KEYBOARD_KEY_STATE_PRESSED :
 		WL_KEYBOARD_KEY_STATE_RELEASED;
 	bool handled = false;
+	if (pressed && sym == XKB_KEY_Escape && shady_shortcut_overlay_visible()) {
+		shady_shortcut_overlay_hide(server);
+		return true;
+	}
 	super_tap_track(server, &sym, 1, modifiers, pressed, automation_time_msec());
 	if (!shady_desktop_state(server)->session_locked) {
 		handled = shady_modules_key(server, &sym, 1, state, modifiers);

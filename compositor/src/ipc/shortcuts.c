@@ -154,6 +154,7 @@ struct core_bind {
 #define B(field) offsetof(struct shady_config, field)
 static const struct core_bind core_binds[] = {
 	{ "Shady", NULL, "Show these shortcuts", { B(bind_show_shortcuts) } },
+	{ "Shady", NULL, "Screenshot of the screen", { B(bind_screenshot) } },
 	{ "Shady", NULL, "Focus the next window", { B(bind_cycle_windows) } },
 	{ "Shady", "close-animation", "Close the focused window", { B(bind_close_window) } },
 	{ "Shady", NULL, "Quit Shady", { B(bind_quit) } },
@@ -185,6 +186,16 @@ static const struct shady_shortcut fps_keys[] = {
 	{ "Right-click", "First person", "Throw the window you hold" },
 };
 
+/* Whether Lua or a listed plugin declares these keys. Its binding runs
+ * before the compositor's, so the compositor's own is not listed then. */
+static bool declared(struct shady_server *server, const char *keys) {
+	struct entry *e;
+	wl_list_for_each(e, &entries, link)
+		if (!strcmp(e->keys, keys) && (e->group || plugin_name(server, e->owner)))
+			return true;
+	return false;
+}
+
 static void for_each_core(struct shady_server *server,
 		void (*fn)(const struct shady_shortcut *shortcut, void *data), void *data) {
 	for (size_t i = 0; i < sizeof(core_binds) / sizeof(core_binds[0]); i++) {
@@ -211,7 +222,7 @@ static void for_each_core(struct shady_server *server,
 			snprintf(keys + len, sizeof(keys) - len, "%s%s",
 				!b ? "" : same_modifiers ? "/" : " ", one);
 		}
-		if (!keys[0]) continue;
+		if (!keys[0] || declared(server, keys)) continue;
 		fn(&(struct shady_shortcut){ keys, c->group, c->description }, data);
 	}
 	for (size_t i = 0; i < sizeof(window_grabs) / sizeof(window_grabs[0]); i++)

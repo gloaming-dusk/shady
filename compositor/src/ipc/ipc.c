@@ -29,6 +29,7 @@
 #include "../plugin/plugin.h"
 #include "json.h"
 #include "shortcuts.h"
+#include "../shortcut_overlay.h"
 #include "values.h"
 #if SHADY_HAS_LUA
 #include "../modules/lua/lua.h"
@@ -313,9 +314,14 @@ static void write_shortcut_event(const struct shady_shortcut *shortcut, void *da
 	json_puts(b, "}\n");
 }
 
-void shady_ipc_shortcuts_toggle(struct shady_server *server) {
+bool shady_ipc_shortcuts_toggle(struct shady_server *server) {
 	struct shady_ipc *ipc = server ? server->ipc : NULL;
-	if (!ipc) return;
+	if (!ipc) return false;
+	bool wanted = false;
+	struct ipc_client *client;
+	wl_list_for_each(client, &ipc->clients, link)
+		wanted |= !client->dead && (client->subscriptions & (1u << IPC_SHORTCUTS_EVENT));
+	if (!wanted) return false;
 	/* The list follows the toggle, one line per shortcut, so a client
 	 * whose JSON stays flat can still read it. */
 	size_t count = 0;
@@ -325,10 +331,10 @@ void shady_ipc_shortcuts_toggle(struct shady_server *server) {
 	shady_shortcuts_for_each(server, write_shortcut_event, &line);
 	/* send_line adds the final newline. */
 	if (line.len) line.len--;
-	struct ipc_client *client;
 	wl_list_for_each(client, &ipc->clients, link)
 		if (client->subscriptions & (1u << IPC_SHORTCUTS_EVENT)) send_line(client, &line);
 	json_buf_free(&line);
+	return true;
 }
 
 static void replay_value(const char *key, const char *value, void *data) {
@@ -614,7 +620,7 @@ static bool cmd_shortcuts(struct request *r) {
 }
 
 static bool cmd_shortcuts_toggle(struct request *r) {
-	shady_ipc_shortcuts_toggle(r->ipc->server);
+	shady_shortcuts_toggle(r->ipc->server);
 	return true;
 }
 

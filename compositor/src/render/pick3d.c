@@ -80,7 +80,8 @@ struct shady_toplevel *shady_titlebar_at_3d(struct shady_server *server,
 		float title_h = (float)toplevel->titlebar_height;
 
 		if (toplevel->maximized &&
-				!shady_spatial_state(server)->runtime.camera.first_person) {
+				!shady_spatial_state(server)->runtime.camera.first_person &&
+				!shady_layout_camera_owned(server)) {
 			double global_title_x = (double)toplevel->scene_tree->node.x;
 			double global_title_y = (double)toplevel->scene_tree->node.y - title_h;
 			if (lx >= global_title_x && lx < global_title_x + tw &&
@@ -227,10 +228,12 @@ struct shady_toplevel *shady_toplevel_at_3d(struct shady_server *server,
 	 * wlroots FBO; unprojection still uses the unflipped view·proj. */
 	/* Outside FPS mode, fullscreen/maximized windows live in output-local 2D
 	 * screen space. In FPS mode they become spatial cubes like every other
-	 * toplevel, so skip this direct 2D picking path. */
+	 * toplevel, and in the overview they are drawn in 3D with the others, so
+	 * skip this direct 2D picking path. */
 	struct shady_toplevel *screen_toplevel;
 	wl_list_for_each(screen_toplevel, &server->toplevels, link) {
 		if (shady_spatial_state(server)->runtime.camera.first_person ||
+				shady_layout_camera_owned(server) ||
 				(!screen_toplevel->fullscreen && !screen_toplevel->maximized) || !screen_toplevel->scene_tree ||
 				!screen_toplevel->scene_tree->node.enabled ||
 				!shady_layout_shown_on(screen_toplevel, wlr_output)) continue;

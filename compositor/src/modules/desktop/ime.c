@@ -262,6 +262,16 @@ bool shady_ime_has_input_method(struct shady_server *server) {
 	return desktop && desktop->ime && desktop->ime->input_method;
 }
 
+bool shady_ime_owns_keyboard(struct shady_server *server, struct wlr_keyboard *keyboard) {
+	struct shady_desktop_state *desktop = shady_desktop_state(server);
+	struct shady_ime_state *ime = desktop ? desktop->ime : NULL;
+	if (!ime || !ime->input_method || !keyboard) return false;
+	struct wlr_virtual_keyboard_v1 *virtual_keyboard =
+		wlr_input_device_get_virtual_keyboard(&keyboard->base);
+	return virtual_keyboard && wl_resource_get_client(virtual_keyboard->resource) ==
+		wl_resource_get_client(ime->input_method->resource);
+}
+
 /* An input method gives back the keys it does not use through a virtual
  * keyboard of its own, for the application. Grabbing those too would hand them
  * straight back to it, and they would never arrive. */

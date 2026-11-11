@@ -10,6 +10,7 @@
 #include "shady.h"
 #include "ipc/values.h"
 #include "session_lock.h"
+#include "shortcut_overlay.h"
 #include "render/render.h"
 #include "modules/desktop/state.h"
 
@@ -302,6 +303,7 @@ void server_new_session_lock(struct wl_listener *listener, void *data) {
 	lock->lock = wlr_lock;
 	desktop->session_lock = wlr_lock;
 	desktop->session_locked = true;
+	shady_shortcut_overlay_hide(server);
 	desktop->session_lock_pending_locked_event = true;
 	desktop->session_lock_pending_outputs = 0;
 	shady_values_set(server, desktop, "session.lock", "locked");

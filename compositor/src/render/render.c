@@ -38,6 +38,7 @@
 #include "../modules/fps/fps.h"
 #include "../modules/fps/state.h"
 #include "../modules/layout/layout.h"
+#include "../shortcut_overlay.h"
 #include "../modules/physics/state.h"
 #include "../modules/close_animation/state.h"
 #include "../modules/close_animation/close_animation.h"
@@ -2800,7 +2801,11 @@ void shady_render_output_frame(
 			frame_h > 0.f ? th / frame_h : 1.f,
 		};
 
+		/* Flat on the output, unless the camera has moved away from it: in
+		 * FPS mode, or for the overview, where a maximized window (Chromium
+		 * starts maximized when it last was) pulls back with the others. */
 		bool screen_space = !shady_spatial_state(server)->runtime.camera.first_person &&
+			!shady_layout_camera_owned(server) &&
 			(toplevel->fullscreen || toplevel->maximized);
 		float wobble_x = toplevel->motion.wobble_x;
 		float wobble_y = toplevel->motion.wobble_y;
@@ -3266,6 +3271,25 @@ void shady_render_output_frame(
 	if (profile) {
 		clock_gettime(CLOCK_MONOTONIC, &profile_overlay_end);
 		profile_submit_start = profile_overlay_end;
+	}
+
+	/* Shady's own shortcut overlay, over everything but the cursor. */
+	{
+		struct wlr_texture *overlay_texture;
+		struct wlr_box overlay_box;
+		if (shady_shortcut_overlay_for_output(server, wlr_output,
+				&overlay_texture, &overlay_box)) {
+			wlr_render_pass_add_texture(pass, &(struct wlr_render_texture_options){
+				.texture = overlay_texture,
+				.dst_box = {
+					.x = (int)lround((overlay_box.x - ox) * scale),
+					.y = (int)lround((overlay_box.y - oy) * scale),
+					.width = (int)lround(overlay_box.width * scale),
+					.height = (int)lround(overlay_box.height * scale),
+				},
+				.filter_mode = WLR_SCALE_FILTER_BILINEAR,
+			});
+		}
 	}
 
 	/* Custom spatial rendering bypasses wlr_scene_output_commit(), which

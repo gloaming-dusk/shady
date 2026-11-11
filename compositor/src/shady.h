@@ -133,6 +133,7 @@ struct shady_config {
 
 	struct shady_keybind bind_quit;
 	struct shady_keybind bind_show_shortcuts;
+	struct shady_keybind bind_screenshot;
 	struct shady_keybind bind_cycle_windows;
 	struct shady_keybind bind_close_window;
 	struct shady_keybind bind_fps_toggle;

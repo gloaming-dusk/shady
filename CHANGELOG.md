@@ -41,6 +41,19 @@ New:
   next to itself.
 - `shady.shell_connected()`, and `shady.toggle_launcher()` says whether a
   shell heard it.
+- `Print` saves the whole screen to `~/Pictures` without any rice (the
+  `screenshot` binding; a rice's own `Print` still comes first).
+- With no shell listening, `Super+Shift+/` shows a shortcut overlay Shady
+  draws itself; Escape, a click or the binding again puts it away.
+
+Fixed:
+
+- Maximized and fullscreen windows (Chromium-based browsers start maximized
+  when they last were) stayed flat on the screen in the overview, covering
+  it unscaled, instead of pulling back with the other windows.
+- A tap of Super no longer counts the keys an input method such as fcitx5
+  gives back through its virtual keyboard, which could cancel the tap while
+  a text field (a browser's address bar, say) had the keyboard.
 
 ## 0.2.0 (2026-11-08)
 

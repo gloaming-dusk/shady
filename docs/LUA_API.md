@@ -102,6 +102,7 @@ shady.bind("quit", "none")
 | Action | Default | |
 |---|---|---|
 | `show_shortcuts` | `Super+Shift+slash` | show or hide the shortcut overlay |
+| `screenshot` | `Print` | save the whole screen to `~/Pictures` (a rice's own `Print` binding runs first) |
 | `quit` | `Escape` | end the session |
 | `cycle_windows` | `Alt+Tab` | focus the next window |
 | `close_window` | `Alt+F11` | close the focused window |
@@ -186,10 +187,13 @@ compositor can do alone when there is no shell.
 ### Shortcut overlay
 
 `Super+Shift+/` (the `show_shortcuts` binding) sends every listed shortcut to
-the shell, which shows them grouped in an overlay. The list holds:
+the shell, which shows them grouped in an overlay. With no shell listening,
+Shady draws a plain overlay of its own in the middle of the output under the
+pointer; Escape, a click or the binding again puts it away. The list holds:
 
 - the compositor's own bindings, as currently configured, under "Shady",
-  "Camera" and "First person" (only while those modules are active);
+  "Camera" and "First person" (only while those modules are active), except
+  one whose keys a runtime binding also declares, since that one runs first;
 - runtime bindings given a description, under "Desktop" or their group;
 - what native plugins declare (`declare_shortcut` in
   [C_PLUGIN_API.md](C_PLUGIN_API.md)), under the plugin's name while it is

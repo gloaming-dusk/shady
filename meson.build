@@ -71,6 +71,7 @@ shady_sources = [
   'compositor/src/config.c',
   'compositor/src/config_lua.c',
   'compositor/src/titlebar.c',
+  'compositor/src/shortcut_overlay.c',
   'compositor/src/input.c',
   'compositor/src/gestures.c',
   'compositor/src/idle.c',

@@ -14,6 +14,7 @@
 #include "shady.h"
 #include "render/render.h"
 #include "session_lock.h"
+#include "shortcut_overlay.h"
 
 static void output_frame(struct wl_listener *listener, void *data) {
 	(void)data;
@@ -122,6 +123,7 @@ static void output_destroy(struct wl_listener *listener, void *data) {
 	wl_list_remove(&output->present.link);
 	wl_list_remove(&output->request_state.link);
 	shady_session_lock_output_removed(output);
+	shady_shortcut_overlay_output_removed(server, output->wlr_output);
 #if SHADY_HAS_SPATIAL
 	if (server->config.spatial_mode) shady_render_output_destroy(output);
 #endif

@@ -606,6 +606,11 @@ bool shady_layout_overview_active(struct shady_server *server) {
 	return state && shady_layout_active(server) && state->overview;
 }
 
+bool shady_layout_camera_owned(struct shady_server *server) {
+	struct shady_layout_state *state = shady_layout_state_for(server);
+	return state && shady_layout_active(server) && state->camera_owned;
+}
+
 static int animation_tick(void *data) {
 	struct shady_layout_state *state = data;
 	struct shady_server *server = state->server;

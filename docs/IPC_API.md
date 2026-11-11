@@ -142,7 +142,8 @@ current value as an event, so a client needs no separate snapshot.
 ### Shortcut overlay
 
 `Super+Shift+/`, `shady.toggle_shortcuts()` or the `shortcuts.toggle`
-command asks shells to show or hide the overlay. Subscribers to
+command asks shells to show or hide the overlay. When no client subscribes
+to `shortcuts.toggle`, Shady shows its own overlay instead. Subscribers to
 `shortcuts.toggle` receive the event with the number of shortcuts, then the
 list itself as one `shortcut` event per entry, so a client that only reads
 flat objects can collect it:

@@ -18,6 +18,7 @@
 #include "../../render/render.h"
 #include "../../ipc/ipc.h"
 #include "../../ipc/shortcuts.h"
+#include "../../shortcut_overlay.h"
 #include "../../ipc/values.h"
 #include "../../ipc/json.h"
 #include <math.h>
@@ -441,7 +442,7 @@ static int l_shady_describe(lua_State *L){
 		return luaL_error(L,"invalid shortcut: %s",keys);
 	return 0;
 }
-static int l_shady_toggle_shortcuts(lua_State *L){(void)L;shady_ipc_shortcuts_toggle(lua_server);return 0;}
+static int l_shady_toggle_shortcuts(lua_State *L){(void)L;shady_shortcuts_toggle(lua_server);return 0;}
 
 static void push_shortcut(const struct shady_shortcut *shortcut, void *data) {
 	lua_State *L = data;

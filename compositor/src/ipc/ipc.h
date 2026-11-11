@@ -21,7 +21,8 @@ void shady_ipc_finish(struct shady_server *server);
 /* Tell subscribers a published value changed (value NULL: removed). */
 void shady_ipc_value_changed(struct shady_server *server, const char *key, const char *value);
 /* Ask shells to show or hide the shortcut overlay: the `shortcuts.toggle`
- * event, followed by the current list as `shortcut` events. */
-void shady_ipc_shortcuts_toggle(struct shady_server *server);
+ * event, followed by the current list as `shortcut` events. False when no
+ * client listens for it (shady_shortcuts_toggle then shows its own). */
+bool shady_ipc_shortcuts_toggle(struct shady_server *server);
 
 #endif

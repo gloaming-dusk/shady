@@ -67,6 +67,9 @@ bool shady_layout_swipe_end(struct shady_server *server, bool cancelled);
  * is 1, 0 or -1 to toggle. False when there is no overview to show. */
 bool shady_layout_overview(struct shady_server *server, int enable);
 bool shady_layout_overview_active(struct shady_server *server);
+/* Whether the overview has the camera: in it, or on the way in or out.
+ * Maximized and fullscreen windows are drawn in 3D then, as the others are. */
+bool shady_layout_camera_owned(struct shady_server *server);
 /* The scroll position and column count of the current workspace, for bars. */
 void shady_layout_describe(struct shady_server *server, size_t *columns, size_t *active,
 	double *view_fraction, double *visible_fraction);
