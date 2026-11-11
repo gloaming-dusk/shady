@@ -32,7 +32,11 @@ order. So one rice can come from several packages: Shady installs Tide's
 
 Some things need no Lua at all:
 
-- A PNG at `~/.config/shady/wallpaper.png` replaces the night sea.
+- A picture saved as `~/.config/shady/wallpaper.jpg` (or `.png`, `.webp`)
+  replaces the night sea, on the lock screen too; `wallpaper-<output>.jpg`
+  is for one output, and a folder `~/.config/shady/wallpapers` is a
+  slideshow. `shady-wallpaper set PATH [OUTPUT]` chooses one from a
+  terminal or a key binding and keeps it across sessions (`next`, `clear`).
 - `TIDE_LIGHT=1` draws through the plain scene graph, for the least GPU work.
 - `TIDE_IDLE_LOCK` and `TIDE_IDLE_SCREEN_OFF` set the idle times in seconds.
 - `TIDE_XKB_LAYOUT` and `TIDE_XKB_OPTIONS` set the keyboard.
@@ -101,13 +105,14 @@ tide = shell.base("tide", {
 | Option | |
 |---|---|
 | `palette` | colours to change: `text`, `dim`, `accent`, `accent_2`, `deep`, `surface`, `danger`, `base`, `good`, `warn` |
-| `wallpaper` | a picture for the desktop and the lock screen |
+| `wallpaper` | a picture, a folder of them (a slideshow) or `"#rrggbb"`, for the desktop and the lock screen; it beats a dropped picture, and `shady-wallpaper set` beats it |
 | `bar` | `left`, `center` and `right`: functions of `ctx` that return an island to add |
 | `tiles` | `fn(ctx, tile)` returning a list of tiles for the control center |
 | `launcher` | `fn(query)` returning results to list first: `title`, `subtitle`, `icon`, `run` |
 
 `shell.base` returns `P` (the palette), `font`, `text`, `glass`, `card`,
-`island`, `tile`, `slider`, `has`, `sys`, `act`, `lock` and `style`. A config
+`island`, `tile`, `slider`, `has`, `sys`, `act`, `lock`, `style` and
+`wallpaper` (shady-shell's [wallpaper manager](https://github.com/gloaming-dusk/shady-shell/blob/main/docs/SHELL_LUA_API.md#wallpaper)). A config
 built on Tide runs in the same Lua state, so `shell.popup`, `shell.bar` and
 `shell.on` add to it directly.
 
