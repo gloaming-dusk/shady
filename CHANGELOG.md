@@ -54,6 +54,10 @@ Fixed:
 - A tap of Super no longer counts the keys an input method such as fcitx5
   gives back through its virtual keyboard, which could cancel the tap while
   a text field (a browser's address bar, say) had the keyboard.
+- `shady.automation.after(0, fn)` never ran its callback (a 0 ms Wayland timer
+  is a disarmed one); it now runs on the next pass of the event loop.
+- Lua windows have an `id`, the same as IPC's and the shell protocol's, so the
+  `shadyctl lua` example returning `{id = w.id, ...}` works.
 
 ## 0.2.0 (2026-11-08)
 

@@ -26,7 +26,8 @@ shady.automation.after(200, function()
 end)
 ```
 
-`ms` must be non-negative.
+`ms` must be non-negative; `0` runs the callback on the next pass of the event
+loop.
 
 ## Keyboard
 

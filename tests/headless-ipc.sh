@@ -59,6 +59,12 @@ expect '"name":"HEADLESS-1"' "$(ctl outputs)"
 [[ "$(ctl lua 'return 42, true, nil, "hello\nworld", "a\0b"')" == '[42,true,null,"hello\nworld","a\u0000b"]' ]] || fail "Lua scalar results"
 [[ "$(ctl lua 'return {1, {answer = 42}}, {}')" == '[[1,{"answer":42}],{}]' ]] || fail "Lua table results"
 expect 'IPC \"probe\"' "$(ctl lua 'return ipc_test_title()')"
+# A Lua window carries the IPC id.
+[[ "$(ctl lua 'return shady.focused_window().id')" == "[$id]" ]] || fail "Lua window id is not the IPC id $id"
+# A 0 ms timer still fires.
+ctl lua 'shady.automation.after(0, function() shady.publish("ipc.after0", "fired") end)' >/dev/null
+sleep 0.2
+expect '"fired"' "$(ctl value key=ipc.after0)"
 ctl lua 'ipc_test_counter = 41' >/dev/null
 [[ "$(ctl lua 'ipc_test_counter = ipc_test_counter + 1; return ipc_test_counter')" == '[42]' ]] || fail "Lua state did not persist"
 expect '"ok":true,"data":[42]' "$(ctl --json lua 'return 42')"

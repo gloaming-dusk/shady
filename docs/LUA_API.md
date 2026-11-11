@@ -304,6 +304,8 @@ Returns the keyboard-focused window. In headless/spatial situations without phys
 
 A `Window` exposes:
 
+- `id`: stable for the window's lifetime, the same id as in IPC
+  (`shadyctl windows`) and the `shady-shell-v1` protocol
 - `title`
 - `app_id`
 - `mapped`
