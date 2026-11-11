@@ -80,4 +80,7 @@ run() {
 run "$@"
 status=$?
 systemctl --user stop shady-session.target 2>/dev/null
+# The startup line exported SHADY_SOCKET to the systemd user environment;
+# leave no dead socket path behind for the next session (another compositor).
+systemctl --user unset-environment SHADY_SOCKET 2>/dev/null
 exit $status

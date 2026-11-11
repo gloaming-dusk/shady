@@ -217,13 +217,25 @@ static void layer_surface_destroy(struct wl_listener *listener, void *data) {
 		wl_container_of(listener, layer, destroy);
 	struct shady_server *server = layer->server;
 	struct wlr_output *output = layer->layer_surface->output;
-	restore_layer_keyboard_focus(layer);
-
+	/* Out of the list first: giving the focus back arranges the layout,
+	 * which walks the layer surfaces, and wlroots has already freed this
+	 * one's scene tree. */
 	wl_list_remove(&layer->commit.link);
+	wl_list_remove(&layer->new_popup.link);
 	wl_list_remove(&layer->destroy.link);
 	wl_list_remove(&layer->link);
+	layer->scene_layer = NULL;
+	restore_layer_keyboard_focus(layer);
 	free(layer);
 	if (output) refresh_maximized_for_output(server, output);
+}
+
+static void layer_surface_new_popup(struct wl_listener *listener, void *data) {
+	struct shady_layer_surface *layer =
+		wl_container_of(listener, layer, new_popup);
+	struct wlr_xdg_popup *xdg_popup = data;
+	if (!layer->scene_layer) return;
+	shady_popup_create(layer->server, xdg_popup, layer->scene_layer->tree);
 }
 
 void server_new_layer_surface(struct wl_listener *listener, void *data) {
@@ -254,6 +266,9 @@ void server_new_layer_surface(struct wl_listener *listener, void *data) {
 
 	layer->commit.notify = layer_surface_commit;
 	wl_signal_add(&layer_surface->surface->events.commit, &layer->commit);
+
+	layer->new_popup.notify = layer_surface_new_popup;
+	wl_signal_add(&layer_surface->events.new_popup, &layer->new_popup);
 
 	layer->destroy.notify = layer_surface_destroy;
 	wl_signal_add(&layer_surface->events.destroy, &layer->destroy);
