@@ -3,7 +3,7 @@
 Shady is experimental: the Lua, IPC and plugin interfaces may still change
 between releases. Breaking changes are called out here.
 
-## Unreleased
+## 0.5.0 (2026-11-12)
 
 New:
 
