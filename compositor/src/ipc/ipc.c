@@ -826,8 +826,13 @@ static void op_done(void *data, const struct shady_automation_result *result) {
 	struct ipc_pending *pending = data;
 	pending->op = NULL; /* finished: freed by automation.c */
 	struct json_buf out = {0};
-	json_printf(&out, "{\"settled\":%s,\"elapsed\":%u}",
+	json_printf(&out, "{\"settled\":%s,\"elapsed\":%u",
 		result->settled ? "true" : "false", result->elapsed_ms);
+	if (result->active && *result->active) {
+		json_puts(&out, ",\"active\":");
+		json_string(&out, result->active);
+	}
+	json_puts(&out, "}");
 	pending_reply(pending, true, &out, NULL);
 	json_buf_free(&out);
 }
@@ -864,20 +869,35 @@ static bool cmd_window_at(struct request *r) {
 	return true;
 }
 
-/* wait: at least "ms", then until nothing new is drawn for "idle" ms, for
- * at most "timeout" ms. Answers {"settled": bool, "elapsed": ms}. */
+/* wait: at least "ms", then until nothing has changed for "idle" ms, for
+ * at most "timeout" ms. What counts as a change is the windows ("scope":
+ * "windows", the default), one "window", or every frame ("screen").
+ * Answers {"settled": bool, "elapsed": ms, "active": what changed last}. */
 static bool cmd_wait(struct request *r) {
 	int ms = 0, idle = 0, timeout = 5000;
 	if (!arg_int(r, "ms", 0, 60000, &ms) || !arg_int(r, "idle", 0, 10000, &idle) ||
 			!arg_int(r, "timeout", 0, 60000, &timeout))
 		return false;
+	enum shady_automation_scope scope = SHADY_WAIT_WINDOWS;
+	const char *scope_name = json_get_string(r->args, "scope");
+	if (scope_name && !strcmp(scope_name, "screen")) scope = SHADY_WAIT_SCREEN;
+	else if (scope_name && strcmp(scope_name, "windows") != 0)
+		return error(r, "scope is \"windows\" or \"screen\"");
+	uint32_t window = 0;
+	if (has_arg(r, "window")) {
+		if (scope == SHADY_WAIT_SCREEN) return error(r, "a window is in the windows scope");
+		struct shady_toplevel *t = request_window(r);
+		if (!t) return false;
+		window = t->shell_id;
+	}
 	if (ms == 0 && idle == 0) {
 		json_puts(r->data, "{\"settled\":true,\"elapsed\":0}");
 		return true;
 	}
 	struct ipc_pending *pending = defer(r);
 	if (!pending) return false;
-	pending->op = shady_automation_wait(r->ipc->server, ms, idle, timeout, op_done, pending);
+	pending->op = shady_automation_wait(r->ipc->server, ms, idle, timeout, scope, window,
+		op_done, pending);
 	return pending->op || error(r, "wait failed");
 }
 

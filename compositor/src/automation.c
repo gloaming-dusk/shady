@@ -12,8 +12,12 @@
 #include <time.h>
 #include <wayland-server-core.h>
 #include <wlr/interfaces/wlr_keyboard.h>
+#include <wlr/types/wlr_compositor.h>
 #include <wlr/types/wlr_keyboard.h>
+#include <wlr/types/wlr_layer_shell_v1.h>
 #include <wlr/types/wlr_seat.h>
+#include <wlr/types/wlr_session_lock_v1.h>
+#include <wlr/types/wlr_xdg_shell.h>
 #include <wlr/util/log.h>
 
 #include "shady.h"
@@ -27,7 +31,10 @@ static struct {
 	struct shady_keyboard *keyboard;
 	struct wl_list ops;
 	bool ops_ready;
-	uint64_t last_commit_ms;
+	uint64_t last_commit_ms;   /* any output drew a frame */
+	uint64_t last_window_ms;   /* a window-like surface committed */
+	char last_window[48];      /* which: "window 3", "the lock screen", ... */
+	uint64_t last_layout_ms;   /* the layout moved windows */
 } automation;
 
 struct shady_automation_op {
@@ -46,6 +53,8 @@ struct shady_automation_op {
 	/* wait */
 	uint64_t min_until_ms, deadline_ms;
 	int idle_ms;
+	enum shady_automation_scope scope;
+	uint32_t window;
 };
 
 static uint64_t now_ms(void) {
@@ -429,10 +438,11 @@ static void op_free(struct shady_automation_op *op) {
 	free(op);
 }
 
-static void op_finish(struct shady_automation_op *op, bool settled) {
+static void op_finish(struct shady_automation_op *op, bool settled, const char *active) {
 	struct shady_automation_result result = {
 		.settled = settled,
 		.elapsed_ms = (uint32_t)(now_ms() - op->start_ms),
+		.active = settled ? NULL : active,
 	};
 	shady_automation_done_fn done = op->done;
 	void *data = op->data;
@@ -480,7 +490,7 @@ static int drag_tick(void *data) {
 	}
 	shady_automation_pointer_button(op->server, op->button, false);
 	op->pressed = false;
-	op_finish(op, true);
+	op_finish(op, true, NULL);
 	return 0;
 }
 
@@ -515,20 +525,59 @@ struct shady_automation_op *shady_automation_drag(struct shady_server *server,
 	return op;
 }
 
+static struct shady_toplevel *toplevel_by_id(struct shady_server *server, uint32_t id) {
+	struct shady_toplevel *t;
+	wl_list_for_each(t, &server->all_toplevels, all_link)
+		if (t->shell_id == id) return t;
+	return NULL;
+}
+
+/* When the wait last saw a change, and what it was. */
+static uint64_t wait_last_change(struct shady_automation_op *op, char *what, size_t size) {
+	uint64_t last = 0;
+	const char *label = NULL;
+	char window[32];
+	switch (op->scope) {
+	case SHADY_WAIT_SCREEN:
+		last = automation.last_commit_ms;
+		label = "frames";
+		break;
+	case SHADY_WAIT_WINDOWS:
+		if (op->window) {
+			/* A window that is gone changes no more. */
+			struct shady_toplevel *t = toplevel_by_id(op->server, op->window);
+			last = t ? t->automation_commit_ms : 0;
+			snprintf(window, sizeof(window), "window %u", op->window);
+			label = window;
+		} else {
+			last = automation.last_window_ms;
+			label = automation.last_window;
+		}
+		if (automation.last_layout_ms > last) {
+			last = automation.last_layout_ms;
+			label = "layout";
+		}
+		break;
+	}
+	snprintf(what, size, "%s", label ? label : "");
+	return last;
+}
+
 static int wait_tick(void *data) {
 	struct shady_automation_op *op = data;
 	uint64_t now = now_ms();
-	uint64_t quiet_since = automation.last_commit_ms > op->start_ms ?
-		automation.last_commit_ms : op->start_ms;
+	char active[48];
+	uint64_t last = wait_last_change(op, active, sizeof(active));
+	uint64_t quiet_since = last > op->start_ms ? last : op->start_ms;
 	uint64_t ready_at = op->min_until_ms;
 	if (op->idle_ms > 0 && quiet_since + (uint64_t)op->idle_ms > ready_at)
 		ready_at = quiet_since + (uint64_t)op->idle_ms;
 	if (now >= ready_at) {
-		op_finish(op, true);
+		op_finish(op, true, NULL);
 		return 0;
 	}
 	if (now >= op->deadline_ms) {
-		op_finish(op, false);
+		op_finish(op, false, active);
 		return 0;
 	}
 	uint64_t next = ready_at < op->deadline_ms ? ready_at : op->deadline_ms;
@@ -537,16 +586,86 @@ static int wait_tick(void *data) {
 }
 
 struct shady_automation_op *shady_automation_wait(struct shady_server *server,
-		int ms, int idle_ms, int timeout_ms, shady_automation_done_fn done, void *data) {
+		int ms, int idle_ms, int timeout_ms, enum shady_automation_scope scope,
+		uint32_t window, shady_automation_done_fn done, void *data) {
 	struct shady_automation_op *op = op_new(server, wait_tick, done, data);
 	if (!op) return NULL;
 	op->is_wait = true;
+	op->scope = scope;
+	op->window = scope == SHADY_WAIT_WINDOWS ? window : 0;
 	op->idle_ms = idle_ms > 0 ? idle_ms : 0;
 	op->min_until_ms = op->start_ms + (uint64_t)(ms > 0 ? ms : 0);
 	uint64_t deadline = op->start_ms + (uint64_t)(timeout_ms > 0 ? timeout_ms : 0);
 	op->deadline_ms = deadline > op->min_until_ms ? deadline : op->min_until_ms;
-	op_arm(op, ms > 0 ? (uint64_t)ms : (uint64_t)(op->idle_ms > 0 ? op->idle_ms : 1));
+	/* The first look: when it could be settled, but never past the
+	 * deadline, where it gives up. */
+	uint64_t first = op->min_until_ms + (uint64_t)op->idle_ms;
+	if (first > op->deadline_ms) first = op->deadline_ms;
+	op_arm(op, first - op->start_ms);
 	return op;
+}
+
+/* The surface whose role decides what a commit is: a subsurface's parent,
+ * a popup's parent, up to a toplevel, a layer or a lock surface. */
+static struct wlr_surface *owner_surface(struct wlr_surface *surface) {
+	struct wlr_surface *root = wlr_surface_get_root_surface(surface);
+	for (int i = 0; root && i < 16; i++) {
+		struct wlr_xdg_popup *popup = wlr_xdg_popup_try_from_wlr_surface(root);
+		if (!popup || !popup->parent) break;
+		root = wlr_surface_get_root_surface(popup->parent);
+	}
+	return root;
+}
+
+static bool waiting(void) {
+	if (!automation.ops_ready) return false;
+	struct shady_automation_op *op;
+	wl_list_for_each(op, &automation.ops, link)
+		if (op->is_wait) return true;
+	return false;
+}
+
+static void note_window(uint64_t now, const char *what) {
+	automation.last_window_ms = now;
+	snprintf(automation.last_window, sizeof(automation.last_window), "%s", what);
+}
+
+void shady_automation_surface_committed(struct shady_server *server,
+		struct wlr_surface *surface) {
+	/* Only a wait looks at these. */
+	if (!surface || !waiting()) return;
+	uint64_t now = now_ms();
+	struct wlr_surface *owner = owner_surface(surface);
+	if (!owner) return;
+	struct wlr_xdg_toplevel *xdg = wlr_xdg_toplevel_try_from_wlr_surface(owner);
+	if (xdg) {
+		struct shady_toplevel *t;
+		wl_list_for_each(t, &server->all_toplevels, all_link) {
+			if (t->xdg_toplevel != xdg) continue;
+			t->automation_commit_ms = now;
+			char what[32];
+			snprintf(what, sizeof(what), "window %u", t->shell_id);
+			note_window(now, what);
+			break;
+		}
+		return;
+	}
+	if (wlr_session_lock_surface_v1_try_from_wlr_surface(owner)) {
+		note_window(now, "the lock screen");
+		return;
+	}
+	/* A layer surface counts while it has the keyboard: a launcher being
+	 * typed into, not a bar's clock or a wallpaper. */
+	struct wlr_layer_surface_v1 *layer = wlr_layer_surface_v1_try_from_wlr_surface(owner);
+	struct wlr_surface *focus = server->seat->keyboard_state.focused_surface;
+	if (layer && focus && owner_surface(focus) == owner) {
+		note_window(now, layer->namespace && *layer->namespace ?
+			layer->namespace : "a layer surface with the keyboard");
+	}
+}
+
+void shady_automation_layout_moved(void) {
+	if (waiting()) automation.last_layout_ms = now_ms();
 }
 
 void shady_automation_op_cancel(struct shady_automation_op *op) {

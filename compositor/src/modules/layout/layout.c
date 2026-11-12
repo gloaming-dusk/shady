@@ -25,6 +25,7 @@
 #include <wlr/util/edges.h>
 
 #include "../../shady.h"
+#include "../../automation.h"
 #include "../../ipc/values.h"
 #include "../../render/render.h"
 #include "../../shell_protocol.h"
@@ -638,6 +639,8 @@ static int animation_tick(void *data) {
 				finish_leaving(server, i);
 		}
 	}
+	/* Windows moved this tick: automation waiting on them is not done. */
+	shady_automation_layout_moved();
 	shady_render_schedule_all_outputs(server);
 	if (moving) wl_event_source_timer_update(state->timer, ANIMATION_INTERVAL_MS);
 	return 0;

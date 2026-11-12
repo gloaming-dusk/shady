@@ -98,7 +98,7 @@ answered with an error and the connection stays open.
 | `pointer.scroll` | `dx`?, `dy`?, `x`?, `y`? | Scroll by wheel clicks; positive is down and right |
 | `pointer.drag` | `x1`, `y1`, `x2`, `y2`, `button`?, `steps`?, `duration`? | Press, move in `steps` (10), release, over `duration` ms (300; `0` all at once); answers once released |
 | `window.at` | `x`, `y` | The window a click there would reach, or `null` |
-| `wait` | `ms`?, `idle`?, `timeout`? | Answer after `ms`, then once no output has drawn a new frame for `idle` ms, or after `timeout` ms (5000); data is `{"settled": bool, "elapsed": ms}` |
+| `wait` | `ms`?, `idle`?, `timeout`?, `scope`?, `window`? | Answer after `ms`, then once nothing has changed for `idle` ms, or after `timeout` ms (5000); data is `{"settled": bool, "elapsed": ms, "active"?: what changed last}` (see [Input](#input)) |
 | `screenshot` | `path`?, `delay`?, `wait`?, `output`?, `window`?, `x`/`y`/`width`/`height`?, `max_width`?, `max_height`? | Save the next frame as a PNG (default `~/Pictures/shady-<time>.png`) after `delay` ms; see [Screenshots](#screenshots) |
 | `shortcuts.toggle` | | Ask shells to show or hide the shortcut overlay (the `shortcuts.toggle` event) |
 | `lua` | `code`, `name`? | Execute Lua in the live runtime; data is an array of return values |
@@ -151,6 +151,15 @@ shadyctl key keys=Ctrl+Return
 shadyctl pointer.drag x1=100 y1=100 x2=400 y2=300 duration=500
 shadyctl wait idle=200 timeout=3000
 ```
+
+`wait` decides what a change is by `scope`. `"windows"` (the default)
+counts the windows' surfaces and their popups, the layout moving windows,
+a layer surface while it has the keyboard (a launcher being typed into)
+and the lock screen, but not a bar's clock, an animated wallpaper or the
+cursor, so a real desktop settles. `window` narrows that to one window
+and the layout. `"screen"` counts every frame an output draws. When it does
+not settle in time, `active` says what kept changing: `"window 3"`,
+`"layout"`, a layer surface's namespace, `"the lock screen"` or `"frames"`.
 
 ## Screenshots
 

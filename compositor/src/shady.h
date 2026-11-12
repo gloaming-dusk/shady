@@ -276,6 +276,8 @@ struct shady_toplevel {
 	struct shady_server *server;
 	struct wlr_xdg_toplevel *xdg_toplevel;
 	uint32_t shell_id;
+	/* When one of its surfaces last committed, while automation waits. */
+	uint64_t automation_commit_ms;
 	struct wlr_scene_tree *scene_tree;
 	struct wlr_scene_tree *focus_border_tree;
 	struct wlr_scene_rect *focus_border[4];

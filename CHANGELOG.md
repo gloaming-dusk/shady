@@ -3,6 +3,26 @@
 Shady is experimental: the Lua, IPC and plugin interfaces may still change
 between releases. Breaking changes are called out here.
 
+## Unreleased
+
+Breaking:
+
+- IPC `wait` with `idle` waits for the windows to stop changing, not every
+  frame: a bar's clock or an animated wallpaper no longer keeps it from
+  settling. `scope: "screen"` is the old behaviour.
+
+New:
+
+- `wait` takes `window` (only that window and the layout) and `scope`, and
+  says what kept changing (`active`) when it does not settle.
+- The automation probe can be a layer surface and redraw on a timer, for
+  tests.
+
+Fixed:
+
+- `wait` with an `idle` longer than its `timeout` waited the whole `idle`
+  and answered settled, instead of giving up at the timeout.
+
 ## 0.4.0 (2026-11-12)
 
 Breaking:

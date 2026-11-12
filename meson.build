@@ -272,6 +272,8 @@ if test_clients_enabled
     [
       xdg_shell_client_header,
       xdg_shell_protocol_code,
+      layer_shell_protocol_header,
+      layer_shell_protocol_code,
       'tests/headless-automation-probe.c',
     ],
     include_directories: include_directories('.'),

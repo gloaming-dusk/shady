@@ -17,6 +17,7 @@
 #include <xkbcommon/xkbcommon.h>
 
 struct shady_server;
+struct wlr_surface;
 
 struct shady_automation_key_result {
 	bool handled; /* a binding, module or plugin took it */
@@ -47,8 +48,20 @@ void shady_automation_scroll(struct shady_server *server, double dx, double dy);
 
 struct shady_automation_op;
 struct shady_automation_result {
-	bool settled;        /* wait: the screen stopped changing in time */
+	bool settled;        /* wait: it stopped changing in time */
 	uint32_t elapsed_ms;
+	/* wait, not settled: what changed last ("window 3", "layout", ...) */
+	const char *active;
+};
+
+/* What a wait watches for changes. */
+enum shady_automation_scope {
+	/* The windows: their surfaces and popups, the layout moving them, a
+	 * layer surface with the keyboard (a launcher) and the lock screen. A
+	 * bar's clock, a wallpaper and the cursor do not count. */
+	SHADY_WAIT_WINDOWS,
+	/* Every frame any output draws. */
+	SHADY_WAIT_SCREEN,
 };
 typedef void (*shady_automation_done_fn)(void *data,
 	const struct shady_automation_result *result);
@@ -59,15 +72,22 @@ typedef void (*shady_automation_done_fn)(void *data,
 struct shady_automation_op *shady_automation_drag(struct shady_server *server,
 	double x1, double y1, double x2, double y2, uint32_t button, int steps,
 	int duration_ms, shady_automation_done_fn done, void *data, bool *now);
-/* Wait at least `ms`, then until no output has drawn a new frame for
- * `idle_ms` (0: no such wait), giving up after `timeout_ms`. */
+/* Wait at least `ms`, then until nothing in `scope` has changed for
+ * `idle_ms` (0: no such wait), giving up after `timeout_ms`. A `window`
+ * id (non-zero) narrows SHADY_WAIT_WINDOWS to that window and the layout. */
 struct shady_automation_op *shady_automation_wait(struct shady_server *server,
-	int ms, int idle_ms, int timeout_ms, shady_automation_done_fn done, void *data);
+	int ms, int idle_ms, int timeout_ms, enum shady_automation_scope scope,
+	uint32_t window, shady_automation_done_fn done, void *data);
 /* Stop an operation without running its callback. A drag lets go. */
 void shady_automation_op_cancel(struct shady_automation_op *op);
 
 /* output.c: an output committed a new frame. */
 void shady_automation_frame_committed(void);
+/* output.c: a client surface committed. */
+void shady_automation_surface_committed(struct shady_server *server,
+	struct wlr_surface *surface);
+/* The layout moved windows (an animation tick). */
+void shady_automation_layout_moved(void);
 void shady_automation_finish(struct shady_server *server);
 
 #endif

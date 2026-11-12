@@ -4,8 +4,9 @@
 Keys and text reach the focused window (the probe decodes them with the
 keymap it was sent, Hangul included), the pointer clicks, scrolls and drags
 in layout coordinates, `wait` settles, screenshots answer once written with
-the geometry that maps their pixels back, answers stay in request order, and
-a client that leaves mid-drag leaves nothing pressed.
+the geometry that maps their pixels back, answers stay in request order, a
+client that leaves mid-drag leaves nothing pressed, and `wait` settles while a
+bar keeps redrawing but not while a window does.
 """
 import argparse
 import json
@@ -94,7 +95,14 @@ def wait_for(pred, what, timeout=5.0):
     raise Fail(f"timed out waiting for {what}")
 
 
-def scenario(ipc, status, shots):
+def spawn_probe(ipc, probe, **env):
+    """Another probe, with its own settings and no status file."""
+    assigns = " ".join(f"{k}={v}" for k, v in env.items())
+    code = f"shady.spawn({json.dumps(f'env SHADY_AUTOMATION_PROBE_STATUS= {assigns} {probe}')})"
+    ipc.ok("lua", code=code)
+
+
+def scenario(ipc, status, shots, probe_path):
     windows = ipc.ok("windows")
     probe = next(w for w in windows if w["app_id"] == "computer-use-probe")
     wid, wx, wy, ww, wh = probe["id"], probe["x"], probe["y"], probe["width"], probe["height"]
@@ -196,6 +204,40 @@ def scenario(ipc, status, shots):
     wait_for(lambda: status_lines(status).count("BUTTON=272 50.000 60.000") == before + 1,
              "a click after an abandoned drag")
 
+    # A bar that redraws all the time (a clock, an animated wallpaper):
+    # the screen never settles, the windows do.
+    spawn_probe(ipc, probe_path, SHADY_AUTOMATION_PROBE_LAYER=1,
+                SHADY_AUTOMATION_PROBE_APP_ID="computer-use-bar",
+                SHADY_AUTOMATION_PROBE_ANIMATE_MS=40)
+    end = time.monotonic() + 5
+    while True:
+        screen = ipc.ok("wait", scope="screen", idle=150, timeout=600)
+        if not screen["settled"] or time.monotonic() > end:
+            break
+    check(not screen["settled"] and screen["active"] == "frames", f"screen with a bar {screen}")
+    windows = ipc.ok("wait", idle=150, timeout=3000)
+    check(windows["settled"], f"windows did not settle under a busy bar: {windows}")
+
+    # A window that redraws all the time keeps the windows from settling,
+    # and says so; waiting on another window settles.
+    spawn_probe(ipc, probe_path, SHADY_AUTOMATION_PROBE_APP_ID="computer-use-busy",
+                SHADY_AUTOMATION_PROBE_ANIMATE_MS=40)
+    wait_for(lambda: any(w["app_id"] == "computer-use-busy" for w in ipc.ok("windows")),
+             "the busy window")
+    busy = next(w["id"] for w in ipc.ok("windows") if w["app_id"] == "computer-use-busy")
+    ipc.ok("wait", idle=300, timeout=2000)  # the layout makes room for it
+    busy_wait = ipc.ok("wait", idle=150, timeout=600)
+    check(not busy_wait["settled"] and busy_wait["active"] == f"window {busy}",
+          f"a busy window settled: {busy_wait}")
+    one = ipc.ok("wait", window=wid, idle=150, timeout=3000)
+    check(one["settled"], f"waiting on a quiet window: {one}")
+    # An idle longer than the timeout cannot settle: it gives up at the timeout.
+    t0 = time.monotonic()
+    late = ipc.ok("wait", idle=5000, timeout=300)
+    check(not late["settled"] and time.monotonic() - t0 < 2, f"wait past its timeout: {late}")
+    ipc.err("wait", scope="screen", window=wid, idle=100)
+    ipc.err("wait", scope="everything", idle=100)
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -243,7 +285,7 @@ def main():
             check(comp.poll() is None, "compositor exited early")
             time.sleep(0.2)  # the probe's first frame
             ipc = Ipc(str(runtime / "shady-wayland-0.sock"))
-            scenario(ipc, status, tmp)
+            scenario(ipc, status, tmp, str(build / "headless-automation-probe"))
             ipc.ok("quit")
             ipc.close()
             check(comp.wait(timeout=10) == 0, f"compositor exited with {comp.returncode}")

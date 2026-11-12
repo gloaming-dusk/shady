@@ -12,6 +12,7 @@
 #include <xkbcommon/xkbcommon.h>
 
 #include "xdg-shell-client-protocol.h"
+#include "wlr-layer-shell-unstable-v1-protocol.h"
 
 #define WIDTH 320
 #define HEIGHT 200
@@ -25,6 +26,8 @@ struct probe {
 	struct wl_keyboard *keyboard;
 	struct wl_pointer *pointer;
 	struct xdg_wm_base *wm_base;
+	struct zwlr_layer_shell_v1 *layer_shell;
+	struct zwlr_layer_surface_v1 *layer_surface;
 	struct wl_surface *surface;
 	struct xdg_surface *xdg_surface;
 	struct xdg_toplevel *toplevel;
@@ -112,6 +115,35 @@ static void draw(struct probe *p) {
 	wl_surface_damage_buffer(p->surface, 0, 0, WIDTH, HEIGHT);
 	wl_surface_commit(p->surface);
 }
+
+/* SHADY_AUTOMATION_PROBE_ANIMATE_MS: commit the last frame again this
+ * often, as a clock or a spinner does. */
+static void redraw(struct probe *p) {
+	if (!p->configured || p->buffer_count == 0) return;
+	wl_surface_attach(p->surface, p->buffers[p->buffer_count - 1], 0, 0);
+	wl_surface_damage_buffer(p->surface, 0, 0, WIDTH, HEIGHT);
+	wl_surface_commit(p->surface);
+}
+
+static void layer_configure(void *data, struct zwlr_layer_surface_v1 *surface,
+		uint32_t serial, uint32_t width, uint32_t height) {
+	(void)width; (void)height;
+	struct probe *p = data;
+	zwlr_layer_surface_v1_ack_configure(surface, serial);
+	bool first = !p->configured;
+	p->configured = true;
+	if (first) draw(p);
+}
+static void layer_closed(void *data, struct zwlr_layer_surface_v1 *surface) {
+	(void)surface;
+	struct probe *p = data;
+	wl_display_disconnect(p->display);
+	exit(0);
+}
+static const struct zwlr_layer_surface_v1_listener layer_listener = {
+	.configure = layer_configure,
+	.closed = layer_closed,
+};
 
 static void wm_ping(void *data, struct xdg_wm_base *wm, uint32_t serial) {
 	(void)data;
@@ -389,6 +421,9 @@ static void registry_global(void *data, struct wl_registry *registry,
 		p->seat = wl_registry_bind(registry, name, &wl_seat_interface,
 			version < 9 ? version : 9);
 		wl_seat_add_listener(p->seat, &seat_listener, p);
+	} else if (strcmp(interface, zwlr_layer_shell_v1_interface.name) == 0) {
+		p->layer_shell = wl_registry_bind(registry, name,
+			&zwlr_layer_shell_v1_interface, version < 4 ? version : 4);
 	} else if (strcmp(interface, xdg_wm_base_interface.name) == 0) {
 		p->wm_base = wl_registry_bind(registry, name,
 			&xdg_wm_base_interface, version < 6 ? version : 6);
@@ -424,6 +459,17 @@ int main(void) {
 	if (!p.compositor || !p.shm || !p.wm_base || !p.seat) return 2;
 
 	p.surface = wl_compositor_create_surface(p.compositor);
+	/* SHADY_AUTOMATION_PROBE_LAYER: a bar in the top layer, not a window. */
+	if (getenv("SHADY_AUTOMATION_PROBE_LAYER")) {
+		if (!p.layer_shell) return 3;
+		p.layer_surface = zwlr_layer_shell_v1_get_layer_surface(p.layer_shell, p.surface,
+			NULL, ZWLR_LAYER_SHELL_V1_LAYER_TOP, p.app_id);
+		zwlr_layer_surface_v1_add_listener(p.layer_surface, &layer_listener, &p);
+		zwlr_layer_surface_v1_set_size(p.layer_surface, WIDTH, HEIGHT);
+		zwlr_layer_surface_v1_set_anchor(p.layer_surface,
+			ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM | ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT);
+		wl_surface_commit(p.surface);
+	} else {
 	p.xdg_surface = xdg_wm_base_get_xdg_surface(p.wm_base, p.surface);
 	xdg_surface_add_listener(p.xdg_surface, &xdg_surface_listener, &p);
 	p.toplevel = xdg_surface_get_toplevel(p.xdg_surface);
@@ -438,12 +484,16 @@ int main(void) {
 		xdg_toplevel_set_max_size(p.toplevel, WIDTH, HEIGHT);
 	}
 	wl_surface_commit(p.surface);
+	}
 
 	/* SHADY_AUTOMATION_PROBE_RETITLE="title" renames the window after
 	 * SHADY_AUTOMATION_PROBE_RETITLE_MS (default 1000) milliseconds. */
 	const char *retitle = getenv("SHADY_AUTOMATION_PROBE_RETITLE");
 	const char *retitle_ms = getenv("SHADY_AUTOMATION_PROBE_RETITLE_MS");
 	int timeout = retitle && *retitle ? (retitle_ms ? atoi(retitle_ms) : 1000) : -1;
+	const char *animate = getenv("SHADY_AUTOMATION_PROBE_ANIMATE_MS");
+	int animate_ms = animate && *animate ? atoi(animate) : 0;
+	if (animate_ms > 0) timeout = animate_ms;
 	int fd = wl_display_get_fd(p.display);
 	for (;;) {
 		while (wl_display_prepare_read(p.display) != 0) wl_display_dispatch_pending(p.display);
@@ -453,6 +503,10 @@ int main(void) {
 		if (ready <= 0) {
 			wl_display_cancel_read(p.display);
 			if (ready < 0) break;
+			if (animate_ms > 0) {
+				redraw(&p);
+				continue;
+			}
 			xdg_toplevel_set_title(p.toplevel, retitle);
 			timeout = -1;
 			continue;

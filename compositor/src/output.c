@@ -33,6 +33,7 @@ static void output_frame(struct wl_listener *listener, void *data) {
  * cursor surfaces) ask for a frame; the spatial renderer draws only then. */
 struct surface_watch {
 	struct shady_server *server;
+	struct wlr_surface *surface;
 	struct wl_listener commit;
 	struct wl_listener destroy;
 };
@@ -40,6 +41,7 @@ struct surface_watch {
 static void surface_watch_commit(struct wl_listener *listener, void *data) {
 	(void)data;
 	struct surface_watch *watch = wl_container_of(listener, watch, commit);
+	shady_automation_surface_committed(watch->server, watch->surface);
 	shady_render_schedule_all_outputs(watch->server);
 }
 
@@ -57,6 +59,7 @@ void server_new_surface(struct wl_listener *listener, void *data) {
 	struct surface_watch *watch = calloc(1, sizeof(*watch));
 	if (!watch) return;
 	watch->server = server;
+	watch->surface = surface;
 	watch->commit.notify = surface_watch_commit;
 	wl_signal_add(&surface->events.commit, &watch->commit);
 	watch->destroy.notify = surface_watch_destroy;
