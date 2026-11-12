@@ -31,36 +31,40 @@ loop.
 
 ## Keyboard
 
-### `shady.automation.key(shortcut) -> boolean`
+### `shady.automation.key(shortcut) -> handled, sent`
 
-Press and release a key combination.
+Press and release a key combination. It goes through module hooks,
+plugins and bindings first (`handled`); a key none of them takes is then
+pressed for the focused window (`sent`), so `Ctrl+l` reaches the window.
 
 ```lua
 assert(shady.automation.key("Super+Tab"))
 ```
 
-### `shady.automation.key_down(shortcut) -> boolean`
+### `shady.automation.key_down(shortcut) -> handled, sent`
 
 Send only the press state.
 
-### `shady.automation.key_up(shortcut) -> boolean`
+### `shady.automation.key_up(shortcut) -> handled, sent`
 
 Send only the release state.
 
-The shortcut syntax is the same syntax used by `shady.bind`.
+The shortcut syntax is the same syntax used by `shady.bind`. Keys reach
+windows through a keyboard of Shady's own with the configured keymap
+([IPC_API.md](IPC_API.md#input)).
 
 ## Text input
 
-### `shady.automation.type_text(text) -> pid | nil, error`
+### `shady.automation.type_text(text) -> count | nil, error`
 
-Spawns `wtype` to type text into the focused Wayland client.
+Type UTF-8 text into the focused window, any character: what the keymap
+lacks is typed with a keymap made for the text. Returns the number of
+characters typed.
 
 ```lua
-local pid, err = shady.automation.type_text("hello")
-assert(pid, err)
+local typed, err = shady.automation.type_text("hello, 세계")
+assert(typed, err)
 ```
-
-This requires `wtype` in `PATH`.
 
 ## Pointer
 
@@ -158,10 +162,18 @@ The repository builds `headless-automation-probe` for test scenarios that need a
 
 Existing tests under `tests/headless-*.lua` are useful reference implementations.
 
+## From outside: IPC
+
+Everything here is also an IPC command (`key`, `type`, `pointer.click`,
+`pointer.drag`, `pointer.scroll`, `wait`, `screenshot` with `"wait": true`,
+...), for a test or a computer-use agent in another process; see
+[IPC_API.md](IPC_API.md#input). `tests/headless-computer-use.py` drives a
+headless Shady that way.
+
 ## Notes
 
 Automation coordinates are compositor logical coordinates, not raw buffer pixels.
 
-The automation API injects events directly into Shady where possible. `type_text` and screenshots intentionally use external Wayland tools.
+The automation API injects events directly into Shady. `shady.automation.screenshot` still uses `grim`; `shady.screenshot()` and the IPC `screenshot` capture inside Shady.
 
 For spatial tests, visually transformed 3D geometry may not line up with simple 2D coordinates. Prefer tests that use known screen-space states or coordinates derived from the rendered geometry.

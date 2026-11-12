@@ -32,7 +32,10 @@ on one line:
 - Argument values are strings, numbers, booleans, `null` or arrays of
   strings. Nested objects are rejected. A request line may be up to 64 KiB.
 
-Every request gets exactly one response line, in order:
+Every request gets exactly one response line, in order. A few commands
+answer only once something has happened (`screenshot` with `wait`,
+`pointer.drag` with a `duration`, `wait`); the requests after one of them on
+the same connection run after its answer, so the order still holds:
 
 ```json
 {"id": 1, "ok": true, "data": [ ... ]}
@@ -85,8 +88,18 @@ answered with an error and the connection stays open.
 | `window.fullscreen` | `window`, `state`? | Set fullscreen; toggles when `state` is absent |
 | `window.move` | `window`, `workspace` | Move to a workspace, creating it if needed |
 | `workspace.switch` | `name` | Switch workspace, creating it if needed |
-| `key` | `keys` | Press and release a shortcut such as `"Super+Shift+z"`; data is `{"handled": bool}` |
-| `screenshot` | `path`?, `delay`? | Save the next frame as a PNG (default `~/Pictures/shady-<time>.png`) after `delay` ms; data is `{"path": …}`, and the value `screenshot.saved` (or `screenshot.failed`) names the file once written |
+| `key` | `keys` | Press and release a shortcut such as `"Super+Shift+z"`; data is `{"handled": bool, "sent": bool}` (see [Input](#input)) |
+| `key.down`, `key.up` | `keys` | Only press it, or only release it |
+| `type` | `text` | Type UTF-8 text into the focused window; data is `{"typed": characters}` |
+| `pointer` | | `{"x", "y", "window"}`: where the pointer is, and the window `id` under it or `null` |
+| `pointer.move` | `x`, `y` | Move the pointer |
+| `pointer.click` | `x`?, `y`?, `button`?, `count`? | Move there, then click `count` (1–3) times |
+| `pointer.down`, `pointer.up` | `x`?, `y`?, `button`? | Press or release a button and leave it so |
+| `pointer.scroll` | `dx`?, `dy`?, `x`?, `y`? | Scroll by wheel clicks; positive is down and right |
+| `pointer.drag` | `x1`, `y1`, `x2`, `y2`, `button`?, `steps`?, `duration`? | Press, move in `steps` (10), release, over `duration` ms (300; `0` all at once); answers once released |
+| `window.at` | `x`, `y` | The window a click there would reach, or `null` |
+| `wait` | `ms`?, `idle`?, `timeout`? | Answer after `ms`, then once no output has drawn a new frame for `idle` ms, or after `timeout` ms (5000); data is `{"settled": bool, "elapsed": ms}` |
+| `screenshot` | `path`?, `delay`?, `wait`?, `output`?, `window`?, `x`/`y`/`width`/`height`?, `max_width`?, `max_height`? | Save the next frame as a PNG (default `~/Pictures/shady-<time>.png`) after `delay` ms; see [Screenshots](#screenshots) |
 | `shortcuts.toggle` | | Ask shells to show or hide the shortcut overlay (the `shortcuts.toggle` event) |
 | `lua` | `code`, `name`? | Execute Lua in the live runtime; data is an array of return values |
 | `plugin.reload` | `name` | Hot-reload a loaded plugin |
@@ -98,9 +111,72 @@ answered with an error and the connection stays open.
 goes through module hooks, native plugins, Lua bindings and compositor
 bindings exactly like a real key press, so any plugin shortcut (`Super+b`
 for border-accent, `Super+BackSpace` for rewind) can be triggered from a
-script. Plugins can only be loaded while `config.lua` runs, so IPC offers
+script; a key none of them takes goes on to the focused window
+([Input](#input)). Plugins can only be loaded while `config.lua` runs, so IPC offers
 the same runtime operations as Lua: list, reload and unload (see
 [PLUGIN_MANAGER.md](PLUGIN_MANAGER.md)).
+
+## Input
+
+These are for scripts, tests and computer-use agents: a program that looks
+at the screen and works it with the keyboard and pointer, as a person does.
+Coordinates are layout coordinates, the ones `windows` and `outputs` use,
+not pixels of a scaled output.
+
+`key` goes through module hooks, native plugins, Lua bindings and
+compositor bindings first, as before (`handled`). A key none of them takes
+is then pressed for the focused window (`sent`), with its modifiers, so
+`Ctrl+l` reaches a browser and `Return` a terminal. Keys reach windows
+through a keyboard of Shady's own, made the first time automation types,
+with the configured keymap; it never goes through an input method. A
+modifier alone (`"Shift"`) is its own key, which `key.down` can hold over
+later commands until `key.up`.
+
+`type` types what is in the keymap as keys on it, Shift included, and the
+compositor's handling sees those keys as it would typed ones (a search
+field in an overview). Text with anything else, Hangul or emoji for
+example, is typed whole with a keymap made for it, as `wtype` does, and
+the configured keymap is put back after; keys held with `key.down` are let
+go first. `\n` is Return, `\t` Tab.
+
+`button` is `"left"` (the default), `"right"`, `"middle"`, `"side"`,
+`"extra"`, `"forward"`, `"back"`, or a Linux button code. A drag over time
+lets the window see the press before the pointer moves, as a hand would;
+a client that disconnects in the middle of one lets the button go.
+
+```sh
+shadyctl pointer.click x=640 y=360
+shadyctl type 'text=hello, 세계'
+shadyctl key keys=Ctrl+Return
+shadyctl pointer.drag x1=100 y1=100 x2=400 y2=300 duration=500
+shadyctl wait idle=200 timeout=3000
+```
+
+## Screenshots
+
+`screenshot` captures the next frame an output draws. By default it
+answers at once with `{"path": …}`; the value `screenshot.saved` (or
+`screenshot.failed`) names the file once it is written. With `"wait": true`
+it answers once the file is written, and says how the image maps back to
+layout coordinates:
+
+```json
+{"path": "/tmp/s.png", "output": "HEADLESS-1", "width": 640, "height": 360,
+ "x": 0, "y": 0, "logical_width": 1280, "logical_height": 720, "scale": 0.5}
+```
+
+The image pixel `(px, py)` is the layout point `(x + px / scale, y + py / scale)`,
+so a click on what an agent saw in the image lands where it saw it.
+
+- `output` names the output; otherwise it is the first to draw.
+- `window` (an `id`) or `x`, `y`, `width`, `height` capture only that part,
+  on the output under its middle. A window on another workspace is refused.
+- `max_width` and `max_height` scale the image down to fit.
+
+One screenshot is pending at a time. Shady draws the 3D scene itself, so a
+screenshot shows it as drawn, but a window's box in spatial mode is the
+flat one `windows` reports. A rotated output is captured whole, in its
+buffer's orientation.
 
 ## Events
 

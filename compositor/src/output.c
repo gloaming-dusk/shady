@@ -12,6 +12,7 @@
 #include <wlr/util/log.h>
 
 #include "shady.h"
+#include "automation.h"
 #include "render/render.h"
 #include "session_lock.h"
 #include "shortcut_overlay.h"
@@ -23,6 +24,8 @@ static void output_frame(struct wl_listener *listener, void *data) {
 	output->frame_scheduled = false;
 	uint32_t previous_commit_seq = output->wlr_output->commit_seq;
 	shady_render_output_frame(output);
+	if (output->wlr_output->commit_seq != previous_commit_seq)
+		shady_automation_frame_committed();
 	shady_session_lock_output_committed(output, previous_commit_seq);
 }
 

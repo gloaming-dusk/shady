@@ -51,6 +51,7 @@ test_daily() {
   SHADY_DAILY_BUILD_DIR="$BUILD_DIR" bash ./tests/plugin-reload.sh
   SHADY_DAILY_BUILD_DIR="$BUILD_DIR" bash ./tests/plugin-rollback.sh
   SHADY_DAILY_BUILD_DIR="$BUILD_DIR" bash ./tests/headless-automation.sh
+  python3 -I ./tests/headless-computer-use.py --build-dir "$BUILD_DIR"
   SHADY_DAILY_BUILD_DIR="$BUILD_DIR" bash ./tests/headless-alt-tab.sh
   SHADY_DAILY_BUILD_DIR="$BUILD_DIR" bash ./tests/headless-layout.sh
   SHADY_DAILY_BUILD_DIR="$BUILD_DIR" bash ./tests/headless-session-lock.sh

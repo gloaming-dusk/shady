@@ -3303,7 +3303,7 @@ void shady_render_output_frame(
 	}
 	/* With stats on, wait for the GPU so submit_us is the frame's real cost. */
 	if ((renderer_is_software || profile) && plugin_make_current()) glFinish();
-	shady_capture_output_buffer(server, state.buffer);
+	shady_capture_output_buffer(server, wlr_output, state.buffer);
 
 	wlr_output_commit_state(
 		wlr_output,

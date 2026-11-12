@@ -38,7 +38,9 @@ static void usage(FILE *out) {
 		"       shadyctl [-s socket] --raw '<json request>'\n"
 		"commands: version windows focused workspaces outputs plugins values value shortcuts\n"
 		"          window.focus window.close window.maximize window.fullscreen window.move\n"
-		"          workspace.switch key screenshot plugin.reload plugin.unload subscribe lua quit\n");
+		"          workspace.switch key key.down key.up type pointer pointer.move pointer.click\n"
+		"          pointer.down pointer.up pointer.scroll pointer.drag window.at wait screenshot\n"
+		"          plugin.reload plugin.unload subscribe lua quit\n");
 }
 
 /* Read locally, so paths are relative to the caller and stdin can be piped. */

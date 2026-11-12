@@ -1,3 +1,4 @@
+#include "../../automation.h"
 #include "../../capture.h"
 #include "lua.h"
 #include "state.h"
@@ -587,25 +588,20 @@ static int l_automation_key(lua_State *L) {
 	uint32_t mods;
 	if (!parse_lua_bind(spec, &sym, &mods))
 		return luaL_error(L, "invalid shortcut: %s", spec);
-	bool press = shady_input_automation_key(lua_server, sym, mods, true);
-	bool release = shady_input_automation_key(lua_server, sym, mods, false);
-	lua_pushboolean(L, press || release);
-	return 1;
+	struct shady_automation_key_result result;
+	shady_automation_key(lua_server, sym, mods, &result);
+	lua_pushboolean(L, result.handled);
+	lua_pushboolean(L, result.sent);
+	return 2;
 }
 
-static pid_t automation_spawn_wtype(const char *option, const char *value) {
-	pid_t pid = fork();
-	if (pid != 0) return pid;
-	if (option) execlp("wtype", "wtype", option, value, (char *)NULL);
-	else execlp("wtype", "wtype", value, (char *)NULL);
-	_exit(127);
-}
-
+/* shady.automation.type_text(text) -> count | nil, error */
 static int l_automation_type_text(lua_State *L) {
 	const char *text = luaL_checkstring(L, 1);
-	pid_t pid = automation_spawn_wtype(NULL, text);
-	if (pid < 0) { lua_pushnil(L); lua_pushstring(L, "fork failed"); return 2; }
-	lua_pushinteger(L, (lua_Integer)pid);
+	const char *message = NULL;
+	int typed = shady_automation_type(lua_server, text, &message);
+	if (typed < 0) { lua_pushnil(L); lua_pushstring(L, message); return 2; }
+	lua_pushinteger(L, typed);
 	return 1;
 }
 
@@ -615,9 +611,11 @@ static int l_automation_key_state(lua_State *L, bool pressed) {
 	uint32_t mods;
 	if (!parse_lua_bind(spec, &sym, &mods))
 		return luaL_error(L, "invalid shortcut: %s", spec);
-	lua_pushboolean(L,
-		shady_input_automation_key(lua_server, sym, mods, pressed));
-	return 1;
+	struct shady_automation_key_result result;
+	shady_automation_key_state(lua_server, sym, mods, pressed, &result);
+	lua_pushboolean(L, result.handled);
+	lua_pushboolean(L, result.sent);
+	return 2;
 }
 
 static int l_automation_key_down(lua_State *L) {

@@ -36,6 +36,7 @@
 #include <wlr/types/wlr_xdg_shell.h>
 #include <wlr/util/log.h>
 
+#include "automation.h"
 #include "capture.h"
 #include "shady.h"
 #include "titlebar.h"
@@ -562,6 +563,7 @@ int main(int argc, char *argv[]) {
 	wl_display_run(server.wl_display);
 	shady_modules_stop_all(&server);
 	shady_ipc_finish(&server);
+	shady_automation_finish(&server);
 
 	wl_display_destroy_clients(server.wl_display);
 

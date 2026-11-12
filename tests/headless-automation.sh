@@ -29,7 +29,8 @@ export WLR_HEADLESS_OUTPUTS=1
 export WLR_RENDERER=pixman
 export SHADY_LUA_INIT="$ROOT/tests/headless-automation-init.lua"
 export SHADY_AUTOMATION_SCREENSHOT="$shot"
-export SHADY_AUTOMATION_PROBE="$ROOT/$PROBE"
+[[ "$PROBE" = /* ]] || PROBE="$ROOT/$PROBE"
+export SHADY_AUTOMATION_PROBE="$PROBE"
 export SHADY_AUTOMATION_PROBE_STATUS="$status"
 export ASAN_OPTIONS="${ASAN_OPTIONS:-abort_on_error=1:halt_on_error=1:detect_leaks=0}"
 export UBSAN_OPTIONS="${UBSAN_OPTIONS:-halt_on_error=1:print_stacktrace=1}"

@@ -58,6 +58,7 @@ shader_dir = join_paths(shady_data_root, 'compositor', 'shaders')
 shady_sources = [
   layer_shell_protocol_header,
   'compositor/src/main.c',
+  'compositor/src/automation.c',
   'compositor/src/capture.c',
   'compositor/src/module/module.c',
   'compositor/src/event/event.c',
@@ -274,7 +275,7 @@ if test_clients_enabled
       'tests/headless-automation-probe.c',
     ],
     include_directories: include_directories('.'),
-    dependencies: [wayland_client],
+    dependencies: [wayland_client, dependency('xkbcommon')],
     build_by_default: false,
     install: false)
 

@@ -391,11 +391,25 @@ struct shady_pointer {
 	struct wl_listener destroy;
 };
 
+/* Where a keyboard's keys go. Hardware and virtual keyboards are always
+ * SHADY_KEYS_NORMAL; Shady's automation keyboard (automation.c) switches. */
+enum shady_key_route {
+	/* Bindings, modules and the input method first, as a real key. */
+	SHADY_KEYS_NORMAL,
+	/* Straight to the focused surface, held for a surface coming up. */
+	SHADY_KEYS_DELIVER,
+	/* Straight to the focused surface, now: keys of a keymap of their own. */
+	SHADY_KEYS_RAW,
+};
+
 struct shady_keyboard {
 	struct wl_list link;
 	struct shady_server *server;
 	struct wlr_keyboard *wlr_keyboard;
 	bool is_virtual;
+	/* Shady's own automation keyboard: never through the input method. */
+	bool automation;
+	enum shady_key_route route;
 	struct xkb_state *binding_state;
 
 	struct wl_listener modifiers;
@@ -427,8 +441,11 @@ void reset_cursor_mode(struct shady_server *server);
 
 /* input.c */
 void server_new_input(struct wl_listener *listener, void *data);
-void shady_input_add_keyboard(struct shady_server *server,
+struct shady_keyboard *shady_input_add_keyboard(struct shady_server *server,
 	struct wlr_input_device *device);
+/* The keymap and repeat rate from the config, again (after a keymap of its
+ * own, for automation). */
+void shady_input_keyboard_apply_config(struct shady_keyboard *keyboard);
 void shady_input_update_seat_capabilities(struct shady_server *server);
 /* Apply the keyboard and touchpad settings to the devices already there. */
 void shady_input_config_changed(struct shady_server *server);
@@ -449,6 +466,9 @@ void shady_input_held_keys_focused(struct shady_server *server);
 void shady_input_held_keys_grabbed(struct shady_server *server);
 /* The window under the pointer, as a click would find it. */
 struct shady_toplevel *shady_input_toplevel_under_cursor(struct shady_server *server);
+/* The window at a layout point, as a click there would find it. */
+struct shady_toplevel *shady_input_toplevel_at(struct shady_server *server,
+	double lx, double ly);
 void server_cursor_axis(struct wl_listener *listener, void *data);
 void server_cursor_frame(struct wl_listener *listener, void *data);
 bool shady_input_automation_key(struct shady_server *server, xkb_keysym_t sym,

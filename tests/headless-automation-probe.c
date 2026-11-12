@@ -9,6 +9,7 @@
 #include <sys/mman.h>
 #include <unistd.h>
 #include <wayland-client.h>
+#include <xkbcommon/xkbcommon.h>
 
 #include "xdg-shell-client-protocol.h"
 
@@ -42,7 +43,24 @@ struct probe {
 	bool pattern;
 	const char *app_id;
 	const char *status_path;
+	/* SHADY_AUTOMATION_PROBE_TEXT: log what the keys type, by the keymap
+	 * the compositor sent, as TEXT=<hex of the UTF-8 so far>, and other
+	 * keys as KEYSYM=<name> MODS=<ctrl,alt,shift,super>. */
+	bool text_test;
+	struct xkb_context *xkb;
+	struct xkb_keymap *keymap;
+	struct xkb_state *state;
+	char text[4096];
+	size_t text_len;
 };
+
+static void status_line(struct probe *p, const char *line) {
+	if (!p->status_path || !*p->status_path) return;
+	FILE *f = fopen(p->status_path, "a");
+	if (!f) return;
+	fprintf(f, "%s\n", line);
+	fclose(f);
+}
 
 static void status_once(struct probe *p, bool *flag, const char *line) {
 	if (*flag) return;
@@ -139,7 +157,22 @@ static const struct xdg_toplevel_listener toplevel_listener = {
 
 static void keyboard_keymap(void *data, struct wl_keyboard *keyboard,
 		uint32_t format, int32_t fd, uint32_t size) {
-	(void)data; (void)keyboard; (void)format; (void)size;
+	(void)keyboard;
+	struct probe *p = data;
+	if (p->text_test && format == WL_KEYBOARD_KEYMAP_FORMAT_XKB_V1) {
+		char *map = mmap(NULL, size, PROT_READ, MAP_PRIVATE, fd, 0);
+		if (map != MAP_FAILED) {
+			struct xkb_keymap *keymap = xkb_keymap_new_from_string(p->xkb, map,
+				XKB_KEYMAP_FORMAT_TEXT_V1, XKB_KEYMAP_COMPILE_NO_FLAGS);
+			munmap(map, size);
+			if (keymap) {
+				if (p->state) xkb_state_unref(p->state);
+				if (p->keymap) xkb_keymap_unref(p->keymap);
+				p->keymap = keymap;
+				p->state = xkb_state_new(keymap);
+			}
+		}
+	}
 	close(fd);
 }
 static void keyboard_enter(void *data, struct wl_keyboard *keyboard,
@@ -152,8 +185,38 @@ static void keyboard_leave(void *data, struct wl_keyboard *keyboard,
 }
 static void keyboard_key(void *data, struct wl_keyboard *keyboard,
 		uint32_t serial, uint32_t time, uint32_t key, uint32_t state) {
-	(void)keyboard; (void)serial; (void)time; (void)key;
+	(void)keyboard; (void)serial; (void)time;
 	struct probe *p = data;
+	if (p->text_test && p->state && state == WL_KEYBOARD_KEY_STATE_PRESSED) {
+		xkb_keycode_t code = key + 8;
+		xkb_keysym_t sym = xkb_state_key_get_one_sym(p->state, code);
+		char utf8[64];
+		int n = xkb_state_key_get_utf8(p->state, code, utf8, sizeof(utf8));
+		bool modified = xkb_state_mod_name_is_active(p->state, XKB_MOD_NAME_CTRL, XKB_STATE_MODS_EFFECTIVE) > 0 ||
+			xkb_state_mod_name_is_active(p->state, XKB_MOD_NAME_ALT, XKB_STATE_MODS_EFFECTIVE) > 0 ||
+			xkb_state_mod_name_is_active(p->state, XKB_MOD_NAME_LOGO, XKB_STATE_MODS_EFFECTIVE) > 0;
+		bool modifier_key = (sym >= XKB_KEY_Shift_L && sym <= XKB_KEY_Hyper_R) ||
+			sym == XKB_KEY_ISO_Level3_Shift;
+		if (n > 0 && !modified && sym != XKB_KEY_Return && sym != XKB_KEY_Tab &&
+				sym != XKB_KEY_BackSpace && sym != XKB_KEY_Escape &&
+				p->text_len + (size_t)n < sizeof(p->text)) {
+			memcpy(p->text + p->text_len, utf8, (size_t)n);
+			p->text_len += (size_t)n;
+			char line[2 * sizeof(p->text) + 8] = "TEXT=";
+			for (size_t i = 0; i < p->text_len; i++)
+				sprintf(line + 5 + 2 * i, "%02x", (unsigned char)p->text[i]);
+			status_line(p, line);
+		} else if (!modifier_key) {
+			char name[64], line[160];
+			xkb_keysym_get_name(sym, name, sizeof(name));
+			snprintf(line, sizeof(line), "KEYSYM=%s MODS=%s%s%s%s", name,
+				xkb_state_mod_name_is_active(p->state, XKB_MOD_NAME_CTRL, XKB_STATE_MODS_EFFECTIVE) > 0 ? "ctrl," : "",
+				xkb_state_mod_name_is_active(p->state, XKB_MOD_NAME_ALT, XKB_STATE_MODS_EFFECTIVE) > 0 ? "alt," : "",
+				xkb_state_mod_name_is_active(p->state, XKB_MOD_NAME_SHIFT, XKB_STATE_MODS_EFFECTIVE) > 0 ? "shift," : "",
+				xkb_state_mod_name_is_active(p->state, XKB_MOD_NAME_LOGO, XKB_STATE_MODS_EFFECTIVE) > 0 ? "super," : "");
+			status_line(p, line);
+		}
+	}
 	if (state == WL_KEYBOARD_KEY_STATE_PRESSED) {
 		status_once(p, &p->key_seen, "KEY=PASS");
 		draw(p);
@@ -162,8 +225,9 @@ static void keyboard_key(void *data, struct wl_keyboard *keyboard,
 static void keyboard_modifiers(void *data, struct wl_keyboard *keyboard,
 		uint32_t serial, uint32_t depressed, uint32_t latched,
 		uint32_t locked, uint32_t group) {
-	(void)data; (void)keyboard; (void)serial; (void)depressed;
-	(void)latched; (void)locked; (void)group;
+	(void)keyboard; (void)serial;
+	struct probe *p = data;
+	if (p->state) xkb_state_update_mask(p->state, depressed, latched, locked, 0, 0, group);
 }
 static void keyboard_repeat(void *data, struct wl_keyboard *keyboard,
 		int32_t rate, int32_t delay) {
@@ -349,7 +413,9 @@ int main(void) {
 		.base_color = color && *color ? (uint32_t)strtoul(color, NULL, 0) : 0xff20242au,
 		.pattern = getenv("SHADY_AUTOMATION_PROBE_PATTERN") != NULL,
 		.pointer_test = getenv("SHADY_AUTOMATION_POINTER_TEST") != NULL,
+		.text_test = getenv("SHADY_AUTOMATION_PROBE_TEXT") != NULL,
 	};
+	if (p.text_test) p.xkb = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
 	p.display = wl_display_connect(NULL);
 	if (!p.display) return 1;
 	struct wl_registry *registry = wl_display_get_registry(p.display);

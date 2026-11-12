@@ -295,10 +295,14 @@ static struct shady_toplevel *toplevel_at_cursor(struct shady_server *server,
 }
 
 struct shady_toplevel *shady_input_toplevel_under_cursor(struct shady_server *server) {
+	return shady_input_toplevel_at(server, server->cursor->x, server->cursor->y);
+}
+
+struct shady_toplevel *shady_input_toplevel_at(struct shady_server *server,
+		double lx, double ly) {
 	struct wlr_surface *surface = NULL;
 	double sx, sy;
-	return toplevel_at_cursor(server, server->cursor->x, server->cursor->y,
-		&surface, &sx, &sy);
+	return toplevel_at_cursor(server, lx, ly, &surface, &sx, &sy);
 }
 
 /* Nothing, or the desktop: a background or bottom layer surface (a shell's
@@ -355,7 +359,7 @@ static void keyboard_handle_modifiers(
 			0, 0, 0, 0, 0, keyboard->wlr_keyboard->modifiers.group);
 	}
 	wlr_seat_set_keyboard(keyboard->server->seat, keyboard->wlr_keyboard);
-	if (!shady_ime_handle_modifiers(keyboard->server, keyboard->wlr_keyboard,
+	if (keyboard->automation || !shady_ime_handle_modifiers(keyboard->server, keyboard->wlr_keyboard,
 			&keyboard->wlr_keyboard->modifiers)) {
 		wlr_seat_keyboard_notify_modifiers(keyboard->server->seat,
 			&keyboard->wlr_keyboard->modifiers);
@@ -444,7 +448,7 @@ static void release_held_keys(struct shady_server *server) {
 		wl_list_for_each(keyboard, &server->keyboards, link) {
 			if (keyboard->wlr_keyboard != server->key_hold.events[i].keyboard) continue;
 			wlr_seat_set_keyboard(server->seat, keyboard->wlr_keyboard);
-			if (!shady_ime_handle_key(server, keyboard->wlr_keyboard, server->key_hold.events[i].time_msec,
+			if (keyboard->automation || !shady_ime_handle_key(server, keyboard->wlr_keyboard, server->key_hold.events[i].time_msec,
 					server->key_hold.events[i].keycode, server->key_hold.events[i].state)) {
 				wlr_seat_keyboard_notify_key(server->seat, server->key_hold.events[i].time_msec,
 					server->key_hold.events[i].keycode, server->key_hold.events[i].state);
@@ -527,6 +531,20 @@ static void keyboard_handle_key(
 	struct wlr_seat *seat = server->seat;
 	shady_idle_activity(server);
 
+	/* Automation that only types into the focused surface: none of the
+	 * compositor's own handling, which already saw the key (automation.c). */
+	if (keyboard->route != SHADY_KEYS_NORMAL) {
+		if (keyboard->route == SHADY_KEYS_DELIVER && server->key_hold.active &&
+				!shady_desktop_state(server)->session_locked) {
+			hold_key(keyboard, event);
+			return;
+		}
+		wlr_seat_set_keyboard(seat, keyboard->wlr_keyboard);
+		wlr_seat_keyboard_notify_key(seat, event->time_msec,
+			event->keycode, event->state);
+		return;
+	}
+
 	uint32_t keycode = event->keycode + 8;
 	if (event->state == WL_KEYBOARD_KEY_STATE_PRESSED &&
 			handle_vt_switch(server, keyboard->wlr_keyboard, keycode))
@@ -575,7 +593,7 @@ static void keyboard_handle_key(
 	}
 	if (!handled) {
 		wlr_seat_set_keyboard(seat, keyboard->wlr_keyboard);
-		if (!shady_ime_handle_key(server, keyboard->wlr_keyboard, event->time_msec,
+		if (keyboard->automation || !shady_ime_handle_key(server, keyboard->wlr_keyboard, event->time_msec,
 				event->keycode, event->state)) {
 			wlr_seat_keyboard_notify_key(seat, event->time_msec,
 				event->keycode, event->state);
@@ -619,7 +637,7 @@ static void keyboard_handle_destroy(struct wl_listener *listener, void *data) {
 }
 
 /* The keymap and repeat rate from the config; again when they change. */
-static void keyboard_apply_config(struct shady_keyboard *keyboard) {
+void shady_input_keyboard_apply_config(struct shady_keyboard *keyboard) {
 	struct wlr_keyboard *wlr_keyboard = keyboard->wlr_keyboard;
 	struct xkb_context *context = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
 	/* Empty fields fall back to XKB_DEFAULT_* and then "us". */
@@ -649,16 +667,17 @@ static void keyboard_apply_config(struct shady_keyboard *keyboard) {
 	wlr_keyboard_set_repeat_info(wlr_keyboard, c->repeat_rate, c->repeat_delay);
 }
 
-void shady_input_add_keyboard(struct shady_server *server,
+struct shady_keyboard *shady_input_add_keyboard(struct shady_server *server,
 		struct wlr_input_device *device) {
 	struct wlr_keyboard *wlr_keyboard = wlr_keyboard_from_input_device(device);
 
 	struct shady_keyboard *keyboard = calloc(1, sizeof(*keyboard));
+	if (!keyboard) return NULL;
 	keyboard->server = server;
 	keyboard->wlr_keyboard = wlr_keyboard;
 
 	keyboard->is_virtual = wlr_input_device_get_virtual_keyboard(device) != NULL;
-	if (!keyboard->is_virtual) keyboard_apply_config(keyboard);
+	if (!keyboard->is_virtual) shady_input_keyboard_apply_config(keyboard);
 
 	keyboard->modifiers.notify = keyboard_handle_modifiers;
 	wl_signal_add(&wlr_keyboard->events.modifiers, &keyboard->modifiers);
@@ -687,6 +706,7 @@ void shady_input_add_keyboard(struct shady_server *server,
 			break;
 		}
 	}
+	return keyboard;
 }
 
 static void configure_libinput_pointer(struct shady_server *server,
@@ -747,7 +767,7 @@ static void server_new_pointer(struct shady_server *server,
 void shady_input_config_changed(struct shady_server *server) {
 	struct shady_keyboard *keyboard;
 	wl_list_for_each(keyboard, &server->keyboards, link)
-		if (!keyboard->is_virtual) keyboard_apply_config(keyboard);
+		if (!keyboard->is_virtual) shady_input_keyboard_apply_config(keyboard);
 	struct shady_pointer *pointer;
 	wl_list_for_each(pointer, &server->pointers, link)
 		configure_libinput_pointer(server, pointer->device);
@@ -1037,6 +1057,8 @@ void shady_input_automation_pointer_move(struct shady_server *server,
 		wlr_cursor_warp_closest(server->cursor, NULL, x, y);
 	}
 	process_cursor_motion(server, automation_time_msec());
+	/* Clients act on a pointer event once its frame ends it. */
+	wlr_seat_pointer_notify_frame(server->seat);
 }
 
 void shady_input_automation_pointer_button(struct shady_server *server,

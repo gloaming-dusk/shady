@@ -3,6 +3,40 @@
 Shady is experimental: the Lua, IPC and plugin interfaces may still change
 between releases. Breaking changes are called out here.
 
+## Unreleased
+
+Breaking:
+
+- IPC `key` and `shady.automation.key`/`key_down`/`key_up`: a key no
+  binding, module or plugin takes now reaches the focused window, instead of
+  going nowhere. `key` answers `{"handled", "sent"}`, and the Lua functions
+  return `handled, sent`.
+- `shady.automation.type_text` types through Shady itself and returns the
+  number of characters typed, not a `wtype` process id. `wtype` is no longer
+  needed.
+
+New:
+
+- Computer use over IPC: `type`, `key.down`/`key.up`, `pointer`,
+  `pointer.move`/`click`/`down`/`up`/`scroll`/`drag`, `window.at` and
+  `wait` (until nothing new is drawn), so a script or an agent in another
+  process can see the screen and work it. Text with characters the keymap
+  lacks, Hangul or emoji, is typed with a keymap made for it.
+- `screenshot` with `"wait": true` answers once the file is written, with
+  the image's size and the layout geometry it covers; `output`, `window`, a
+  region and `max_width`/`max_height` choose and scale what is captured.
+- Requests answered later keep a connection's answers in order.
+
+Fixed:
+
+- Automated pointer motion ends with a frame, so clients act on it at once.
+- A layer-shell popup given its parent by `zwlr_layer_surface_v1.get_popup`
+  (noctalia's tooltips and menus) crashed Shady; it is now shown under its
+  layer surface.
+- Destroying a focused layer surface could read its freed scene tree.
+- `shady-session` unsets `SHADY_SOCKET` in the systemd user environment when
+  it ends.
+
 ## 0.3.0 (2026-11-11)
 
 Breaking:
