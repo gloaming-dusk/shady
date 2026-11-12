@@ -444,7 +444,18 @@ int main(int argc, char *argv[]) {
 	server.new_output.notify = server_new_output;
 	wl_signal_add(&server.backend->events.new_output, &server.new_output);
 
+	/* The spatial renderer draws only what the scene graph says changed;
+	 * that must include what opaque windows cover. wlroots reads the switch
+	 * when the scene is made; clients started later do not inherit it. */
+	const char *see_through = getenv("WLR_SCENE_DISABLE_VISIBILITY");
+	bool see_through_set = see_through != NULL;
+	if (server.config.spatial_mode && !see_through_set)
+		setenv("WLR_SCENE_DISABLE_VISIBILITY", "1", 1);
+	see_through = getenv("WLR_SCENE_DISABLE_VISIBILITY");
+	server.scene_sees_through = see_through &&
+		(!strcmp(see_through, "1") || !strcmp(see_through, "true"));
 	server.scene = wlr_scene_create();
+	if (!see_through_set) unsetenv("WLR_SCENE_DISABLE_VISIBILITY");
 	server.background_tree = wlr_scene_tree_create(&server.scene->tree);
 	server.content_tree = wlr_scene_tree_create(&server.scene->tree);
 	server.overlay_tree = wlr_scene_tree_create(&server.scene->tree);

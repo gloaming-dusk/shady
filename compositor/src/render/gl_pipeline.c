@@ -1544,6 +1544,10 @@ bool shady_gl_pipeline_copy_texture(
 		old_viewport
 	);
 
+	/* A partial frame's damage scissor must not clip the copy. */
+	GLboolean old_scissor = glIsEnabled(GL_SCISSOR_TEST);
+	glDisable(GL_SCISSOR_TEST);
+
 	GLuint texture = 0;
 	GLuint fbo = 0;
 
@@ -1631,6 +1635,7 @@ bool shady_gl_pipeline_copy_texture(
 			&texture
 		);
 
+		if (old_scissor) glEnable(GL_SCISSOR_TEST);
 		return false;
 	}
 
@@ -1738,6 +1743,7 @@ bool shady_gl_pipeline_copy_texture(
 	*out_texture =
 		texture;
 
+	if (old_scissor) glEnable(GL_SCISSOR_TEST);
 	return true;
 }
 

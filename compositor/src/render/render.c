@@ -23,9 +23,11 @@
 #include <wlr/types/wlr_layer_shell_v1.h>
 
 #include <wlr/util/log.h>
+#include <wlr/util/region.h>
 
 #include <EGL/egl.h>
 #include <GLES2/gl2.h>
+#include <GLES2/gl2ext.h>
 
 #include "../shady.h"
 #include "close_snapshot.h"
@@ -70,6 +72,10 @@ struct plugin_hook_slot {
 };
 static struct plugin_shader_slot plugin_shaders[SHADY_PLUGIN_SHADER_MAX];
 static struct plugin_hook_slot plugin_hooks[SHADY_PLUGIN_HOOK_MAX];
+
+/* The damage scissor (see "damage tracking" below). */
+static GLboolean damage_scissor_suspend(void);
+static void damage_scissor_resume(GLboolean was);
 static uint64_t next_plugin_shader_id = 1;
 static uint64_t next_plugin_hook_id = 1;
 static GLuint plugin_fullscreen_vbo;
@@ -852,6 +858,7 @@ static void draw_background_cached(struct shady_server *server, struct shady_out
 		!memcmp(cache->vp, vp, sizeof(cache->vp)) &&
 		!memcmp(cache->colors, colors, sizeof(colors));
 	if (!fresh) {
+		GLboolean scissor = damage_scissor_suspend();
 		glBindFramebuffer(GL_FRAMEBUFFER, cache->fbo);
 		glViewport(0, 0, width, height);
 		glClearColor(colors[0], colors[1], colors[2], 1.f);
@@ -859,6 +866,7 @@ static void draw_background_cached(struct shady_server *server, struct shady_out
 		draw_background_layers(server, output, width, height, logical_w, logical_h, time_seconds);
 		glBindFramebuffer(GL_FRAMEBUFFER, output_fbo);
 		glViewport(0, 0, width, height);
+		damage_scissor_resume(scissor);
 		cache->valid = true;
 		cache->hooks = hooks;
 		cache->generation = background_generation;
@@ -1216,7 +1224,7 @@ static enum shady_continuous_reason spatial_continuous_reason(
 		SHADY_CONTINUOUS_SNAPSHOT : SHADY_CONTINUOUS_NONE;
 }
 
-void shady_render_schedule_output(struct shady_output *output) {
+static void schedule_output(struct shady_output *output) {
 	if (!output || !output->wlr_output) return;
 	output->frame_schedule_requests++;
 	output->render_requested = true;
@@ -1232,6 +1240,19 @@ void shady_render_schedule_output(struct shady_output *output) {
 	wlr_output_schedule_frame(output->wlr_output);
 }
 
+/* Anything but a client's commit may have changed what the renderer draws
+ * itself (borders, shadows, transforms), so the frame draws everything. */
+void shady_render_schedule_output(struct shady_output *output) {
+	if (!output || !output->wlr_output) return;
+	output->damage_whole = true;
+	schedule_output(output);
+}
+
+void shady_render_schedule_all_outputs_content(struct shady_server *server) {
+	struct shady_output *output;
+	wl_list_for_each(output, &server->outputs, link) schedule_output(output);
+}
+
 void shady_render_schedule_all_outputs(
 	struct shady_server *server
 ) {
@@ -1244,6 +1265,19 @@ void shady_render_schedule_all_outputs(
 	) {
 		shady_render_schedule_output(output);
 	}
+}
+
+/* With a stencil buffer beside the depth buffer, a partial frame draws
+ * only into its damage rectangles, not their whole bounding box. */
+static bool depth_rbo_stencil;
+
+static bool packed_depth_stencil_supported(void) {
+	static int supported = -1;
+	if (supported < 0) {
+		const char *ext = (const char *)glGetString(GL_EXTENSIONS);
+		supported = ext && strstr(ext, "GL_OES_packed_depth_stencil") != NULL;
+	}
+	return supported;
 }
 
 static void ensure_depth_rbo(
@@ -1277,9 +1311,10 @@ static void ensure_depth_rbo(
 		depth_rbo
 	);
 
+	depth_rbo_stencil = packed_depth_stencil_supported();
 	glRenderbufferStorage(
 		GL_RENDERBUFFER,
-		GL_DEPTH_COMPONENT16,
+		depth_rbo_stencil ? GL_DEPTH24_STENCIL8_OES : GL_DEPTH_COMPONENT16,
 		w,
 		h
 	);
@@ -1659,7 +1694,8 @@ static void draw_layer_backdrop(struct layer_effect *effect, struct wlr_texture 
 
 	static const GLfloat locals[] = { 0, 0, 1, 0, 0, 1, 1, 1 };
 	glDisable(GL_DEPTH_TEST);
-	glDisable(GL_SCISSOR_TEST);
+	/* The frame's damage scissor stays: outside it the glass is already
+	 * drawn, and blurring it again would blur it twice. */
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
@@ -1933,7 +1969,6 @@ static void draw_transformed_buffer(const struct layer_plane *pl, struct wlr_tex
 	glUniform1i(glGetUniformLocation(program, "u_tex"), 0);
 	glUniform1f(glGetUniformLocation(program, "u_alpha"), alpha);
 	glDisable(GL_DEPTH_TEST);
-	glDisable(GL_SCISSOR_TEST);
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
@@ -2357,6 +2392,345 @@ static void send_frame_done_surface(
 }
 
 
+/* ---- damage tracking ---------------------------------------------------
+ *
+ * A frame draws only what changed since the buffer it draws into was last
+ * shown. What changed comes from the scene graph: every client commit, a
+ * scene node that moved, or a software cursor damages its output's ring,
+ * which only the scene renderer would rotate, so this one consumes it. Everything
+ * else the renderer draws — borders, shadows, corners, the 3D transforms —
+ * is not in the scene graph, so a frame draws everything when any of it
+ * may have changed: a schedule from anything but a client's commit, or a
+ * change in what damage_signature folds in. Windows that are drawn away
+ * from where the scene graph puts them (tilted, in depth, wobbling, under
+ * a plugin's shader, under a moved camera) always draw everything.
+ *
+ * SHADY_DAMAGE=0 draws every frame whole, to compare. */
+
+static int damage_enabled_cache = -1;
+
+static bool damage_enabled(void) {
+	if (damage_enabled_cache < 0) {
+		const char *value = getenv("SHADY_DAMAGE");
+		damage_enabled_cache = !(value && strcmp(value, "0") == 0);
+	}
+	return damage_enabled_cache;
+}
+
+/* The scissor of a partial frame: draws to the output keep inside it and
+ * offscreen passes (the cached sky, snapshots) suspend it. */
+static struct {
+	bool on;
+	GLint box[4];
+} damage_scissor;
+
+static void damage_scissor_apply(void) {
+	if (!damage_scissor.on) {
+		glDisable(GL_SCISSOR_TEST);
+		return;
+	}
+	glEnable(GL_SCISSOR_TEST);
+	glScissor(damage_scissor.box[0], damage_scissor.box[1],
+		damage_scissor.box[2], damage_scissor.box[3]);
+}
+
+static GLboolean damage_scissor_suspend(void) {
+	GLboolean was = glIsEnabled(GL_SCISSOR_TEST);
+	glDisable(GL_SCISSOR_TEST);
+	return was;
+}
+
+static void damage_scissor_resume(GLboolean was) {
+	if (was) glEnable(GL_SCISSOR_TEST);
+}
+
+static uint64_t fold(uint64_t hash, const void *data, size_t size) {
+	const unsigned char *bytes = data;
+	for (size_t i = 0; i < size; i++) {
+		hash ^= bytes[i];
+		hash *= 1099511628211ull;
+	}
+	return hash;
+}
+#define FOLD(hash, value) ((hash) = fold((hash), &(value), sizeof(value)))
+
+/* Does the camera put the z = 0 plane flat on the output, a logical pixel
+ * of layout on a logical pixel of the screen, as the scene graph has it? */
+static bool camera_is_flat(const float vp[16], float logical_w, float logical_h, int buf_w) {
+	if (logical_w <= 0.f || logical_h <= 0.f || buf_w <= 0) return false;
+	const float corners[4][2] = { {0.f, 0.f}, {logical_w, 0.f}, {0.f, logical_h}, {logical_w, logical_h} };
+	const float tolerance = 0.25f * 2.f / (float)buf_w; /* a quarter buffer pixel */
+	for (int i = 0; i < 4; i++) {
+		float world[4] = {
+			(corners[i][0] - logical_w * 0.5f) / logical_h,
+			(logical_h * 0.5f - corners[i][1]) / logical_h,
+			0.f, 1.f,
+		};
+		float clip[4];
+		for (int r = 0; r < 4; r++)
+			clip[r] = vp[r] * world[0] + vp[4 + r] * world[1] + vp[8 + r] * world[2] + vp[12 + r] * world[3];
+		if (fabsf(clip[3]) < 1e-6f) return false;
+		float ndc_x = clip[0] / clip[3], ndc_y = clip[1] / clip[3];
+		float want_x = corners[i][0] / logical_w * 2.f - 1.f;
+		float want_y = 1.f - corners[i][1] / logical_h * 2.f;
+		if (fabsf(ndc_x - want_x) > tolerance || fabsf(ndc_y - want_y) > tolerance) return false;
+	}
+	return true;
+}
+
+/* Fold what this frame will draw into *signature. False when a part of it
+ * is not where the scene graph puts it, or changes by itself, so that the
+ * scene graph's damage cannot be trusted and the frame draws everything. */
+static bool damage_signature(struct shady_server *server, struct shady_output *output,
+		const float vp[16], int buf_w, int buf_h, float logical_w, float logical_h,
+		uint64_t *signature) {
+	struct wlr_output *wlr_output = output->wlr_output;
+	uint64_t hash = 1469598103934665603ull;
+	*signature = 0;
+	if (!damage_enabled()) return false;
+
+	for (size_t i = 0; i < SHADY_PLUGIN_HOOK_MAX; i++)
+		if (plugin_hooks[i].used) return false; /* they may draw anything */
+	const struct shady_config *c = &server->config;
+	if (c->floor || c->environment || c->physics_enabled) return false;
+	const struct shady_spatial_state *spatial = shady_spatial_state_const(server);
+	if (!spatial || spatial->runtime.camera.first_person || spatial->runtime.debug_ray)
+		return false;
+	if (spatial_continuous_reason(server) != SHADY_CONTINUOUS_NONE) return false;
+	if (wlr_output->transform != WL_OUTPUT_TRANSFORM_NORMAL) return false;
+	if (!camera_is_flat(vp, logical_w, logical_h, buf_w)) return false;
+
+	hash = fold(hash, c, sizeof(*c));
+	hash = fold(hash, vp, sizeof(float) * 16);
+	FOLD(hash, buf_w);
+	FOLD(hash, buf_h);
+	FOLD(hash, wlr_output->scale);
+
+	struct shady_toplevel *toplevel;
+	wl_list_for_each_reverse(toplevel, &server->toplevels, link) {
+		struct wlr_surface *surface = toplevel->xdg_toplevel->base->surface;
+		if (!surface->mapped || !toplevel->scene_tree->node.enabled ||
+				!shady_layout_shown_on(toplevel, wlr_output))
+			continue;
+		const struct shady_motion_visual *m = &toplevel->motion;
+		if (m->animating || m->tilt_x != 0.f || m->tilt_y != 0.f ||
+				m->wobble_x != 0.f || m->wobble_y != 0.f ||
+				shady_spatial_toplevel_state(toplevel)->z != 0.f ||
+				toplevel->water_amplitude != 0.f || toplevel->plugin_shader_program)
+			return false;
+		enum shady_close_state close = shady_close_state_for_const(toplevel)->state;
+		if (close != SHADY_CLOSE_IDLE && close != SHADY_CLOSE_ARMED) return false;
+		struct wlr_box content = shady_toplevel_content_box(toplevel);
+		bool focused = server->toplevels.next == &toplevel->link;
+		/* The neon look pulses with u_time: a part redrawn later would not
+		 * match the rest. */
+		if (window_look_for(server, focused).effect_strength > 0.f) return false;
+		FOLD(hash, toplevel);
+		FOLD(hash, toplevel->scene_tree->node.x);
+		FOLD(hash, toplevel->scene_tree->node.y);
+		FOLD(hash, content);
+		FOLD(hash, surface->current.width);
+		FOLD(hash, surface->current.height);
+		FOLD(hash, focused);
+		FOLD(hash, toplevel->fullscreen);
+		FOLD(hash, toplevel->maximized);
+		FOLD(hash, toplevel->client_decorated);
+		FOLD(hash, toplevel->titlebar_texture);
+		FOLD(hash, toplevel->titlebar_height);
+		FOLD(hash, close);
+	}
+
+	struct shady_layer_surface *layer;
+	wl_list_for_each(layer, &shady_desktop_state(server)->layer_surfaces, link) {
+		struct wlr_layer_surface_v1 *ls = layer->layer_surface;
+		if (ls->output && ls->output != wlr_output) continue;
+		if (layer_transform_for(ls->namespace)) return false; /* drawn on a plane */
+		int lx = 0, ly = 0;
+		wlr_scene_node_coords(&layer->scene_layer->tree->node, &lx, &ly);
+		bool enabled = layer->scene_layer->tree->node.enabled;
+		struct layer_effect *effect = layer_effect_for(ls->namespace);
+		FOLD(hash, layer);
+		FOLD(hash, ls->current.layer);
+		FOLD(hash, lx);
+		FOLD(hash, ly);
+		FOLD(hash, ls->surface->current.width);
+		FOLD(hash, ls->surface->current.height);
+		FOLD(hash, ls->surface->mapped);
+		FOLD(hash, enabled);
+		FOLD(hash, effect);
+	}
+
+	struct shady_popup *popup;
+	wl_list_for_each(popup, &server->popups, link) {
+		int px = 0, py = 0;
+		wlr_scene_node_coords(&popup->scene_tree->node, &px, &py);
+		FOLD(hash, popup);
+		FOLD(hash, px);
+		FOLD(hash, py);
+		FOLD(hash, popup->xdg_popup->base->surface->current.width);
+		FOLD(hash, popup->xdg_popup->base->surface->current.height);
+	}
+
+	struct wlr_texture *overlay_texture = NULL;
+	struct wlr_box overlay_box = {0};
+	bool overlay = shady_shortcut_overlay_for_output(server, wlr_output,
+		&overlay_texture, &overlay_box);
+	FOLD(hash, overlay);
+	FOLD(hash, overlay_texture);
+	FOLD(hash, overlay_box);
+
+	*signature = hash;
+	return true;
+}
+
+/* A frosted-glass layer blurs what is behind it, past its own edges: when
+ * any of it is redrawn, all of it (and what its blur reads) must be. */
+static void damage_expand_layer_effects(struct shady_server *server,
+		struct wlr_output *wlr_output, pixman_region32_t *damage) {
+	double ox = 0, oy = 0;
+	wlr_output_layout_output_coords(server->output_layout, wlr_output, &ox, &oy);
+	float scale = wlr_output->scale;
+	for (int pass = 0; pass < 2; pass++) {
+		struct shady_layer_surface *layer;
+		wl_list_for_each(layer, &shady_desktop_state(server)->layer_surfaces, link) {
+			struct wlr_layer_surface_v1 *ls = layer->layer_surface;
+			if (!ls->surface->mapped || (ls->output && ls->output != wlr_output)) continue;
+			struct layer_effect *effect = layer_effect_for(ls->namespace);
+			if (!effect) continue;
+			int lx = 0, ly = 0;
+			wlr_scene_node_coords(&layer->scene_layer->tree->node, &lx, &ly);
+			int margin = (int)ceilf(effect->desc.blur * scale) + 4;
+			int x = (int)floor((lx - ox) * scale) - margin;
+			int y = (int)floor((ly - oy) * scale) - margin;
+			int w = (int)ceil(ls->surface->current.width * scale) + 2 * margin;
+			int h = (int)ceil(ls->surface->current.height * scale) + 2 * margin;
+			pixman_region32_t box;
+			pixman_region32_init_rect(&box, x, y, (unsigned)w, (unsigned)h);
+			pixman_region32_t overlap;
+			pixman_region32_init(&overlap);
+			pixman_region32_intersect(&overlap, &box, damage);
+			if (!pixman_region32_empty(&overlap))
+				pixman_region32_union(damage, damage, &box);
+			pixman_region32_fini(&overlap);
+			pixman_region32_fini(&box);
+		}
+	}
+}
+
+/* A cursor the renderer draws itself moves without a client committing. */
+static bool output_has_software_cursor(struct wlr_output *wlr_output) {
+	if (wlr_output->software_cursor_locks > 0) return true;
+	struct wlr_output_cursor *cursor;
+	wl_list_for_each(cursor, &wlr_output->cursors, link)
+		if (cursor->enabled && cursor->visible && cursor != wlr_output->hardware_cursor)
+			return true;
+	return false;
+}
+
+/* Where opaque windows hide everything drawn before them, background and
+ * bottom layers included: each window's content less its rounded corners
+ * and a margin for its antialiased edge and border. */
+static void damage_opaque_windows(struct shady_server *server, struct wlr_output *wlr_output,
+		pixman_region32_t *opaque) {
+	double ox = 0, oy = 0;
+	wlr_output_layout_output_coords(server->output_layout, wlr_output, &ox, &oy);
+	float scale = wlr_output->scale;
+	const struct shady_config *c = &server->config;
+	int edge = (int)ceilf((fmaxf(c->window_border_width, 0.f) + 2.f) * scale);
+	int corner = (int)ceilf((fmaxf(c->window_corner_radius, 0.f) +
+		fmaxf(c->window_border_width, 0.f) + 2.f) * scale);
+	struct shady_toplevel *toplevel;
+	wl_list_for_each(toplevel, &server->toplevels, link) {
+		struct wlr_surface *surface = toplevel->xdg_toplevel->base->surface;
+		if (!surface->mapped || !toplevel->scene_tree->node.enabled ||
+				!shady_layout_shown_on(toplevel, wlr_output))
+			continue;
+		bool focused = server->toplevels.next == &toplevel->link;
+		if (window_look_for(server, focused).tint[3] < 1.f) continue;
+		struct wlr_texture *texture = wlr_surface_get_texture(surface);
+		if (!texture || !wlr_texture_is_gles2(texture)) continue;
+		struct wlr_box content = shady_toplevel_content_box(toplevel);
+		struct wlr_gles2_texture_attribs attribs;
+		wlr_gles2_texture_get_attribs(texture, &attribs);
+		if (attribs.has_alpha) {
+			/* Only what the client says is opaque. */
+			pixman_region32_t covered;
+			pixman_region32_init(&covered);
+			pixman_region32_intersect_rect(&covered, &surface->opaque_region,
+				content.x, content.y, (unsigned)content.width, (unsigned)content.height);
+			bool all = pixman_region32_contains_rectangle(&covered, &(pixman_box32_t){
+				content.x, content.y, content.x + content.width, content.y + content.height })
+				== PIXMAN_REGION_IN;
+			pixman_region32_fini(&covered);
+			if (!all) continue;
+		}
+		int x1 = (int)ceil((toplevel->scene_tree->node.x - ox) * scale) + edge;
+		int y1 = (int)ceil((toplevel->scene_tree->node.y - oy) * scale) + edge;
+		int x2 = (int)floor((toplevel->scene_tree->node.x + content.width - ox) * scale) - edge;
+		int y2 = (int)floor((toplevel->scene_tree->node.y + content.height - oy) * scale) - edge;
+		if (x2 - x1 <= 2 * corner || y2 - y1 <= 2 * corner) continue;
+		/* A plus: the middle band and the full-height middle column. */
+		pixman_region32_union_rect(opaque, opaque, x1, y1 + corner - edge,
+			(unsigned)(x2 - x1), (unsigned)(y2 - y1 - 2 * (corner - edge)));
+		pixman_region32_union_rect(opaque, opaque, x1 + corner - edge, y1,
+			(unsigned)(x2 - x1 - 2 * (corner - edge)), (unsigned)(y2 - y1));
+	}
+}
+
+/* Decide what this frame draws. Adds it to the output's damage ring, then
+ * (once the buffer is known) the caller rotates the ring for that buffer. */
+static bool damage_begin_frame(struct shady_server *server, struct shady_output *output,
+		struct wlr_scene_output *scene_output, const float vp[16], int buf_w, int buf_h,
+		float logical_w, float logical_h, pixman_region32_t *frame_damage) {
+	uint64_t signature = 0;
+	bool trusted = damage_signature(server, output, vp, buf_w, buf_h,
+		logical_w, logical_h, &signature);
+	/* The scene graph's damage must not stop at an opaque surface: the
+	 * renderer's rounded corners and borders show what lies beneath. */
+	if (!server->scene_sees_through) trusted = false;
+	bool whole = output->damage_whole || !trusted || signature != output->damage_signature;
+	output->damage_whole = false;
+	output->damage_signature = trusted ? signature : 0;
+
+	if (whole) {
+		pixman_region32_init_rect(frame_damage, 0, 0, (unsigned)buf_w, (unsigned)buf_h);
+	} else {
+		pixman_region32_init(frame_damage);
+		pixman_region32_copy(frame_damage, &scene_output->damage_ring.current);
+		/* Filtering at a fractional scale reaches a pixel or two past a
+		 * surface's damage. */
+		wlr_region_expand(frame_damage, frame_damage, 2);
+		/* Only a wallpaper changed: what it shows behind opaque windows is
+		 * hidden, however much of it changed. */
+		bool cull = !output->damage_from_above && !output_has_software_cursor(output->wlr_output);
+		if (cull) {
+			pixman_region32_t opaque;
+			pixman_region32_init(&opaque);
+			damage_opaque_windows(server, output->wlr_output, &opaque);
+			pixman_region32_subtract(frame_damage, frame_damage, &opaque);
+			pixman_region32_fini(&opaque);
+		}
+		static int debug = -1;
+		if (debug < 0) debug = getenv("SHADY_DAMAGE_DEBUG") != NULL;
+		if (debug) {
+			const pixman_box32_t *e = pixman_region32_extents(frame_damage);
+			wlr_log(WLR_INFO, "damage %s: cull=%d rects=%d extents=%d,%d %dx%d",
+				output->wlr_output->name, cull, pixman_region32_n_rects(frame_damage),
+				e->x1, e->y1, e->x2 - e->x1, e->y2 - e->y1);
+		}
+		damage_expand_layer_effects(server, output->wlr_output, frame_damage);
+		pixman_region32_intersect_rect(frame_damage, frame_damage, 0, 0,
+			(unsigned)buf_w, (unsigned)buf_h);
+	}
+	/* The scene renderer never rotates its ring while this one draws: what
+	 * it collected is consumed here. */
+	pixman_region32_clear(&scene_output->damage_ring.current);
+	output->damage_from_above = false;
+	output->spatial_drew = true;
+	wlr_damage_ring_add(&output->damage_ring, frame_damage);
+	return whole;
+}
+
 void shady_render_output_frame(
 	struct shady_output *output
 ) {
@@ -2379,6 +2753,16 @@ void shady_render_output_frame(
 	/* Safe/desktop mode uses wlroots' scene renderer directly. No custom 3D
 	 * transforms, simulation, effects, or perpetual animation frame loop. */
 	if (!server->config.spatial_mode || shady_desktop_state(server)->session_locked) {
+		/* The scene renderer draws into the same swapchain: what the spatial
+		 * renderer knows of its buffers is gone. */
+		output->damage_whole = true;
+		/* ... and the other way round: the spatial renderer drew into
+		 * buffers the scene's ring still thinks hold its own frames. */
+		if (output->spatial_drew) {
+			output->spatial_drew = false;
+			wlr_damage_ring_add_box(&scene_output->damage_ring, &(struct wlr_box){
+				0, 0, wlr_output->width, wlr_output->height });
+		}
 		if (!shady_capture_scene_output_commit(server, scene_output)) {
 			wlr_log(WLR_ERROR, "failed to commit desktop scene output");
 			return;
@@ -2476,6 +2860,9 @@ void shady_render_output_frame(
 		GL_RENDERBUFFER,
 		depth_rbo
 	);
+	if (depth_rbo_stencil)
+		glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT,
+			GL_RENDERBUFFER, depth_rbo);
 
 	glViewport(
 		0,
@@ -2500,9 +2887,6 @@ void shady_render_output_frame(
 
 	glClearDepthf(1.0f);
 
-	/* The sky (draw_background_cached) covers every pixel. */
-	glClear(GL_DEPTH_BUFFER_BIT);
-
 	glDisable(GL_CULL_FACE);
 	glDisable(GL_SCISSOR_TEST);
 
@@ -2523,6 +2907,77 @@ void shady_render_output_frame(
 		proj,
 		view
 	);
+
+	/*
+	 * Advance the spatial desktop through one compositor-owned clock. This
+	 * prevents physics/FPS state from being stepped independently per output.
+	 * It runs before anything is drawn, so that what the frame draws (and
+	 * so its damage) is settled first.
+	 */
+	bool simulation_advanced = shady_experimental_update(
+		server, logical_w, logical_h);
+
+	/* Camera physics may have changed the view, so rebuild matrices. */
+	if (shady_spatial_state(server)->runtime.camera.first_person && simulation_advanced) {
+		shady_render_camera_matrices(server, buf_w, buf_h, view, proj);
+		shady_mat4_multiply(vp, proj, view);
+	}
+
+	/* What to draw: the damage since this buffer was last on screen. */
+	pixman_region32_t frame_damage, redraw;
+	bool whole_frame = damage_begin_frame(server, output, scene_output, vp,
+		buf_w, buf_h, logical_w, logical_h, &frame_damage);
+	pixman_region32_init(&redraw);
+	wlr_damage_ring_rotate_buffer(&output->damage_ring, state.buffer, &redraw);
+	pixman_region32_intersect_rect(&redraw, &redraw, 0, 0, (unsigned)buf_w, (unsigned)buf_h);
+	{
+		const pixman_box32_t *e = pixman_region32_extents(&redraw);
+		int rect_count = 0;
+		const pixman_box32_t *rects = pixman_region32_rectangles(&redraw, &rect_count);
+		double box_area = (double)(e->x2 - e->x1) * (double)(e->y2 - e->y1);
+		double area = 0;
+		for (int i = 0; i < rect_count; i++)
+			area += (double)(rects[i].x2 - rects[i].x1) * (double)(rects[i].y2 - rects[i].y1);
+		bool stencil = depth_rbo_stencil && rect_count > 1;
+		if (!stencil) area = box_area;
+		double total = (double)buf_w * (double)buf_h;
+		damage_scissor.on = !whole_frame && total > 0 && area < total * 0.9;
+		damage_scissor.box[0] = e->x1;
+		damage_scissor.box[1] = e->y1;
+		damage_scissor.box[2] = e->x2 - e->x1;
+		damage_scissor.box[3] = e->y2 - e->y1;
+		if (whole_frame) {
+			output->damage_full_frames++;
+		} else {
+			output->damage_partial_frames++;
+			if (total > 0) output->damage_partial_area += (damage_scissor.on ? area : total) / total;
+		}
+		glDisable(GL_STENCIL_TEST);
+		if (damage_scissor.on && stencil) {
+			/* 1 inside the damage, 0 elsewhere; draws pass only on 1. The
+			 * clears are scissored, so this costs the damage's area. */
+			glStencilMask(0xff);
+			glEnable(GL_SCISSOR_TEST);
+			glScissor(e->x1, e->y1, e->x2 - e->x1, e->y2 - e->y1);
+			glClearStencil(0);
+			glClear(GL_STENCIL_BUFFER_BIT);
+			glClearStencil(1);
+			for (int i = 0; i < rect_count; i++) {
+				glScissor(rects[i].x1, rects[i].y1,
+					rects[i].x2 - rects[i].x1, rects[i].y2 - rects[i].y1);
+				glClear(GL_STENCIL_BUFFER_BIT);
+			}
+			glClearStencil(0);
+			glStencilFunc(GL_EQUAL, 1, 0xff);
+			glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
+			glStencilMask(0x00);
+			glEnable(GL_STENCIL_TEST);
+		}
+	}
+	damage_scissor_apply();
+
+	/* The sky (draw_background_cached) covers every pixel. */
+	glClear(GL_DEPTH_BUFFER_BIT);
 
 	shady_environment_sync(server);
 	draw_background_cached(server, output, (GLuint)fbo, buf_w, buf_h,
@@ -2569,19 +3024,6 @@ void shady_render_output_frame(
 		server->config.window_tint[0], server->config.window_tint[1],
 		server->config.window_tint[2], 1.0f,
 	};
-
-	/*
-	 * Advance the spatial desktop through one compositor-owned clock. This
-	 * prevents physics/FPS state from being stepped independently per output.
-	 */
-	bool simulation_advanced = shady_experimental_update(
-		server, logical_w, logical_h);
-
-	/* Camera physics may have changed the view, so rebuild matrices. */
-	if (shady_spatial_state(server)->runtime.camera.first_person && simulation_advanced) {
-		shady_render_camera_matrices(server, buf_w, buf_h, view, proj);
-		shady_mat4_multiply(vp, proj, view);
-	}
 
 	/* Snapshot texture lifetime remains a renderer concern. */
 	update_close_snapshots();
@@ -3259,6 +3701,10 @@ void shady_render_output_frame(
 		GL_RENDERBUFFER,
 		0
 	);
+	if (depth_rbo_stencil)
+		glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT,
+			GL_RENDERBUFFER, 0);
+	glDisable(GL_STENCIL_TEST);
 
 	glDisable(GL_DEPTH_TEST);
 
@@ -3295,6 +3741,10 @@ void shady_render_output_frame(
 	/* Custom spatial rendering bypasses wlr_scene_output_commit(), which
 	 * normally draws cursors when the backend has no hardware cursor plane. */
 	wlr_output_add_software_cursors_to_render_pass(wlr_output, pass, NULL);
+	damage_scissor.on = false;
+	glDisable(GL_SCISSOR_TEST);
+	glDisable(GL_STENCIL_TEST);
+	glStencilMask(0xff);
 	if (!wlr_render_pass_submit(pass)) {
 		wlr_log(
 			WLR_ERROR,
@@ -3305,10 +3755,15 @@ void shady_render_output_frame(
 	if ((renderer_is_software || profile) && plugin_make_current()) glFinish();
 	shady_capture_output_buffer(server, wlr_output, state.buffer);
 
-	wlr_output_commit_state(
-		wlr_output,
-		&state
-	);
+	/* Tell the backend what changed since the last frame shown. */
+	if (!whole_frame) wlr_output_state_set_damage(&state, &frame_damage);
+	pixman_region32_fini(&frame_damage);
+	pixman_region32_fini(&redraw);
+
+	if (!wlr_output_commit_state(wlr_output, &state)) {
+		/* The buffer never reached the screen: the ring is wrong about it. */
+		output->damage_whole = true;
+	}
 
 	wlr_output_state_finish(
 		&state
@@ -3384,8 +3839,9 @@ void shady_render_toplevel_commit(
 	struct shady_toplevel *toplevel
 ) {
 	/* A client buffer commit is itself a render wake-up. The old perpetual
-	 * frame loop hid this requirement by redrawing even when no damage existed. */
-	shady_render_schedule_all_outputs(toplevel->server);
+	 * frame loop hid this requirement by redrawing even when no damage existed.
+	 * The scene graph has the commit's damage. */
+	shady_render_schedule_all_outputs_content(toplevel->server);
 
 	if (
 		shady_close_state_for_const(toplevel)->state !=

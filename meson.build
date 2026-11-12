@@ -167,6 +167,7 @@ shady_deps = [
   dependency('wayland-server'),
   dependency('xkbcommon'),
   dependency('libinput'),
+  dependency('pixman-1'),
   cc.find_library('m', required: true),
   lua,
   dl,

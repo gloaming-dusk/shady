@@ -44,6 +44,10 @@ struct probe {
 	struct wl_surface *cursor_surface;
 	uint32_t base_color;
 	bool pattern;
+	int width, height; /* WIDTH x HEIGHT, or what a stretched layer got */
+	/* SHADY_AUTOMATION_PROBE_TICK_MS: every so often add a 32x32 block,
+	 * damaging only it, SHADY_AUTOMATION_PROBE_TICKS times (default 30). */
+	int tick, ticks;
 	const char *app_id;
 	const char *status_path;
 	/* SHADY_AUTOMATION_PROBE_TEXT: log what the keys type, by the keymap
@@ -75,44 +79,67 @@ static void status_once(struct probe *p, bool *flag, const char *line) {
 	fclose(f);
 }
 
+/* Where tick n's block goes: spread over the surface, deterministic. */
+static void tick_block(const struct probe *p, int n, int *x, int *y) {
+	int w = p->width > 40 ? p->width - 40 : 1, h = p->height > 40 ? p->height - 40 : 1;
+	*x = (n * 97 + 5) % w;
+	*y = (n * 61 + 9) % h;
+}
+
 static void draw(struct probe *p) {
 	if (!p->configured || !p->shm || p->buffer_count >= MAX_BUFFERS) return;
 	char name[] = "/tmp/shady-probe-XXXXXX";
 	int fd = mkstemp(name);
 	if (fd < 0) return;
 	unlink(name);
-	size_t size = WIDTH * HEIGHT * 4u;
+	const int w = p->width, h = p->height;
+	size_t size = w * h * 4u;
 	if (ftruncate(fd, (off_t)size) != 0) { close(fd); return; }
 	uint32_t *pixels = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
 	if (pixels == MAP_FAILED) { close(fd); return; }
 
-	for (int y = 0; y < HEIGHT; y++) {
-		for (int x = 0; x < WIDTH; x++) {
+	for (int y = 0; y < h; y++) {
+		for (int x = 0; x < w; x++) {
 			uint32_t c = p->base_color;
 			if (p->pattern) {
 				int cell = ((x / 24) + (y / 24)) & 1;
 				c = cell ? 0xff1f6f8bu : 0xffd7eef7u;
 				if ((x % 80) < 4 || (y % 64) < 4) c = 0xff163447u;
 			}
-			if (p->key_seen && y < HEIGHT / 2) c = 0xff2e8b57u;
+			if (p->key_seen && y < h / 2) c = 0xff2e8b57u;
 			if (p->click_seen && x < 48) c = 0xffb33a3au;
-			if (p->scroll_seen && x >= WIDTH - 48) c = 0xff3a64b3u;
+			if (p->scroll_seen && x >= w - 48) c = 0xff3a64b3u;
 			if (p->drag_seen && x >= 96 && x < 224 && y >= 76 && y < 124)
 				c = 0xffd4a017u;
-			pixels[y * WIDTH + x] = c;
+			pixels[y * w + x] = c;
 		}
+	}
+	for (int n = 1; n <= p->tick; n++) {
+		int bx, by;
+		tick_block(p, n, &bx, &by);
+		uint32_t c = 0xff000000u | ((uint32_t)(n * 53) & 0xff) << 16 |
+			((uint32_t)(n * 151) & 0xff) << 8 | ((uint32_t)(255 - n * 7) & 0xff);
+		for (int y = by; y < by + 32 && y < h; y++)
+			for (int x = bx; x < bx + 32 && x < w; x++)
+				pixels[y * w + x] = c;
 	}
 
 	struct wl_shm_pool *pool = wl_shm_create_pool(p->shm, fd, (int)size);
 	struct wl_buffer *buffer = wl_shm_pool_create_buffer(pool, 0,
-		WIDTH, HEIGHT, WIDTH * 4, WL_SHM_FORMAT_XRGB8888);
+		w, h, w * 4, WL_SHM_FORMAT_XRGB8888);
 	wl_shm_pool_destroy(pool);
 	close(fd);
 	munmap(pixels, size);
 	if (!buffer) return;
 	p->buffers[p->buffer_count++] = buffer;
 	wl_surface_attach(p->surface, buffer, 0, 0);
-	wl_surface_damage_buffer(p->surface, 0, 0, WIDTH, HEIGHT);
+	if (p->tick > 0 && p->buffer_count > 1) {
+		int bx, by;
+		tick_block(p, p->tick, &bx, &by);
+		wl_surface_damage_buffer(p->surface, bx, by, 32, 32);
+	} else {
+		wl_surface_damage_buffer(p->surface, 0, 0, w, h);
+	}
 	wl_surface_commit(p->surface);
 }
 
@@ -121,14 +148,17 @@ static void draw(struct probe *p) {
 static void redraw(struct probe *p) {
 	if (!p->configured || p->buffer_count == 0) return;
 	wl_surface_attach(p->surface, p->buffers[p->buffer_count - 1], 0, 0);
-	wl_surface_damage_buffer(p->surface, 0, 0, WIDTH, HEIGHT);
+	wl_surface_damage_buffer(p->surface, 0, 0, p->width, p->height);
 	wl_surface_commit(p->surface);
 }
 
 static void layer_configure(void *data, struct zwlr_layer_surface_v1 *surface,
 		uint32_t serial, uint32_t width, uint32_t height) {
-	(void)width; (void)height;
 	struct probe *p = data;
+	if (width > 0 && height > 0 && !p->configured) {
+		p->width = (int)width;
+		p->height = (int)height;
+	}
 	zwlr_layer_surface_v1_ack_configure(surface, serial);
 	bool first = !p->configured;
 	p->configured = true;
@@ -449,7 +479,12 @@ int main(void) {
 		.pattern = getenv("SHADY_AUTOMATION_PROBE_PATTERN") != NULL,
 		.pointer_test = getenv("SHADY_AUTOMATION_POINTER_TEST") != NULL,
 		.text_test = getenv("SHADY_AUTOMATION_PROBE_TEXT") != NULL,
+		.width = WIDTH,
+		.height = HEIGHT,
+		.ticks = 30,
 	};
+	const char *ticks = getenv("SHADY_AUTOMATION_PROBE_TICKS");
+	if (ticks && *ticks) p.ticks = atoi(ticks);
 	if (p.text_test) p.xkb = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
 	p.display = wl_display_connect(NULL);
 	if (!p.display) return 1;
@@ -460,14 +495,26 @@ int main(void) {
 
 	p.surface = wl_compositor_create_surface(p.compositor);
 	/* SHADY_AUTOMATION_PROBE_LAYER: a bar in the top layer, not a window. */
-	if (getenv("SHADY_AUTOMATION_PROBE_LAYER")) {
+	/* =background: a wallpaper over the whole output instead. */
+	const char *layer_kind = getenv("SHADY_AUTOMATION_PROBE_LAYER");
+	if (layer_kind) {
 		if (!p.layer_shell) return 3;
+		bool background = !strcmp(layer_kind, "background");
 		p.layer_surface = zwlr_layer_shell_v1_get_layer_surface(p.layer_shell, p.surface,
-			NULL, ZWLR_LAYER_SHELL_V1_LAYER_TOP, p.app_id);
+			NULL, background ? ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND : ZWLR_LAYER_SHELL_V1_LAYER_TOP,
+			p.app_id);
 		zwlr_layer_surface_v1_add_listener(p.layer_surface, &layer_listener, &p);
-		zwlr_layer_surface_v1_set_size(p.layer_surface, WIDTH, HEIGHT);
-		zwlr_layer_surface_v1_set_anchor(p.layer_surface,
-			ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM | ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT);
+		if (background) {
+			zwlr_layer_surface_v1_set_size(p.layer_surface, 0, 0);
+			zwlr_layer_surface_v1_set_anchor(p.layer_surface,
+				ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP | ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM |
+				ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT | ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT);
+			zwlr_layer_surface_v1_set_exclusive_zone(p.layer_surface, -1);
+		} else {
+			zwlr_layer_surface_v1_set_size(p.layer_surface, WIDTH, HEIGHT);
+			zwlr_layer_surface_v1_set_anchor(p.layer_surface,
+				ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM | ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT);
+		}
 		wl_surface_commit(p.surface);
 	} else {
 	p.xdg_surface = xdg_wm_base_get_xdg_surface(p.wm_base, p.surface);
@@ -494,6 +541,9 @@ int main(void) {
 	const char *animate = getenv("SHADY_AUTOMATION_PROBE_ANIMATE_MS");
 	int animate_ms = animate && *animate ? atoi(animate) : 0;
 	if (animate_ms > 0) timeout = animate_ms;
+	const char *tick = getenv("SHADY_AUTOMATION_PROBE_TICK_MS");
+	int tick_ms = tick && *tick ? atoi(tick) : 0;
+	if (tick_ms > 0) timeout = tick_ms;
 	int fd = wl_display_get_fd(p.display);
 	for (;;) {
 		while (wl_display_prepare_read(p.display) != 0) wl_display_dispatch_pending(p.display);
@@ -503,6 +553,14 @@ int main(void) {
 		if (ready <= 0) {
 			wl_display_cancel_read(p.display);
 			if (ready < 0) break;
+			if (tick_ms > 0) {
+				if (p.configured && p.tick < p.ticks) {
+					p.tick++;
+					draw(&p);
+				}
+				if (p.tick >= p.ticks) timeout = -1;
+				continue;
+			}
 			if (animate_ms > 0) {
 				redraw(&p);
 				continue;

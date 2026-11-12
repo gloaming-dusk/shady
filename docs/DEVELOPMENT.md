@@ -156,7 +156,24 @@ commits, input, configuration changes and module actions, and asks for
 continuous frames only while something moves (physics, FPS movement, wobble
 settling, close animations). `SHADY_RENDER_STATS=1` logs per-output
 scheduling, coalesced requests, frame callbacks, CPU frame timing and why
-continuous frames were requested. For shady-shell, `SHADY_SHELL_PAINT_STATS=1`
+continuous frames were requested, and how many frames were drawn whole or
+in part (`render-damage`).
+
+The spatial renderer draws only what changed since the buffer it draws into
+was last on screen. Client commits (and a software cursor) damage the scene
+graph, which keeps damage under opaque windows too; a frame takes that,
+leaves out a wallpaper's damage behind opaque windows (their rounded corners
+and edges excepted), widens it to the whole of a frosted-glass layer it
+touches, and draws through a stencil of those rectangles. A frame draws
+everything when anything else may have changed: any schedule that is not a
+client commit, or a change in what it would draw (window placement, focus,
+stacking, layers, popups, the configuration, the camera). Windows drawn away
+from where the scene graph puts them (tilted, in depth, wobbling, closing,
+under a plugin's shader or render hook, with the pulsing neon look) always
+draw everything. `SHADY_DAMAGE=0` turns it off to compare, and
+`SHADY_DAMAGE_DEBUG=1` logs each partial frame's damage;
+`tests/headless-damage.sh` checks that a tracked frame has the same pixels
+as a whole one. For shady-shell, `SHADY_SHELL_PAINT_STATS=1`
 logs how often each surface paints and how much of it (see its
 [design notes](https://github.com/gloaming-dusk/shady-shell/blob/main/docs/SHELL_DESIGN.md)).
 

@@ -91,7 +91,9 @@ static int capture_timer_fire(void *data) {
 	}
 	capture.armed = true;
 	wl_event_source_timer_update(capture.timer, CAPTURE_TIMEOUT_MS);
-	shady_render_schedule_all_outputs(server);
+	/* A frame, not a redraw: the buffer it draws into is whole either way,
+	 * and a capture should show what is on screen. */
+	shady_render_schedule_all_outputs_content(server);
 	return 0;
 }
 
@@ -155,7 +157,7 @@ bool shady_capture_request_with(struct shady_server *server,
 	capture.timer = wl_event_loop_add_timer(
 		wl_display_get_event_loop(server->wl_display), capture_timer_fire, server);
 	if (capture.timer) wl_event_source_timer_update(capture.timer, CAPTURE_TIMEOUT_MS);
-	shady_render_schedule_all_outputs(server);
+	shady_render_schedule_all_outputs_content(server);
 	return true;
 }
 

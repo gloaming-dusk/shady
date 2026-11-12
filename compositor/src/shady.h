@@ -4,6 +4,7 @@
 
 #include <stdbool.h>
 #include <wayland-server-core.h>
+#include <wlr/types/wlr_damage_ring.h>
 #include <wlr/types/wlr_scene.h>
 #include <wlr/util/box.h>
 #include <xkbcommon/xkbcommon.h>
@@ -161,6 +162,10 @@ struct shady_server {
 	struct wlr_renderer *renderer;
 	struct wlr_allocator *allocator;
 	struct wlr_scene *scene;
+	/* The scene graph damages what lies under opaque surfaces too
+	 * (WLR_SCENE_DISABLE_VISIBILITY), as the spatial renderer's damage
+	 * tracking needs: its rounded corners show what is beneath. */
+	bool scene_sees_through;
 	struct wlr_scene_tree *content_tree;
 	/* Background and bottom layer surfaces, below the windows. */
 	struct wlr_scene_tree *background_tree;
@@ -264,6 +269,22 @@ struct shady_output {
 	uint64_t continuous_snapshot_frames;
 	bool lock_frame_pending;
 	uint32_t lock_commit_seq;
+	/* Damage tracking in the spatial renderer (render/render.c): what each
+	 * buffer of the swapchain lacks, whether the next frame must draw all of
+	 * it (something other than a client's content changed), and what the
+	 * last frame drew, folded into a number, to notice changes nobody
+	 * reported. */
+	struct wlr_damage_ring damage_ring;
+	bool damage_whole;
+	bool spatial_drew; /* since the scene renderer last drew */
+	/* Something other than a background or bottom layer surface (a
+	 * wallpaper) committed since the last frame. Without it, damage
+	 * behind opaque windows cannot show and is left out. */
+	bool damage_from_above;
+	uint64_t damage_signature;
+	uint64_t damage_full_frames;
+	uint64_t damage_partial_frames;
+	double damage_partial_area; /* share of the output, summed */
 	struct wl_listener frame;
 	struct wl_listener present;
 	struct wl_listener request_state;

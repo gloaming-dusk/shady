@@ -172,8 +172,10 @@ static void layer_surface_commit(struct wl_listener *listener, void *data) {
 	struct shady_layer_surface *layer =
 		wl_container_of(listener, layer, commit);
 	struct wlr_layer_surface_v1 *surface = layer->layer_surface;
-	/* A new buffer needs a frame: the spatial renderer draws on demand. */
-	shady_render_schedule_all_outputs(layer->server);
+	/* A new buffer needs a frame: the spatial renderer draws on demand. Its
+	 * damage is in the scene graph; a layer that moved or resized changes
+	 * what the frame draws, which the renderer notices itself. */
+	shady_render_schedule_all_outputs_content(layer->server);
 	const uint32_t layout_fields =
 		WLR_LAYER_SURFACE_V1_STATE_DESIRED_SIZE |
 		WLR_LAYER_SURFACE_V1_STATE_ANCHOR |

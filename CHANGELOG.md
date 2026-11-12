@@ -3,6 +3,24 @@
 Shady is experimental: the Lua, IPC and plugin interfaces may still change
 between releases. Breaking changes are called out here.
 
+## Unreleased
+
+New:
+
+- Damage tracking in the spatial renderer: a frame draws only what changed
+  since its buffer was last on screen, through a stencil of the damaged
+  rectangles, and tells the backend what changed. A wallpaper that animates
+  behind opaque windows redraws only where it shows. Frames that may have
+  changed in other ways (layout, focus, configuration, 3D effects) are drawn
+  whole. `SHADY_DAMAGE=0` turns it off; `SHADY_RENDER_STATS=1` counts whole
+  and partial frames.
+- The automation probe can tick: add a block now and then, damaging only it,
+  and stretch over the output as a background layer.
+
+Changed:
+
+- A screenshot no longer forces a whole redraw.
+
 ## 0.4.1 (2026-11-12)
 
 Breaking:

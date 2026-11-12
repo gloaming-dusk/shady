@@ -6,6 +6,7 @@
 #include <string.h>
 #include <wayland-server-core.h>
 #include <wlr/types/wlr_output.h>
+#include <wlr/types/wlr_layer_shell_v1.h>
 #include <wlr/types/wlr_output_layout.h>
 #include <wlr/types/wlr_xdg_shell.h>
 #include <wlr/types/wlr_scene.h>
@@ -42,7 +43,17 @@ static void surface_watch_commit(struct wl_listener *listener, void *data) {
 	(void)data;
 	struct surface_watch *watch = wl_container_of(listener, watch, commit);
 	shady_automation_surface_committed(watch->server, watch->surface);
-	shady_render_schedule_all_outputs(watch->server);
+	/* A wallpaper's damage behind opaque windows need not be drawn; the
+	 * damage of anything else must. */
+	struct wlr_layer_surface_v1 *layer = wlr_layer_surface_v1_try_from_wlr_surface(
+		wlr_surface_get_root_surface(watch->surface));
+	if (!layer || layer->current.layer > ZWLR_LAYER_SHELL_V1_LAYER_BOTTOM) {
+		struct shady_output *output;
+		wl_list_for_each(output, &watch->server->outputs, link)
+			output->damage_from_above = true;
+	}
+	/* The scene graph has the commit's damage; only it needs drawing. */
+	shady_render_schedule_all_outputs_content(watch->server);
 }
 
 static void surface_watch_destroy(struct wl_listener *listener, void *data) {
@@ -75,6 +86,7 @@ static void output_request_state(struct wl_listener *listener, void *data) {
 	struct shady_output *output = wl_container_of(listener, output, request_state);
 	const struct wlr_output_event_request_state *event = data;
 	if (wlr_output_commit_state(output->wlr_output, event->state)) {
+		output->damage_whole = true;
 		shady_session_lock_output_state_changed(output);
 		shady_render_schedule_output(output);
 	}
@@ -144,6 +156,15 @@ static void output_destroy(struct wl_listener *listener, void *data) {
 			output->frame_schedule_requests,
 			output->frame_schedule_coalesced,
 			output->frame_callbacks);
+		uint64_t damaged = output->damage_full_frames + output->damage_partial_frames;
+		if (damaged > 0)
+			wlr_log(WLR_INFO,
+				"render-damage output=%s full=%" PRIu64 " partial=%" PRIu64
+				" partial_area=%.1f%%",
+				output->wlr_output->name ? output->wlr_output->name : "<unnamed>",
+				output->damage_full_frames, output->damage_partial_frames,
+				output->damage_partial_frames ? output->damage_partial_area * 100.0 /
+					(double)output->damage_partial_frames : 0.0);
 		if (output->profile_samples > 0) {
 			wlr_log(WLR_INFO,
 				"render-profile output=%s samples=%" PRIu64
@@ -170,6 +191,7 @@ static void output_destroy(struct wl_listener *listener, void *data) {
 	}
 	shady_recover_toplevels_to_outputs(server);
 	shady_output_manager_publish(server);
+	wlr_damage_ring_finish(&output->damage_ring);
 	free(output);
 }
 
@@ -251,6 +273,8 @@ void server_new_output(struct wl_listener *listener, void *data) {
 	output->wlr_output = wlr_output;
 	output->server = server;
 	output->render_requested = true;
+	wlr_damage_ring_init(&output->damage_ring);
+	output->damage_whole = true;
 
 	output->frame.notify = output_frame;
 	wl_signal_add(&wlr_output->events.frame, &output->frame);

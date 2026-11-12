@@ -100,6 +100,11 @@ void shady_render_schedule_all_outputs(struct shady_server *server) {
 	}
 }
 
+/* wlroots' scene renderer tracks damage itself. */
+void shady_render_schedule_all_outputs_content(struct shady_server *server) {
+	shady_render_schedule_all_outputs(server);
+}
+
 void shady_render_output_frame(struct shady_output *output) {
 	struct shady_server *server = output->server;
 	struct wlr_scene_output *scene_output =

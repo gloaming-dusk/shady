@@ -15,7 +15,11 @@ bool shady_render_init(struct wlr_renderer *renderer);
 void shady_render_fini(void);
 void shady_render_output_frame(struct shady_output *output);
 void shady_render_schedule_output(struct shady_output *output);
+/* Ask every output for a frame that must draw all of itself. */
 void shady_render_schedule_all_outputs(struct shady_server *server);
+/* Ask for a frame because a client committed: the spatial renderer draws only
+ * what the commit damaged (the scene graph collects it). */
+void shady_render_schedule_all_outputs_content(struct shady_server *server);
 
 shady_shader_program shady_render_plugin_shader_create(struct shady_server *server,
 	void *owner, const char *vertex_path, const char *fragment_path);
