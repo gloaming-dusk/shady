@@ -3,6 +3,20 @@
 Shady is experimental: the Lua, IPC and plugin interfaces may still change
 between releases. Breaking changes are called out here.
 
+## 0.5.1 (2026-11-15)
+
+Fixed:
+
+- Layer-shell layers stack in their order whatever order their surfaces
+  map in. Top and overlay surfaces shared one scene tree (background and
+  bottom another), so outside spatial mode a top surface that mapped after
+  an overlay one was drawn above it and took its clicks.
+
+New:
+
+- The automation probe can be an overlay layer surface
+  (`SHADY_AUTOMATION_PROBE_LAYER=overlay`).
+
 ## 0.5.0 (2026-11-12)
 
 New:
