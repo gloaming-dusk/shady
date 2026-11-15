@@ -459,6 +459,10 @@ int main(int argc, char *argv[]) {
 	server.background_tree = wlr_scene_tree_create(&server.scene->tree);
 	server.content_tree = wlr_scene_tree_create(&server.scene->tree);
 	server.overlay_tree = wlr_scene_tree_create(&server.scene->tree);
+	server.layer_trees[ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND] = wlr_scene_tree_create(server.background_tree);
+	server.layer_trees[ZWLR_LAYER_SHELL_V1_LAYER_BOTTOM] = wlr_scene_tree_create(server.background_tree);
+	server.layer_trees[ZWLR_LAYER_SHELL_V1_LAYER_TOP] = wlr_scene_tree_create(server.overlay_tree);
+	server.layer_trees[ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY] = wlr_scene_tree_create(server.overlay_tree);
 	server.scene_layout = wlr_scene_attach_output_layout(server.scene,
 		server.output_layout);
 

@@ -495,13 +495,16 @@ int main(void) {
 
 	p.surface = wl_compositor_create_surface(p.compositor);
 	/* SHADY_AUTOMATION_PROBE_LAYER: a bar in the top layer, not a window. */
-	/* =background: a wallpaper over the whole output instead. */
+	/* =background: a wallpaper over the whole output instead; =overlay: the
+	 * bar in the overlay layer. */
 	const char *layer_kind = getenv("SHADY_AUTOMATION_PROBE_LAYER");
 	if (layer_kind) {
 		if (!p.layer_shell) return 3;
 		bool background = !strcmp(layer_kind, "background");
 		p.layer_surface = zwlr_layer_shell_v1_get_layer_surface(p.layer_shell, p.surface,
-			NULL, background ? ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND : ZWLR_LAYER_SHELL_V1_LAYER_TOP,
+			NULL, background ? ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND
+				: !strcmp(layer_kind, "overlay") ? ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY
+				: ZWLR_LAYER_SHELL_V1_LAYER_TOP,
 			p.app_id);
 		zwlr_layer_surface_v1_add_listener(p.layer_surface, &layer_listener, &p);
 		if (background) {

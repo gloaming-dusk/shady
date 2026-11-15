@@ -160,11 +160,12 @@ void shady_layers_arrange(struct shady_server *server) {
 }
 
 /* Background and bottom surfaces sit below the windows, top and overlay
- * above them. */
+ * above them, each layer in a tree of its own: a top surface that maps
+ * after an overlay one is still beneath it, in drawing and in hit tests. */
 static struct wlr_scene_tree *layer_tree(struct shady_server *server,
 		enum zwlr_layer_shell_v1_layer layer) {
-	return layer <= ZWLR_LAYER_SHELL_V1_LAYER_BOTTOM
-		? server->background_tree : server->overlay_tree;
+	if ((int)layer < 0 || layer > ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY) layer = ZWLR_LAYER_SHELL_V1_LAYER_TOP;
+	return server->layer_trees[layer];
 }
 
 static void layer_surface_commit(struct wl_listener *listener, void *data) {

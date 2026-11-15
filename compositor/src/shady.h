@@ -170,6 +170,11 @@ struct shady_server {
 	/* Background and bottom layer surfaces, below the windows. */
 	struct wlr_scene_tree *background_tree;
 	struct wlr_scene_tree *overlay_tree;
+	/* One tree per layer-shell layer, in order: background and bottom in
+	 * background_tree, top and overlay in overlay_tree. Within a layer,
+	 * later surfaces are above earlier ones; a layer is above the one
+	 * before it whatever order its surfaces mapped in. */
+	struct wlr_scene_tree *layer_trees[4];
 	struct wlr_scene_output_layout *scene_layout;
 
 	struct wlr_xdg_shell *xdg_shell;

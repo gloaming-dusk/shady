@@ -120,4 +120,7 @@ SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
 SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
   nix develop -c bash ./tests/headless-damage.sh
 
+SHADY_SPATIAL_TEST_BUILD_DIR="$BUILD_DIR" \
+  nix develop -c bash ./tests/headless-layer-order.sh
+
 echo "spatial-suite: PASS"
