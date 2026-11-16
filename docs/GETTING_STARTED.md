@@ -105,6 +105,16 @@ modules of [shady-shell](https://github.com/gloaming-dusk/shady-shell) and
 [shady-greeter](https://github.com/gloaming-dusk/shady-greeter), or use
 [Gloam](https://github.com/gloaming-dusk/gloam), which turns on all of it.
 
+## Installing on Arch Linux
+
+There is a `PKGBUILD` in [`packaging/arch`](../packaging/arch/PKGBUILD). It
+builds the latest release and adds the Shady and Shady (safe) sessions:
+
+```sh
+cd packaging/arch
+makepkg -si
+```
+
 ## Building without Nix
 
 Install the development packages for wlroots **0.20.2** (exactly the 0.20

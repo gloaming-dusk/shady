@@ -1,0 +1,70 @@
+# Maintainer: gloaming-dusk <https://github.com/gloaming-dusk/shady/issues>
+#
+# Build and install with `makepkg -si` from this directory. It builds the
+# release tag named by pkgver, not the checkout this file sits in.
+
+pkgname=shady
+pkgver=0.5.1
+pkgrel=1
+pkgdesc='Experimental 3D Wayland compositor'
+arch=('x86_64' 'aarch64')
+url='https://github.com/gloaming-dusk/shady'
+license=('Apache-2.0 AND CC0-1.0')
+depends=(
+  'cairo'
+  'fontconfig'
+  'glibc'
+  'libglvnd'
+  'libinput'
+  'libxkbcommon'
+  'lua54'
+  'pango'
+  'pixman'
+  'wayland'
+  'wlroots0.20'
+)
+makedepends=(
+  'git'
+  'meson'
+  'ninja'
+  'wayland-protocols'
+  'wlr-protocols'
+)
+optdepends=(
+  'adwaita-cursors: a cursor theme when none is configured'
+  'foot: the terminal Tide opens'
+  'fuzzel: launcher when shady-shell is not installed'
+  'grim: screenshots'
+  'swaylock: screen locking'
+  'brightnessctl: brightness keys'
+  'playerctl: media keys'
+  'wireplumber: volume keys (wpctl)'
+)
+source=("$pkgname::git+$url.git#tag=v$pkgver")
+sha256sums=('SKIP')
+
+prepare() {
+  cd "$pkgname"
+  # Shady is written against Lua 5.4. Arch's `lua` is 5.5; 5.4 is `lua54`,
+  # whose library and headers carry the version in their names.
+  sed -i "s/cc.find_library('lua',/cc.find_library('lua5.4',/" meson.build
+  grep -q "cc.find_library('lua5.4'," meson.build
+}
+
+build() {
+  CFLAGS+=' -I/usr/include/lua5.4'
+  arch-meson "$pkgname" build \
+    -D installed_data=true \
+    -D cursor_path=/usr/share/icons
+  meson compile -C build
+}
+
+check() {
+  meson test -C build --print-errorlogs
+}
+
+package() {
+  meson install -C build --destdir "$pkgdir"
+  install -Dm644 "$pkgname/LICENSES/tinywl-CC0.txt" \
+    "$pkgdir/usr/share/licenses/$pkgname/tinywl-CC0.txt"
+}
