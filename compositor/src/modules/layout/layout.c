@@ -15,6 +15,7 @@
 #include <string.h>
 #include <time.h>
 #include <wayland-server-core.h>
+#include <wlr/types/wlr_cursor.h>
 #include <wlr/types/wlr_keyboard.h>
 #include <wlr/types/wlr_layer_shell_v1.h>
 #include <wlr/types/wlr_output_layout.h>
@@ -1214,6 +1215,58 @@ bool shady_layout_toggle_floating(struct shady_toplevel *toplevel) {
 		attach(toplevel, toplevel_workspace(toplevel), default_proportion(server));
 		arrange_workspace(server, lt->workspace, true);
 	}
+	focus_toplevel(toplevel);
+	shady_event_emit_window(server, SHADY_EVENT_WINDOW_STATE_CHANGED, toplevel);
+	return true;
+}
+
+/* A floating window let go with Ctrl held joins the strip again, as a new
+ * column where the pointer is: before the column whose left half it is
+ * over, after one whose right half. It glides in from where it was dropped. */
+bool shady_layout_drop(struct shady_toplevel *toplevel) {
+	if (!toplevel || !toplevel->mapped || toplevel->fullscreen) return false;
+	struct shady_server *server = toplevel->server;
+	if (!shady_layout_active(server) || shady_layout_is_tiled(toplevel)) return false;
+	struct wlr_keyboard *keyboard = wlr_seat_get_keyboard(server->seat);
+	if (!keyboard || !(wlr_keyboard_get_modifiers(keyboard) & WLR_MODIFIER_CTRL))
+		return false;
+	struct shady_layout_toplevel *lt = shady_layout_toplevel_for(toplevel);
+	size_t index = toplevel_workspace(toplevel);
+	struct wlr_box area, full;
+	if (!lt || index >= SHADY_MAX_WORKSPACES || !layout_area(server, &area, &full))
+		return false;
+	/* Only over the strip's output: elsewhere there is no strip to join. */
+	if (wlr_output_layout_output_at(server->output_layout, server->cursor->x,
+			server->cursor->y) != layout_output(server)) return false;
+	struct shady_layout_state *state = shady_layout_state_for(server);
+	struct shady_layout_workspace *ws = &state->workspaces[index];
+	struct strip_metrics m;
+	strip_measure(server, ws, &area, &full, &m);
+	double strip_x = server->cursor->x - area.x + (ws->view_valid ? ws->view : 0.0);
+	size_t at = ws->count;
+	for (size_t c = 0; c < ws->count; c++) {
+		if (strip_x < m.x[c] + m.width[c] / 2.0) {
+			at = c;
+			break;
+		}
+	}
+	float proportion = lt->rule_width > 0.f ? lt->rule_width : default_proportion(server);
+	if (!insert_column(ws, at, toplevel, proportion)) return false;
+	if (toplevel->maximized) ws->columns[at].full_width = true;
+	ws->active = at;
+	lt->tiled = true;
+	lt->workspace = index;
+	lt->force_float = false;
+	lt->force_tile = true;
+	lt->asked_w = lt->asked_h = 0;
+	if (ws->view_valid && toplevel->scene_tree) {
+		lt->strip_x = toplevel->scene_tree->node.x - area.x + ws->view;
+		lt->y = toplevel->scene_tree->node.y;
+		lt->placed = true;
+	} else {
+		lt->placed = false;
+	}
+	arrange_workspace(server, index, true);
 	focus_toplevel(toplevel);
 	shady_event_emit_window(server, SHADY_EVENT_WINDOW_STATE_CHANGED, toplevel);
 	return true;

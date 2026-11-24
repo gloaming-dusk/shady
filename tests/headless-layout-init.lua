@@ -92,6 +92,42 @@ local function run()
         assert(win("lay-b"):toggle_floating())
         check(win("lay-b").tiled, "toggle tiled")
 
+        -- Super+drag lifts a window out; a plain drop leaves it floating,
+        -- and a drop with Ctrl held puts it back where the pointer is.
+        local function super_drag(w, x2, y2, ctrl)
+            local auto = shady.automation
+            auto.key_down("Super_L")
+            auto.move_pointer(w.x + 40, w.y + 40)
+            auto.button_down("left")
+            for i = 1, 8 do
+                auto.move_pointer(w.x + 40 + (x2 - w.x - 40) * i / 8,
+                    w.y + 40 + (y2 - w.y - 40) * i / 8)
+            end
+            -- Ctrl is pressed during the drag, for the drop only.
+            if ctrl then auto.key_down("Control_L") end
+            auto.button_up("left")
+            if ctrl then auto.key_up("Control_L") end
+            auto.key_up("Super_L")
+        end
+        local columns = shady.layout.state().columns
+        b2 = win("lay-b")
+        super_drag(b2, b2.x + 140, b2.y + 240)
+        check(not win("lay-b").tiled, "Super+drag lifts the window out")
+        check(shady.layout.state().columns == columns - 1, "the strip closed up")
+        b2 = win("lay-b")
+        super_drag(b2, b2.x + 60, b2.y + 20)
+        check(not win("lay-b").tiled, "a plain drop keeps the window floating")
+        local target
+        for _, w in ipairs(shady.windows()) do
+            if w.tiled and w.workspace == "1" and w.x >= 0 and w.x < W then target = w end
+        end
+        check(target, "no tiled column on screen")
+        b2 = win("lay-b")
+        super_drag(b2, target.x + 20, target.y + 40, true)
+        check(win("lay-b").tiled, "a drop with Ctrl tiles the window again")
+        check(shady.layout.state().columns == columns, "it came back as a column")
+        check(win("lay-b").x < win(target.app_id).x, "it joined before the column under the pointer")
+
         -- Closing a column that does not have the focus keeps the focus.
         assert(shady.layout.focus("first"))
         local first = focused()

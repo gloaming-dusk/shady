@@ -3,6 +3,16 @@
 Shady is experimental: the Lua, IPC and plugin interfaces may still change
 between releases. Breaking changes are called out here.
 
+## Unreleased
+
+Fixed:
+
+- A floating window can be dragged back into the scrolling layout: hold
+  Ctrl when letting go of the drag and it joins the strip as a new column
+  where the pointer is (before the column whose left half it is over, after
+  one whose right half). A plain drop still leaves it floating. Until now
+  only `toggle_floating` (Super+v in Tide) could put it back. (#12)
+
 ## 0.5.1 (2026-11-15)
 
 Fixed:

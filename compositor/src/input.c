@@ -952,6 +952,8 @@ static void handle_pointer_button(struct shady_server *server,
 	if (event->state == WL_POINTER_BUTTON_STATE_RELEASED &&
 			(server->cursor_mode == SHADY_CURSOR_MOVE ||
 			 server->cursor_mode == SHADY_CURSOR_RESIZE) && server->grabbed_toplevel) {
+		if (server->cursor_mode == SHADY_CURSOR_MOVE)
+			shady_layout_drop(server->grabbed_toplevel);
 		reset_cursor_mode(server);
 		wlr_seat_pointer_notify_button(server->seat,
 			event->time_msec, event->button, event->state);
@@ -975,6 +977,7 @@ static void handle_pointer_button(struct shady_server *server,
 				shady_toplevel_begin_interactive(titlebar, SHADY_CURSOR_MOVE, 0);
 			} else if (server->cursor_mode == SHADY_CURSOR_MOVE &&
 					server->grabbed_toplevel == titlebar) {
+				shady_layout_drop(titlebar);
 				reset_cursor_mode(server);
 			}
 			wlr_seat_pointer_clear_focus(server->seat);

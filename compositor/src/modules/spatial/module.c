@@ -14,6 +14,7 @@
 #include "../../render/pick3d.h"
 #include "../../render/render.h"
 #include "../environment/environment.h"
+#include "../layout/layout.h"
 #include "../desktop/state.h"
 #include "state.h"
 
@@ -137,6 +138,7 @@ static bool spatial_pointer_button(struct shady_server *server,
 	if (event->button == BTN_LEFT) {
 		if (event->state == WL_POINTER_BUTTON_STATE_RELEASED &&
 				server->cursor_mode == SHADY_CURSOR_MOVE && server->grabbed_toplevel) {
+			shady_layout_drop(server->grabbed_toplevel);
 			reset_cursor_mode(server);
 			return true;
 		}
