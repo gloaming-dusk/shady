@@ -420,8 +420,9 @@ nothing to do:
 | `overview([on])` | GL renderer: pull the camera back over the strip, tilted; a click picks a window and flies back to it |
 | `state()` | `{scrolling, columns, active, view, visible, overview}` |
 
-Dragging a tiled window lifts it out of the strip; dragging a tiled
-window's edge resizes its column. A fullscreen window takes the whole
+Dragging a tiled window lifts it out of the strip; holding Ctrl as a
+dragged floating window is let go puts it back, as a new column where the
+pointer is. Dragging a tiled window's edge resizes its column. A fullscreen window takes the whole
 output, and the bars (top layer) step aside while it has the focus. Super
 and the mouse wheel change workspace, Super+Shift+wheel the column, and a
 three-finger swipe moves to the next column (sideways) or changes workspace.

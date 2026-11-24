@@ -38,6 +38,9 @@ void shady_layout_arrange(struct shady_server *server);
 bool shady_layout_begin_interactive(struct shady_toplevel *toplevel, bool move);
 bool shady_layout_interactive_resize(struct shady_toplevel *toplevel,
 	int width, int height, uint32_t edges);
+/* A move grab ends on a floating window: with Ctrl held it joins the strip
+ * at the pointer. True when it did. */
+bool shady_layout_drop(struct shady_toplevel *toplevel);
 
 /* Commands (Lua shady.layout.*). */
 bool shady_layout_focus(struct shady_server *server, enum shady_layout_direction direction);
