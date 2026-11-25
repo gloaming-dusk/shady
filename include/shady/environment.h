@@ -37,6 +37,12 @@ struct shady_environment_box {
 	float max[3];
 };
 
+/* Colour of one vertex, as displayed (sRGB, like CSS colours), each channel
+ * 0..1. Alpha is reserved: the mesh is drawn opaque. */
+struct shady_environment_color {
+	float rgba[4];
+};
+
 /* Exact narrow-phase collision triangle. */
 struct shady_environment_triangle {
 	float v[3][3];
@@ -50,8 +56,11 @@ struct shady_environment_triangle {
  * case vertex_count must be a multiple of three. Collision arrays are
  * optional and limited by the spatial world's fixed capacity.
  *
- * The struct is append-only: future members (materials, textures) are added
- * at the end and gated by struct_size.
+ * The struct is append-only: members added after the first version are at
+ * the end and gated by struct_size. A loader must check that the struct the
+ * host passed is large enough before writing one (see
+ * SHADY_ENVIRONMENT_SCENE_HAS); the host reads one only when the plugin's
+ * struct_size covers it.
  */
 struct shady_environment_scene {
 	uint32_t struct_size;
@@ -65,7 +74,18 @@ struct shady_environment_scene {
 	size_t box_count;
 	const struct shady_environment_triangle *triangles;
 	size_t triangle_count;
+
+	/* Appended: vertex_count colours, one per vertex, or NULL to draw the
+	 * mesh in Shady's single environment colour. */
+	const struct shady_environment_color *colors;
 };
+
+/* Whether a scene struct of this struct_size has the member. */
+#define SHADY_ENVIRONMENT_SCENE_HAS(scene, member) \
+	((scene)->struct_size >= offsetof(struct shady_environment_scene, member) + \
+		sizeof((scene)->member))
+/* The first version, without colors: the smallest struct the host accepts. */
+#define SHADY_ENVIRONMENT_SCENE_V1_SIZE offsetof(struct shady_environment_scene, colors)
 
 /*
  * Asset loader descriptor. The descriptor, its strings and its callbacks must

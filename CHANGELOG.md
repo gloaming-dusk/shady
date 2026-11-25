@@ -5,6 +5,17 @@ between releases. Breaking changes are called out here.
 
 ## Unreleased
 
+New:
+
+- Environment scenes can colour each vertex: `struct shady_environment_scene`
+  gained an optional `colors` array (display sRGB, one per vertex), appended
+  and gated by `struct_size`. Without it the mesh is drawn in the single
+  environment colour as before. Plugins built against older headers keep
+  working; `SHADY_ENVIRONMENT_SCENE_HAS(scene, colors)` tells a loader whether
+  the host's struct has room for it.
+- A scene replaced every frame (an animated `set_scene()`) is uploaded as
+  dynamic geometry.
+
 Fixed:
 
 - A floating window can be dragged back into the scrolling layout: hold

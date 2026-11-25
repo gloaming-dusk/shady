@@ -86,12 +86,15 @@ struct shady_environment_vertex   { float position[3], normal[3], uv[2]; };
 struct shady_environment_box      { float min[3], max[3]; };
 struct shady_environment_triangle { float v[3][3]; };
 
+struct shady_environment_color    { float rgba[4]; };
+
 struct shady_environment_scene {
     uint32_t struct_size;
     const struct shady_environment_vertex *vertices; size_t vertex_count;
     const uint32_t *indices;                         size_t index_count;
     const struct shady_environment_box *boxes;       size_t box_count;
     const struct shady_environment_triangle *triangles; size_t triangle_count;
+    const struct shady_environment_color *colors;    /* appended, optional */
 };
 ```
 
@@ -106,9 +109,23 @@ struct shady_environment_scene {
 - Limits: the world holds 32 boxes, one of which is the floor, and 4096
   collision triangles. A scene over capacity, or one with non-finite values,
   out-of-range indices or inverted boxes, is rejected as a whole.
-- The struct is append-only. Materials and textures will be added as new
-  members at the end, gated by `struct_size`. Today the host shades the mesh
-  with a single lit color and ignores `uv`.
+- `colors`, when not NULL, holds one colour per vertex (`vertex_count`
+  entries), as displayed: sRGB like CSS, each channel 0..1. A loader converts
+  linear colours such as glTF's. The host lights them with one directional
+  light. Alpha is reserved, and the mesh is drawn opaque. Without colours the
+  mesh takes Shady's single environment colour. Textures are not drawn yet,
+  and `uv` is ignored.
+- The struct is append-only. New members go at the end, gated by
+  `struct_size`. The host accepts any `struct_size` from
+  `SHADY_ENVIRONMENT_SCENE_V1_SIZE` (the first version, without `colors`)
+  up, and reads a member only when `struct_size` covers it.
+- The struct a loader's `load()` receives is the host's. A loader built
+  against newer headers checks `SHADY_ENVIRONMENT_SCENE_HAS(scene, colors)`
+  before writing a member, and never writes the whole struct, because an
+  older host's struct is shorter.
+- A plugin may call `set_scene()` every frame to animate its scene, as
+  shady-plugins' `glb-wanderer` does. The host then uploads it as dynamic
+  geometry.
 
 ## Writing a loader
 

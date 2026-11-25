@@ -22,6 +22,12 @@ static bool vertex_valid(const struct shady_environment_vertex *v) {
 		isfinite(v->uv[0]) && isfinite(v->uv[1]);
 }
 
+static bool color_valid(const struct shady_environment_color *c) {
+	for (int i = 0; i < 4; ++i)
+		if (!isfinite(c->rgba[i])) return false;
+	return true;
+}
+
 static bool box_valid(const struct shady_environment_box *b) {
 	return finite3(b->min) && finite3(b->max) &&
 		b->min[0] <= b->max[0] && b->min[1] <= b->max[1] && b->min[2] <= b->max[2];
@@ -52,7 +58,7 @@ bool shady_environment_scene_copy(struct shady_environment_scene_data *out,
 		const struct shady_environment_scene *scene, size_t max_boxes,
 		size_t max_triangles, const char *label) {
 	*out = (struct shady_environment_scene_data){0};
-	if (!scene || scene->struct_size < sizeof(*scene)) {
+	if (!scene || scene->struct_size < SHADY_ENVIRONMENT_SCENE_V1_SIZE) {
 		wlr_log(WLR_ERROR, "environment: %s: invalid scene descriptor", label);
 		return false;
 	}
@@ -85,6 +91,14 @@ bool shady_environment_scene_copy(struct shady_environment_scene_data *out,
 			return false;
 		}
 	}
+	const struct shady_environment_color *colors =
+		SHADY_ENVIRONMENT_SCENE_HAS(scene, colors) && scene->vertex_count ? scene->colors : NULL;
+	for (size_t i = 0; colors && i < scene->vertex_count; ++i) {
+		if (!color_valid(&colors[i])) {
+			wlr_log(WLR_ERROR, "environment: %s: non-finite colour %zu", label, i);
+			return false;
+		}
+	}
 	for (size_t i = 0; scene->indices && i < scene->index_count; ++i) {
 		if (scene->indices[i] >= scene->vertex_count) {
 			wlr_log(WLR_ERROR, "environment: %s: index %zu out of range", label, i);
@@ -108,9 +122,14 @@ bool shady_environment_scene_copy(struct shady_environment_scene_data *out,
 	if (draw_count) {
 		out->vertices = malloc(draw_count * sizeof(*out->vertices));
 		if (!out->vertices) goto oom;
+		if (colors) {
+			out->colors = malloc(draw_count * sizeof(*out->colors));
+			if (!out->colors) goto oom;
+		}
 		for (size_t i = 0; i < draw_count; ++i) {
 			size_t src = scene->indices ? scene->indices[i] : i;
 			out->vertices[i] = scene->vertices[src];
+			if (colors) out->colors[i] = colors[src];
 		}
 		out->vertex_count = draw_count;
 	}
@@ -131,6 +150,7 @@ oom:
 
 void shady_environment_scene_free(struct shady_environment_scene_data *scene) {
 	free(scene->vertices);
+	free(scene->colors);
 	free(scene->boxes);
 	free(scene->triangles);
 	*scene = (struct shady_environment_scene_data){0};

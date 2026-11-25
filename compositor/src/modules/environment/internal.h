@@ -20,6 +20,8 @@ struct shady_environment_loader_slot {
  * as a flat triangle list so GLES2 can draw it without 32-bit indices. */
 struct shady_environment_scene_data {
 	struct shady_environment_vertex *vertices;
+	/* vertex_count entries, or NULL: the default colour. */
+	struct shady_environment_color *colors;
 	size_t vertex_count;
 	struct shady_environment_box *boxes;
 	size_t box_count;
