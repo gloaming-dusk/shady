@@ -95,6 +95,10 @@ struct shady_environment_scene {
     const struct shady_environment_box *boxes;       size_t box_count;
     const struct shady_environment_triangle *triangles; size_t triangle_count;
     const struct shady_environment_color *colors;    /* appended, optional */
+    uint32_t flags;                                  /* appended */
+    const uint8_t *texture;                          /* appended, optional */
+    uint32_t texture_width, texture_height;
+    uint64_t texture_key;
 };
 ```
 
@@ -111,10 +115,31 @@ struct shady_environment_scene {
   out-of-range indices or inverted boxes, is rejected as a whole.
 - `colors`, when not NULL, holds one colour per vertex (`vertex_count`
   entries), as displayed: sRGB like CSS, each channel 0..1. A loader converts
-  linear colours such as glTF's. The host lights them with one directional
-  light. Alpha is reserved, and the mesh is drawn opaque. Without colours the
-  mesh takes Shady's single environment colour. Textures are not drawn yet,
-  and `uv` is ignored.
+  linear colours such as glTF's. The mesh is drawn opaque. Alpha says how
+  strongly the scene's light and shade fall on the vertex: 1 fully, 0 not at
+  all. A vertex with alpha 0 is drawn in its colour as it is, as an ink line
+  or a glow is. Without colours the mesh takes Shady's single environment
+  colour, fully lit.
+- `texture`, when not NULL, is one RGBA8 image of `texture_width` by
+  `texture_height` texels (at most `SHADY_ENVIRONMENT_TEXTURE_MAX` a side),
+  rows top first. Each vertex's `uv` (origin bottom-left, clamped) samples it,
+  and the texel multiplies the vertex colour. Texels with alpha under 0.3 are
+  not drawn, so a decal can be cut out. A loader with several images packs
+  them into one atlas. Untextured vertices then point at a white texel.
+  Without a texture, `uv` is ignored.
+- `texture_key`, when non-zero, says the texture holds the same pixels as the
+  last scene given with the same key and size. The host keeps its copy and
+  upload instead of copying them again, so a scene replaced every frame should
+  set it.
+- `flags`:
+  - `SHADY_ENVIRONMENT_SCENE_TOON` shades in three bands, like three.js'
+    `MeshToonMaterial` with a `[150, 215, 255]` ramp, and adds a soft rim of
+    light along the silhouette. A vertex's alpha softens its bands, so alpha
+    0.28 gives a `[226, 244, 255]` ramp.
+  - `SHADY_ENVIRONMENT_SCENE_CULL_BACK_FACES` draws only front faces, wound
+    counter-clockwise. A double-sided surface is then given twice. An ink
+    line can be drawn as a back-facing shell: a copy pushed out along the
+    normals, wound the other way, with alpha 0.
 - The struct is append-only. New members go at the end, gated by
   `struct_size`. The host accepts any `struct_size` from
   `SHADY_ENVIRONMENT_SCENE_V1_SIZE` (the first version, without `colors`)

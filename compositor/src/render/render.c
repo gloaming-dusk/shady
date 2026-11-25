@@ -3004,7 +3004,14 @@ void shady_render_output_frame(
 	 * perspective and per-window Z separation.
 	 */
 	shady_scene_effects_draw_floor(server, &pipeline, vp);
-	shady_environment_draw_scene(server, vp);
+	{
+		/* view's rows are right, up, -forward; its translation is -R * eye. */
+		float eye[3];
+		for (int i = 0; i < 3; i++)
+			eye[i] = -(view[i * 4 + 0] * view[12] + view[i * 4 + 1] * view[13] +
+				view[i * 4 + 2] * view[14]);
+		shady_environment_draw_scene(server, vp, eye);
+	}
 
 	double ox = 0;
 	double oy = 0;

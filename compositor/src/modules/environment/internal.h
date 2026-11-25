@@ -27,6 +27,14 @@ struct shady_environment_scene_data {
 	size_t box_count;
 	struct shady_environment_triangle *triangles;
 	size_t triangle_count;
+
+	uint32_t flags;
+	/* RGBA8, rows top first; NULL without a texture. */
+	uint8_t *texture;
+	uint32_t texture_width, texture_height;
+	uint64_t texture_key;
+	/* The scene's texture_key matched the previous scene's: take its pixels. */
+	bool texture_reused;
 };
 
 enum shady_environment_source {
@@ -45,6 +53,8 @@ struct shady_environment {
 	shady_environment_loader_id scene_loader;
 	/* Bumped on every scene change so the renderer re-uploads. */
 	uint64_t revision;
+	/* Bumped only when the texture's pixels change. */
+	uint64_t texture_revision;
 
 	/* Config path the last sync acted on; dirty forces a retry. */
 	char synced_path[SHADY_ENVIRONMENT_PATH_MAX];
@@ -60,9 +70,11 @@ const struct shady_environment_loader_slot *shady_environment_find_loader(
 	const struct shady_environment *env, const char *path);
 
 /* scene.c */
+/* previous: the active scene, whose texture a matching texture_key reuses. */
 bool shady_environment_scene_copy(struct shady_environment_scene_data *out,
 	const struct shady_environment_scene *scene, size_t max_boxes,
-	size_t max_triangles, const char *label);
+	size_t max_triangles, const struct shady_environment_scene_data *previous,
+	const char *label);
 void shady_environment_scene_free(struct shady_environment_scene_data *scene);
 /* Rebuild the spatial world: default floor + the scene's collision. */
 void shady_environment_apply_collision(struct shady_server *server,

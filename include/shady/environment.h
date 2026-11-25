@@ -38,7 +38,9 @@ struct shady_environment_box {
 };
 
 /* Colour of one vertex, as displayed (sRGB, like CSS colours), each channel
- * 0..1. Alpha is reserved: the mesh is drawn opaque. */
+ * 0..1. The mesh is drawn opaque: alpha says how strongly the scene's light
+ * and shade fall on the vertex, 1 fully, 0 not at all (an ink line, a glow
+ * is drawn in its colour as it is). */
 struct shady_environment_color {
 	float rgba[4];
 };
@@ -78,7 +80,30 @@ struct shady_environment_scene {
 	/* Appended: vertex_count colours, one per vertex, or NULL to draw the
 	 * mesh in Shady's single environment colour. */
 	const struct shady_environment_color *colors;
+
+	/* Appended: SHADY_ENVIRONMENT_SCENE_* flags. */
+	uint32_t flags;
+	/* Appended: one RGBA8 image, rows top first, sampled at each vertex's uv
+	 * (origin bottom-left, clamped) and multiplied into its colour. Texels
+	 * with alpha under 0.3 are not drawn. NULL: no texture, uv is ignored.
+	 * At most SHADY_ENVIRONMENT_TEXTURE_MAX texels a side. */
+	const uint8_t *texture;
+	uint32_t texture_width, texture_height;
+	/* Non-zero: the texture holds the same pixels as the last scene given the
+	 * same key and size, so the host keeps its copy instead of copying and
+	 * uploading them again; a scene replaced every frame should set it. */
+	uint64_t texture_key;
 };
+
+/* Cel shading: three bands of light, as three.js' MeshToonMaterial with a
+ * [150, 215, 255] ramp, and a soft rim of light along the silhouette. */
+#define SHADY_ENVIRONMENT_SCENE_TOON (1u << 0)
+/* Draw only front faces, wound counter-clockwise. Faces meant to be seen
+ * from both sides are then given twice. Needed for ink lines drawn as a
+ * back-facing shell. */
+#define SHADY_ENVIRONMENT_SCENE_CULL_BACK_FACES (1u << 1)
+
+#define SHADY_ENVIRONMENT_TEXTURE_MAX 4096u
 
 /* Whether a scene struct of this struct_size has the member. */
 #define SHADY_ENVIRONMENT_SCENE_HAS(scene, member) \

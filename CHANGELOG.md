@@ -13,6 +13,14 @@ New:
   environment colour as before. Plugins built against older headers keep
   working; `SHADY_ENVIRONMENT_SCENE_HAS(scene, colors)` tells a loader whether
   the host's struct has room for it.
+- Environment scenes can be drawn as a cartoon. `flags` turns on toon
+  shading with a rim light (`SHADY_ENVIRONMENT_SCENE_TOON`) and back-face
+  culling (`SHADY_ENVIRONMENT_SCENE_CULL_BACK_FACES`, for ink lines drawn as
+  a back-facing shell). One RGBA `texture`, sampled at the vertices' `uv`,
+  multiplies their colours and cuts out texels with alpha under 0.3. A colour's
+  alpha says how strongly light and shade fall on the vertex (0: drawn as it
+  is). `texture_key` lets a scene replaced every frame keep its texture
+  uploaded. All of these members are appended and gated by `struct_size`.
 - A scene replaced every frame (an animated `set_scene()`) is uploaded as
   dynamic geometry.
 

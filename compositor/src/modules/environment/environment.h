@@ -49,6 +49,8 @@ void shady_environment_cleanup_owner(struct shady_server *server, void *owner);
 bool shady_environment_gl_init(void);
 void shady_environment_gl_fini(void);
 void shady_environment_draw_sky(struct shady_server *server);
-void shady_environment_draw_scene(struct shady_server *server, const float vp[16]);
+/* eye: the camera's position in world space, for the toon rim light. */
+void shady_environment_draw_scene(struct shady_server *server, const float vp[16],
+	const float eye[3]);
 
 #endif

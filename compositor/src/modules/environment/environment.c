@@ -33,6 +33,14 @@ static void replace_scene(struct shady_server *server,
 		enum shady_environment_source source, void *owner,
 		shady_environment_loader_id loader) {
 	struct shady_environment *env = server->environment;
+	if (scene->texture_reused) {
+		/* The same pixels: keep the copy (and the upload) we have. */
+		scene->texture = env->scene.texture;
+		env->scene.texture = NULL;
+		scene->texture_reused = false;
+	} else {
+		env->texture_revision++;
+	}
 	shady_environment_scene_free(&env->scene);
 	env->scene = *scene;
 	env->source = source;
@@ -78,7 +86,8 @@ static void load_configured(struct shady_server *server, const char *path) {
 
 	struct shady_environment_scene_data copy;
 	bool ok = shady_environment_scene_copy(&copy, &scene,
-		shady_environment_box_capacity(), shady_environment_triangle_capacity(), path);
+		shady_environment_box_capacity(), shady_environment_triangle_capacity(),
+		&env->scene, path);
 	if (loader->release) loader->release((shady_host)server, &scene, loader->user_data);
 	if (!ok) {
 		shady_environment_drop_scene(server);
@@ -118,7 +127,7 @@ bool shady_environment_set_scene(struct shady_server *server, void *owner,
 
 	struct shady_environment_scene_data copy;
 	if (!shady_environment_scene_copy(&copy, scene, shady_environment_box_capacity(),
-			shady_environment_triangle_capacity(), "procedural scene"))
+			shady_environment_triangle_capacity(), &env->scene, "procedural scene"))
 		return false;
 	replace_scene(server, &copy, SHADY_ENVIRONMENT_SOURCE_PROCEDURAL, owner, 0);
 	return true;

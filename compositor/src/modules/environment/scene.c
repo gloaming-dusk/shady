@@ -56,7 +56,8 @@ size_t shady_environment_triangle_capacity(void) {
 
 bool shady_environment_scene_copy(struct shady_environment_scene_data *out,
 		const struct shady_environment_scene *scene, size_t max_boxes,
-		size_t max_triangles, const char *label) {
+		size_t max_triangles, const struct shady_environment_scene_data *previous,
+		const char *label) {
 	*out = (struct shady_environment_scene_data){0};
 	if (!scene || scene->struct_size < SHADY_ENVIRONMENT_SCENE_V1_SIZE) {
 		wlr_log(WLR_ERROR, "environment: %s: invalid scene descriptor", label);
@@ -88,6 +89,14 @@ bool shady_environment_scene_copy(struct shady_environment_scene_data *out,
 	for (size_t i = 0; i < scene->vertex_count; ++i) {
 		if (!vertex_valid(&scene->vertices[i])) {
 			wlr_log(WLR_ERROR, "environment: %s: non-finite vertex %zu", label, i);
+			return false;
+		}
+	}
+	if (SHADY_ENVIRONMENT_SCENE_HAS(scene, texture_key) && scene->texture) {
+		uint32_t w = scene->texture_width, h = scene->texture_height;
+		if (!w || !h || w > SHADY_ENVIRONMENT_TEXTURE_MAX || h > SHADY_ENVIRONMENT_TEXTURE_MAX) {
+			wlr_log(WLR_ERROR, "environment: %s: texture of %ux%u is not 1..%u a side",
+				label, w, h, SHADY_ENVIRONMENT_TEXTURE_MAX);
 			return false;
 		}
 	}
@@ -140,6 +149,24 @@ bool shady_environment_scene_copy(struct shady_environment_scene_data *out,
 		sizeof(*out->triangles));
 	if (scene->triangle_count && !out->triangles) goto oom;
 	out->triangle_count = scene->triangle_count;
+
+	if (SHADY_ENVIRONMENT_SCENE_HAS(scene, flags)) out->flags = scene->flags;
+	if (SHADY_ENVIRONMENT_SCENE_HAS(scene, texture_key) && scene->texture) {
+		out->texture_width = scene->texture_width;
+		out->texture_height = scene->texture_height;
+		out->texture_key = scene->texture_key;
+		if (scene->texture_key && previous && previous->texture &&
+				previous->texture_key == scene->texture_key &&
+				previous->texture_width == scene->texture_width &&
+				previous->texture_height == scene->texture_height) {
+			out->texture_reused = true;
+		} else {
+			size_t bytes = (size_t)scene->texture_width * scene->texture_height * 4;
+			out->texture = malloc(bytes);
+			if (!out->texture) goto oom;
+			memcpy(out->texture, scene->texture, bytes);
+		}
+	}
 	return true;
 
 oom:
@@ -151,6 +178,7 @@ oom:
 void shady_environment_scene_free(struct shady_environment_scene_data *scene) {
 	free(scene->vertices);
 	free(scene->colors);
+	free(scene->texture);
 	free(scene->boxes);
 	free(scene->triangles);
 	*scene = (struct shady_environment_scene_data){0};
