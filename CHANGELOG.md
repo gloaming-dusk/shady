@@ -3,7 +3,7 @@
 Shady is experimental: the Lua, IPC and plugin interfaces may still change
 between releases. Breaking changes are called out here.
 
-## Unreleased
+## 0.5.3 (2026-11-25)
 
 New:
 
@@ -11,6 +11,14 @@ New:
   `max_width` and `max_height`, at most 4 times, not only down. An agent
   zooming into a region to read small text gets it large even on a screen
   its full screenshots were not scaled down from.
+
+## 0.5.2 (2026-11-25)
+
+The v0.5.2 tag was made without a release commit, so its build still
+called itself 0.5.1.
+
+New:
+
 - Environment scenes can colour each vertex: `struct shady_environment_scene`
   gained an optional `colors` array (display sRGB, one per vertex), appended
   and gated by `struct_size`. Without it the mesh is drawn in the single

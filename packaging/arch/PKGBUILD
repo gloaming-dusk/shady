@@ -4,7 +4,7 @@
 # release tag named by pkgver, not the checkout this file sits in.
 
 pkgname=shady
-pkgver=0.5.1
+pkgver=0.5.3
 pkgrel=1
 pkgdesc='Experimental 3D Wayland compositor'
 arch=('x86_64' 'aarch64')
