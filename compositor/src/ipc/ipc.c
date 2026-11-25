@@ -1019,7 +1019,8 @@ static void capture_done(const struct shady_capture_result *result, void *data) 
  * there once the value screenshot.saved names it. With "wait": true it
  * replies once the file is written, with the image's size and where it lies
  * in layout coordinates. "output", "window" or "x"/"y"/"width"/"height"
- * choose what is captured; "max_width"/"max_height" scale it down. */
+ * choose what is captured; "max_width"/"max_height" scale it down, and with
+ * "upscale": true a smaller image up to fit them (at most 4 times). */
 static bool cmd_screenshot(struct request *r) {
 	struct shady_capture_options options = {
 		.path = json_get_string(r->args, "path"),
@@ -1053,6 +1054,10 @@ static bool cmd_screenshot(struct request *r) {
 		options.width = t->xdg_toplevel->base->geometry.width;
 		options.height = t->xdg_toplevel->base->geometry.height;
 	}
+	const struct json_value *upscale = json_get(r->args, "upscale");
+	if (upscale && upscale->type != JSON_BOOL && upscale->type != JSON_NULL)
+		return error(r, "upscale must be true or false");
+	options.upscale = upscale && upscale->type == JSON_BOOL && upscale->boolean;
 	const struct json_value *wait = json_get(r->args, "wait");
 	if (wait && wait->type != JSON_BOOL && wait->type != JSON_NULL)
 		return error(r, "wait must be true or false");

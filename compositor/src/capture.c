@@ -30,6 +30,8 @@
 
 /* drm_fourcc.h's XRGB8888 ('XR24'), without depending on libdrm's headers. */
 #define CAPTURE_FORMAT_XRGB8888 0x34325258u
+/* How far `upscale` enlarges: beyond this it only blurs. */
+#define CAPTURE_MAX_UPSCALE 4.0
 
 static struct {
 	char path[4096];
@@ -40,6 +42,7 @@ static struct {
 	bool has_region;
 	double x, y, width, height;
 	int max_width, max_height;
+	bool upscale;
 	void (*done)(const struct shady_capture_result *result, void *data);
 	void *data;
 } capture;
@@ -137,6 +140,7 @@ bool shady_capture_request_with(struct shady_server *server,
 	capture.height = options->height;
 	capture.max_width = options->max_width > 0 ? options->max_width : 0;
 	capture.max_height = options->max_height > 0 ? options->max_height : 0;
+	capture.upscale = options->upscale;
 	capture.done = options->done;
 	capture.data = options->data;
 	int delay_ms = options->delay_ms;
@@ -246,8 +250,11 @@ void shady_capture_output_buffer(struct shady_server *server,
 		crop.width = x1 - x0;
 		crop.height = y1 - y0;
 	}
-	double fit = 1.0;
-	if (capture.max_width > 0 && crop.width > capture.max_width)
+	/* Down to fit max_width and max_height; with upscale, a small region
+	 * (text to read) also up to fit them, as far as more pixels can help. */
+	bool bounded = capture.max_width > 0 || capture.max_height > 0;
+	double fit = capture.upscale && bounded ? CAPTURE_MAX_UPSCALE : 1.0;
+	if (capture.max_width > 0 && crop.width * fit > capture.max_width)
 		fit = (double)capture.max_width / crop.width;
 	if (capture.max_height > 0 && crop.height * fit > capture.max_height)
 		fit = (double)capture.max_height / crop.height;

@@ -35,6 +35,7 @@ struct shady_capture_options {
 	bool has_region;    /* only this part, in layout coordinates */
 	double x, y, width, height;
 	int max_width, max_height; /* 0: any; larger images are scaled down to fit */
+	bool upscale;       /* smaller ones scaled up to fit too, at most 4 times */
 	void (*done)(const struct shady_capture_result *result, void *data);
 	void *data;
 };

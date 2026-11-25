@@ -178,6 +178,18 @@ def scenario(ipc, status, shots, probe_path):
     region = ipc.ok("screenshot", path=str(shots / "region.png"), wait=True,
                     x=wx + 10, y=wy + 10, width=40, height=30)
     check((region["width"], region["height"]) == (40, 30), f"region shot {region}")
+    # Upscaled to fit, at most 4 times: a small region to read.
+    big = ipc.ok("screenshot", path=str(shots / "big.png"), wait=True, upscale=True,
+                 x=wx + 10, y=wy + 10, width=40, height=30, max_width=120, max_height=400)
+    check((big["width"], big["height"]) == (120, 90) and abs(big["scale"] - 3) < 1e-6,
+          f"upscaled region {big}")
+    check(png_size(big["path"]) == (120, 90), "upscaled PNG size")
+    capped = ipc.ok("screenshot", path=str(shots / "capped.png"), wait=True, upscale=True,
+                    x=wx + 10, y=wy + 10, width=40, height=30, max_width=1280, max_height=800)
+    check((capped["width"], capped["height"]) == (160, 120), f"upscale capped at 4 {capped}")
+    plain_region = ipc.ok("screenshot", path=str(shots / "plain-region.png"), wait=True,
+                          x=wx + 10, y=wy + 10, width=40, height=30, max_width=1280)
+    check((plain_region["width"], plain_region["height"]) == (40, 30), "no upscale unasked")
     # Without wait, the old answer: the path only.
     plain = ipc.ok("screenshot", path=str(shots / "plain.png"))
     check(plain == {"path": str(shots / "plain.png")}, f"plain screenshot {plain}")
@@ -188,6 +200,7 @@ def scenario(ipc, status, shots, probe_path):
     ipc.err("pointer.click", button="thumb")
     ipc.err("pointer.scroll")
     ipc.err("screenshot", x=1, y=1, width=10)
+    ipc.err("screenshot", upscale="yes")
     ipc.err("screenshot", output="NOPE-1", wait=True)
     ipc.err("wait", ms=-1)
     ipc.err("key", keys="Ctrl+NoSuchKey")

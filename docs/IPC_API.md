@@ -99,7 +99,7 @@ answered with an error and the connection stays open.
 | `pointer.drag` | `x1`, `y1`, `x2`, `y2`, `button`?, `steps`?, `duration`? | Press, move in `steps` (10), release, over `duration` ms (300; `0` all at once); answers once released |
 | `window.at` | `x`, `y` | The window a click there would reach, or `null` |
 | `wait` | `ms`?, `idle`?, `timeout`?, `scope`?, `window`? | Answer after `ms`, then once nothing has changed for `idle` ms, or after `timeout` ms (5000); data is `{"settled": bool, "elapsed": ms, "active"?: what changed last}` (see [Input](#input)) |
-| `screenshot` | `path`?, `delay`?, `wait`?, `output`?, `window`?, `x`/`y`/`width`/`height`?, `max_width`?, `max_height`? | Save the next frame as a PNG (default `~/Pictures/shady-<time>.png`) after `delay` ms; see [Screenshots](#screenshots) |
+| `screenshot` | `path`?, `delay`?, `wait`?, `output`?, `window`?, `x`/`y`/`width`/`height`?, `max_width`?, `max_height`?, `upscale`? | Save the next frame as a PNG (default `~/Pictures/shady-<time>.png`) after `delay` ms; see [Screenshots](#screenshots) |
 | `shortcuts.toggle` | | Ask shells to show or hide the shortcut overlay (the `shortcuts.toggle` event) |
 | `lua` | `code`, `name`? | Execute Lua in the live runtime; data is an array of return values |
 | `plugin.reload` | `name` | Hot-reload a loaded plugin |
@@ -180,7 +180,10 @@ so a click on what an agent saw in the image lands where it saw it.
 - `output` names the output; otherwise it is the first to draw.
 - `window` (an `id`) or `x`, `y`, `width`, `height` capture only that part,
   on the output under its middle. A window on another workspace is refused.
-- `max_width` and `max_height` scale the image down to fit.
+- `max_width` and `max_height` scale the image down to fit. With
+  `"upscale": true` a smaller image is scaled up to fit them too, at most
+  4 times, so a small region (text an agent needs to read) comes back
+  large; `scale` says how far.
 
 One screenshot is pending at a time. Shady draws the 3D scene itself, so a
 screenshot shows it as drawn, but a window's box in spatial mode is the
