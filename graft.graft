@@ -20,7 +20,7 @@ let toolchain = compose arch.{
   wayland,
   wayland-protocols,
   wlr-protocols,
-  wlroots,
+  "wlroots0.20",
   libxkbcommon,
   libinput,
   pixman,
