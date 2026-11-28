@@ -1,0 +1,89 @@
+-- Graft recipe for Shady (Experimental 3D Wayland compositor)
+-- Replaces `flake.nix` + `nix/package.nix` + `nix/module.nix`!
+--
+-- Usage:
+--   graft check graft.graft
+--   graft build graft.graft
+--   graft develop graft.graft#dev
+--   graft install graft.graft
+
+import arch from registry.arch { release = "latest", arch = "x86_64" }
+import debian from registry.debian { release = "trixie", arch = "x86_64" }
+
+let toolchain = compose arch.{
+  bash,
+  coreutils,
+  gcc,
+  meson,
+  ninja,
+  pkgconf,
+  wayland,
+  wayland-protocols,
+  wlr-protocols,
+  wlroots,
+  libxkbcommon,
+  libinput,
+  pixman,
+  libdrm,
+  mesa,
+  lua,
+  cairo,
+  pango,
+  fontconfig,
+  adwaita-icon-theme,
+}
+
+let shady = build {
+  name = "shady",
+  toolchain = toolchain,
+  src = ./.,
+  main = "shady",
+  vars = {
+    SHADY_CURSOR_PATH = "/usr/share/icons",
+  },
+  run = cmd "meson setup _build \"$SRC\" --prefix=/ --buildtype=release -Dinstalled_data=true -Dcursor_path=/usr/share/icons && ninja -C _build && DESTDIR=\"$OUT\" ninja -C _build install",
+}
+
+let default = shady
+
+-- Interactive development shell (`graft develop #dev`)
+let dev = shell {
+  env = toolchain,
+  vars = {
+    SHADY_CURSOR_PATH = "/usr/share/icons",
+    SHADY_RICE = "tide",
+  },
+  hook = cmd "echo '[shady] Graft dev shell ready (wlroots + meson + ninja + lua 5.4)'",
+}
+
+-- Declarative GraftOS module (replaces `inputs.shady.nixosModules.default` with `programs.shady.enable = true`)
+-- Merge directly into any `system { ... }` via `mySystem & shady.os_module`!
+let os_module = {
+  builds = [ shady ],
+  extra_packages = debian.{
+    adwaita-icon-theme,
+    foot,
+    grim,
+    slurp,
+    wl-clipboard,
+    wlr-randr,
+    playerctl,
+    libnotify-bin,
+    xdg-desktop-portal,
+    xdg-desktop-portal-wlr,
+    xdg-desktop-portal-gtk,
+    polkitd,
+    dconf-cli,
+    fontconfig,
+  },
+  vars = {
+    SHADY_RICE = "tide",
+    SHADY_SOFTWARE_CURSORS = "0",
+    XCURSOR_THEME = "Adwaita",
+    XCURSOR_SIZE = "24",
+    XCURSOR_PATH = "/usr/share/icons:/usr/local/share/icons",
+  },
+  files = {
+    "/etc/xdg/xdg-desktop-portal/shady-portals.conf" = "[preferred]\ndefault=wlr;gtk\n",
+  },
+}
